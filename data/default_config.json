@@ -1,0 +1,46 @@
+{
+  "version": "1.0",
+  "description": "Default projection configuration",
+  "basic_settings": {
+    "launch_date": "2026-11-12",
+    "infrastructure_cost_ratio": 0.03,
+    "market_fee_ratio": 0.30,
+    "vat_ratio": 0.10,
+    "hr_cost_monthly": 1720000000,
+    "sustaining_mkt_ratio": 0.07
+  },
+  "retention_settings": {
+    "best": 0.50,
+    "normal": 0.45,
+    "worst": 0.40
+  },
+  "nru_settings": {
+    "d1_nru": {
+      "best": 440000,
+      "normal": 400000,
+      "worst": 360000
+    },
+    "paid_organic_ratio": 0.50,
+    "nvr": 0.70,
+    "android_ios_ratio": 0.60,
+    "cpi": {
+      "android": 2660,
+      "ios": 2660
+    },
+    "adjustment": {
+      "best_vs_normal": -0.10,
+      "worst_vs_normal": 0.10
+    }
+  },
+  "revenue_settings": {
+    "pr_adjustment": {
+      "best_vs_normal": -0.03,
+      "worst_vs_normal": 0.01
+    },
+    "arppu_adjustment": {
+      "best_vs_normal": -0.05,
+      "worst_vs_normal": 0.05
+    }
+  },
+  "projection_days": 365
+}
