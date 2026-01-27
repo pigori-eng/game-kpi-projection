@@ -23,9 +23,9 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 RAW_DATA_PATH = os.path.join(DATA_DIR, "raw_game_data.json")
 CONFIG_PATH = os.path.join(DATA_DIR, "default_config.json")
 
-# Gemini API Configuration
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro:generateContent"
+# Claude API Configuration
+CLAUDE_API_KEY = os.environ.get("CLAUDE_API_KEY", "")
+CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
 
 def load_raw_data():
     with open(RAW_DATA_PATH, 'r', encoding='utf-8') as f:
@@ -229,38 +229,42 @@ def calculate_revenue(dau: List[float], pr: List[float], arppu: List[float]):
         revenue.append(dau[i] * pr_val * arppu_val)
     return revenue
 
-# Gemini AI Integration
-async def get_gemini_insight(prompt: str) -> str:
-    """Call Gemini API for AI insights"""
-    if not GEMINI_API_KEY:
-        return "AI 인사이트를 사용하려면 GEMINI_API_KEY 환경변수를 설정해주세요."
+# Claude AI Integration
+async def get_claude_insight(prompt: str) -> str:
+    """Call Claude API for AI insights"""
+    if not CLAUDE_API_KEY:
+        return "AI 인사이트를 사용하려면 CLAUDE_API_KEY 환경변수를 설정해주세요."
     
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{GEMINI_API_URL}?key={GEMINI_API_KEY}",
-                json={
-                    "contents": [{
-                        "parts": [{"text": prompt}]
-                    }],
-                    "generationConfig": {
-                        "temperature": 0.7,
-                        "maxOutputTokens": 1024
-                    }
+                CLAUDE_API_URL,
+                headers={
+                    "x-api-key": CLAUDE_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json"
                 },
-                timeout=30.0
+                json={
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 1024,
+                    "messages": [
+                        {"role": "user", "content": prompt}
+                    ]
+                },
+                timeout=60.0
             )
             
             if response.status_code == 200:
                 data = response.json()
-                return data["candidates"][0]["content"]["parts"][0]["text"]
+                return data["content"][0]["text"]
             else:
-                return f"AI 분석 오류: {response.status_code}"
+                error_detail = response.json().get("error", {}).get("message", response.status_code)
+                return f"AI 분석 오류: {error_detail}"
     except Exception as e:
         return f"AI 연결 실패: {str(e)}"
 
 def create_insight_prompt(summary: Dict[str, Any], analysis_type: str) -> str:
-    """Create prompt for Gemini based on analysis type"""
+    """Create prompt for Claude based on analysis type"""
     
     base_context = f"""
 당신은 게임 산업 전문 데이터 분석가입니다. 아래 게임 KPI 프로젝션 결과를 분석하고 인사이트를 제공해주세요.
@@ -339,7 +343,7 @@ def create_insight_prompt(summary: Dict[str, Any], analysis_type: str) -> str:
 # API Endpoints
 @app.get("/")
 async def root():
-    return {"message": "Game KPI Projection API", "version": "2.0.0", "ai_enabled": bool(GEMINI_API_KEY)}
+    return {"message": "Game KPI Projection API", "version": "2.0.0", "ai_enabled": bool(CLAUDE_API_KEY)}
 
 @app.get("/api/games")
 async def get_available_games():
@@ -494,7 +498,7 @@ async def calculate_projection(input_data: ProjectionInput):
 async def get_ai_insight(request: AIInsightRequest):
     """Get AI-powered insights for projection results"""
     prompt = create_insight_prompt(request.projection_summary, request.analysis_type)
-    insight = await get_gemini_insight(prompt)
+    insight = await get_claude_insight(prompt)
     
     return {
         "status": "success",
@@ -507,8 +511,8 @@ async def get_ai_insight(request: AIInsightRequest):
 async def get_ai_status():
     """Check AI integration status"""
     return {
-        "enabled": bool(GEMINI_API_KEY),
-        "model": "gemini-3-pro",
+        "enabled": bool(CLAUDE_API_KEY),
+        "model": "claude-sonnet-4",
         "available_types": ["general", "reliability", "retention", "revenue", "risk", "competitive"]
     }
 
