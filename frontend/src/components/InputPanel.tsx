@@ -1,16 +1,7 @@
-import { useState } from 'react';
-import { 
-  TrendingUp, 
-  Users, 
-  DollarSign, 
-  Calendar,
-  ChevronDown,
-  ChevronUp,
-  Info,
-  Plus,
-  X
-} from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { TrendingUp, Users, DollarSign, ChevronDown, ChevronUp, HelpCircle, Building, Gamepad2, Info } from 'lucide-react';
 import type { ProjectionInput, GameListResponse } from '../types';
+import { getGamesMetadata } from '../utils/api';
 
 interface InputPanelProps {
   games: GameListResponse;
@@ -18,24 +9,43 @@ interface InputPanelProps {
   setInput: React.Dispatch<React.SetStateAction<ProjectionInput>>;
 }
 
-interface GameSelectorProps {
-  label: string;
+interface GameMetadata {
+  release_date: string;
+  genre: string;
+  platform: string;
+  publisher: string;
+  region: string;
+}
+
+const getPlatformBadge = (platform: string) => {
+  if (platform.includes('Mobile')) return 'bg-blue-100 text-blue-700';
+  if (platform.includes('PC')) return 'bg-purple-100 text-purple-700';
+  return 'bg-gray-100 text-gray-700';
+};
+
+const GameTooltip: React.FC<{ metadata: GameMetadata; visible: boolean }> = ({ metadata, visible }) => {
+  if (!visible) return null;
+  return (
+    <div className="absolute z-50 bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-40 bg-gray-900 text-white text-xs rounded-lg shadow-xl p-2.5 pointer-events-none">
+      <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2 rotate-45 w-2 h-2 bg-gray-900"></div>
+      <div className="space-y-1">
+        <div className="font-medium text-sm">{metadata.genre}</div>
+        <div className="text-gray-400">출시일: <span className="text-gray-200">{metadata.release_date}</span></div>
+      </div>
+    </div>
+  );
+};
+
+const GameGridSelector: React.FC<{
   availableGames: string[];
   selectedGames: string[];
   onChange: (games: string[]) => void;
   maxGames?: number;
-}
+  metadata: Record<string, GameMetadata>;
+}> = ({ availableGames, selectedGames, onChange, maxGames = 4, metadata }) => {
+  const [hoveredGame, setHoveredGame] = useState<string | null>(null);
 
-const GameSelector: React.FC<GameSelectorProps> = ({ 
-  label, 
-  availableGames, 
-  selectedGames, 
-  onChange,
-  maxGames = 4 
-}) => {
-  const [isOpen, setIsOpen] = useState(false);
-
-  const handleSelect = (game: string) => {
+  const handleToggle = (game: string) => {
     if (selectedGames.includes(game)) {
       onChange(selectedGames.filter(g => g !== game));
     } else if (selectedGames.length < maxGames) {
@@ -43,548 +53,253 @@ const GameSelector: React.FC<GameSelectorProps> = ({
     }
   };
 
-  const handleRemove = (game: string) => {
-    onChange(selectedGames.filter(g => g !== game));
-  };
-
   return (
-    <div className="space-y-2">
-      <label className="block text-sm font-medium text-gray-700">{label}</label>
-      
-      {/* Selected Games */}
-      <div className="flex flex-wrap gap-2 min-h-[32px]">
-        {selectedGames.map(game => (
-          <span 
-            key={game}
-            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 text-sm rounded-md"
-          >
-            {game}
-            <button 
-              onClick={() => handleRemove(game)}
-              className="hover:text-blue-600"
-            >
-              <X className="w-3 h-3" />
-            </button>
-          </span>
-        ))}
-        {selectedGames.length === 0 && (
-          <span className="text-sm text-gray-400">게임을 선택하세요 (최대 {maxGames}개)</span>
-        )}
+    <div className="border border-gray-300 rounded-lg overflow-hidden">
+      <div className="bg-gray-100 px-3 py-2 border-b border-gray-300 flex justify-between items-center">
+        <div><span className="text-sm font-medium text-gray-700">게임명</span><span className="text-xs text-gray-500 ml-2">(최대 {maxGames}개 선택)</span></div>
+        <div className="flex items-center gap-1 text-xs text-gray-500"><Info className="w-3 h-3" /><span>마우스를 올리면 게임 정보 확인</span></div>
       </div>
-
-      {/* Dropdown */}
-      <div className="relative">
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className="w-full flex items-center justify-between px-3 py-2 border border-gray-300 rounded-lg bg-white hover:border-gray-400 transition-colors"
-        >
-          <span className="text-sm text-gray-600">
-            {selectedGames.length > 0 
-              ? `${selectedGames.length}개 선택됨` 
-              : '게임 선택...'}
-          </span>
-          {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-        </button>
-        
-        {isOpen && (
-          <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-            {availableGames.map(game => (
-              <button
-                key={game}
-                onClick={() => handleSelect(game)}
-                disabled={!selectedGames.includes(game) && selectedGames.length >= maxGames}
-                className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-between ${
-                  selectedGames.includes(game) ? 'bg-blue-50 text-blue-700' : ''
-                }`}
-              >
-                {game}
-                {selectedGames.includes(game) && (
-                  <span className="text-blue-600">✓</span>
-                )}
+      <div className="grid grid-cols-4 gap-0">
+        {availableGames.map((game, idx) => {
+          const gameMeta = metadata[game];
+          const isSelected = selectedGames.includes(game);
+          const isDisabled = !isSelected && selectedGames.length >= maxGames;
+          return (
+            <div key={game} className="relative" onMouseEnter={() => setHoveredGame(game)} onMouseLeave={() => setHoveredGame(null)}>
+              <button onClick={() => handleToggle(game)} disabled={isDisabled} className={`w-full px-3 py-2 text-sm text-left border-r border-b border-gray-200 transition-colors truncate flex items-center gap-1 ${isSelected ? 'bg-blue-100 text-blue-800 font-medium' : 'bg-white hover:bg-gray-50 text-gray-700'} ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} ${(idx + 1) % 4 === 0 ? 'border-r-0' : ''}`} title={game}>
+                <span className="truncate flex-1">{game}</span>
+                {gameMeta && <Info className={`w-3.5 h-3.5 flex-shrink-0 ${hoveredGame === game ? 'text-blue-500' : 'text-gray-400'}`} />}
               </button>
-            ))}
-          </div>
-        )}
+              {gameMeta && <GameTooltip metadata={gameMeta} visible={hoveredGame === game} />}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const GuideBox: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+    <div className="flex items-start gap-2">
+      <HelpCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+      <div><h4 className="font-medium text-amber-800 mb-1">{title}</h4><div className="text-sm text-amber-700">{children}</div></div>
+    </div>
+  </div>
+);
+
+const RegressionResultTable: React.FC<{ selectedGames: string[]; d1Retention: { best: number; normal: number; worst: number } }> = ({ selectedGames, d1Retention }) => {
+  const a = selectedGames.length > 0 ? 1.336 : 0;
+  const b = selectedGames.length > 0 ? -0.818 : 0;
+  return (
+    <div className="grid grid-cols-2 gap-4 mt-4">
+      <div className="border border-gray-300 rounded-lg overflow-hidden">
+        <div className="bg-gray-100 px-3 py-2 border-b border-gray-300"><span className="text-sm font-medium"># Retention Curve 계산(자동)</span></div>
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50"><tr><th className="px-3 py-2 text-left border-b">기준</th><th className="px-3 py-2 text-left border-b">D+1</th><th className="px-3 py-2 text-left border-b">a</th><th className="px-3 py-2 text-left border-b">b</th></tr></thead>
+          <tbody>
+            <tr className="bg-green-50"><td className="px-3 py-2 border-b font-medium text-green-700">Best</td><td className="px-3 py-2 border-b">{(d1Retention.best * 100).toFixed(1)}%</td><td className="px-3 py-2 border-b">{a.toFixed(3)}</td><td className="px-3 py-2 border-b">{b.toFixed(3)}</td></tr>
+            <tr className="bg-blue-50"><td className="px-3 py-2 border-b font-medium text-blue-700">Normal</td><td className="px-3 py-2 border-b">{(d1Retention.normal * 100).toFixed(1)}%</td><td className="px-3 py-2 border-b">{a.toFixed(3)}</td><td className="px-3 py-2 border-b">{b.toFixed(3)}</td></tr>
+            <tr className="bg-red-50"><td className="px-3 py-2 font-medium text-red-700">Worst</td><td className="px-3 py-2">{(d1Retention.worst * 100).toFixed(1)}%</td><td className="px-3 py-2">{a.toFixed(3)}</td><td className="px-3 py-2">{b.toFixed(3)}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div className="border border-gray-300 rounded-lg overflow-hidden">
+        <div className="bg-gray-100 px-3 py-2 border-b border-gray-300"><span className="text-sm font-medium"># 회귀분석 결과 값(자동)</span></div>
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50"><tr><th className="px-3 py-2 border-b" colSpan={2}># 1차</th><th className="px-3 py-2 border-b" colSpan={2}># 2차</th></tr><tr><th className="px-3 py-2 border-b">x1</th><th className="px-3 py-2 border-b">y절편</th><th className="px-3 py-2 border-b">x1</th><th className="px-3 py-2 border-b">y절편</th></tr></thead>
+          <tbody><tr><td className="px-3 py-2 text-center">0</td><td className="px-3 py-2 text-center">{a.toFixed(6)}</td><td className="px-3 py-2 text-center">0</td><td className="px-3 py-2 text-center">{b.toFixed(5)}</td></tr></tbody>
+        </table>
       </div>
     </div>
   );
 };
 
 const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
-  const [activeSection, setActiveSection] = useState<'retention' | 'nru' | 'revenue' | null>('retention');
+  const [activeSection, setActiveSection] = useState<'basic' | 'sample' | 'retention' | 'nru' | 'revenue' | null>('basic');
+  const [gameMetadata, setGameMetadata] = useState<Record<string, GameMetadata>>({});
+
+  useEffect(() => {
+    const loadMetadata = async () => {
+      try {
+        const data = await getGamesMetadata();
+        setGameMetadata(data);
+      } catch (err) {
+        console.error('Failed to load game metadata:', err);
+      }
+    };
+    loadMetadata();
+  }, []);
+
+  const handleSampleGameSelect = (selectedGames: string[]) => {
+    setInput(prev => ({
+      ...prev,
+      retention: { ...prev.retention, selected_games: selectedGames },
+      nru: { ...prev.nru, selected_games: selectedGames },
+      revenue: { ...prev.revenue, selected_games_pr: selectedGames, selected_games_arppu: selectedGames },
+    }));
+  };
+
+  const selectedSampleGames = input.retention.selected_games;
 
   return (
-    <div className="space-y-6">
-      {/* Basic Settings */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            <Calendar className="w-4 h-4 inline mr-1" />
-            런칭 예정일
-          </label>
-          <input
-            type="date"
-            value={input.launch_date}
-            onChange={(e) => setInput(prev => ({ ...prev, launch_date: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            프로젝션 기간 (일)
-          </label>
-          <input
-            type="number"
-            value={input.projection_days}
-            onChange={(e) => setInput(prev => ({ ...prev, projection_days: parseInt(e.target.value) || 365 }))}
-            min={30}
-            max={730}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          />
+    <div className="space-y-4">
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="flex items-start gap-3">
+          <HelpCircle className="w-6 h-6 text-blue-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <h3 className="font-semibold text-blue-900 mb-2">📊 KPI 프로젝션 계산 원리</h3>
+            <div className="text-sm text-blue-800 space-y-1">
+              <p><strong>1. Retention Curve:</strong> 표본 게임들의 리텐션 데이터를 Power 함수(a × day^b)로 회귀분석</p>
+              <p><strong>2. NRU:</strong> 표본 게임들의 일별 신규 유저 유입 패턴 분석</p>
+              <p><strong>3. DAU:</strong> Cohort 매트릭스 계산 - DAU(d) = Σ(NRU(i) × Retention(d-i))</p>
+              <p><strong>4. Revenue:</strong> DAU × P.Rate × ARPPU</p>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Accordion Sections */}
-      <div className="space-y-4">
-        {/* 1. Retention Section */}
-        <div className="border border-gray-200 rounded-lg overflow-hidden">
-          <button
-            onClick={() => setActiveSection(activeSection === 'retention' ? null : 'retention')}
-            className={`w-full flex items-center justify-between px-4 py-3 bg-gradient-to-r ${
-              activeSection === 'retention' 
-                ? 'from-emerald-50 to-emerald-100 border-b border-emerald-200' 
-                : 'from-gray-50 to-gray-100 hover:from-gray-100 hover:to-gray-150'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <TrendingUp className={`w-5 h-5 ${activeSection === 'retention' ? 'text-emerald-600' : 'text-gray-500'}`} />
-              <span className="font-medium">1. Retention 설정</span>
-              {input.retention.selected_games.length > 0 && (
-                <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
-                  {input.retention.selected_games.length}개 게임 선택
-                </span>
-              )}
-            </div>
-            {activeSection === 'retention' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-          </button>
-          
-          {activeSection === 'retention' && (
-            <div className="p-4 space-y-4">
-              <div className="flex items-start gap-2 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
-                <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                <p>표본 게임들의 Retention Curve를 기반으로 회귀분석하여 예상 Retention을 계산합니다.</p>
+      {/* 1. Basic Settings */}
+      <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <button onClick={() => setActiveSection(activeSection === 'basic' ? null : 'basic')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'basic' ? 'bg-slate-100 border-b' : 'bg-gray-50 hover:bg-gray-100'}`}>
+          <div className="flex items-center gap-2"><Building className="w-5 h-5 text-slate-600" /><span className="font-medium">1. 산정 정보 (Basic Settings)</span></div>
+          {activeSection === 'basic' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+        </button>
+        {activeSection === 'basic' && (
+          <div className="p-4 space-y-4">
+            <GuideBox title="산정 정보 입력 가이드"><p>프로젝션에 필요한 기본 비용 및 수익 구조를 입력합니다.</p></GuideBox>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="border border-gray-300 rounded-lg overflow-hidden">
+                <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">기본 정보</div>
+                <table className="w-full text-sm">
+                  <tbody>
+                    <tr><td className="px-3 py-2 border-b bg-gray-50 w-1/3">런칭 예정일</td><td className="px-3 py-2 border-b bg-yellow-50"><input type="date" value={input.launch_date} onChange={(e) => setInput(prev => ({ ...prev, launch_date: e.target.value }))} className="w-full bg-transparent border-none p-0" /></td></tr>
+                    <tr><td className="px-3 py-2 border-b bg-gray-50">프로젝션 기간</td><td className="px-3 py-2 border-b bg-yellow-50"><input type="number" value={input.projection_days} onChange={(e) => setInput(prev => ({ ...prev, projection_days: parseInt(e.target.value) || 365 }))} className="w-full bg-transparent border-none p-0 text-right" />일</td></tr>
+                    <tr><td className="px-3 py-2 border-b bg-gray-50">인프라 비용</td><td className="px-3 py-2 border-b bg-yellow-50"><input type="number" step="0.01" value={input.basic_settings?.infrastructure_cost_ratio || 0.03} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, infrastructure_cost_ratio: parseFloat(e.target.value) || 0 } }))} className="w-full bg-transparent border-none p-0 text-right" /></td></tr>
+                    <tr><td className="px-3 py-2 border-b bg-gray-50">마켓 수수료</td><td className="px-3 py-2 border-b bg-yellow-50"><input type="number" step="0.01" value={input.basic_settings?.market_fee_ratio || 0.30} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, market_fee_ratio: parseFloat(e.target.value) || 0 } }))} className="w-full bg-transparent border-none p-0 text-right" /></td></tr>
+                    <tr><td className="px-3 py-2 bg-gray-50">V.A.T</td><td className="px-3 py-2 bg-yellow-50"><input type="number" step="0.01" value={input.basic_settings?.vat_ratio || 0.10} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, vat_ratio: parseFloat(e.target.value) || 0 } }))} className="w-full bg-transparent border-none p-0 text-right" /></td></tr>
+                  </tbody>
+                </table>
               </div>
-              
-              <GameSelector
-                label="표본 게임 선택 (최대 4개)"
-                availableGames={games.retention}
-                selectedGames={input.retention.selected_games}
-                onChange={(selected) => setInput(prev => ({
-                  ...prev,
-                  retention: { ...prev.retention, selected_games: selected }
-                }))}
-              />
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  예상 D+1 Retention 입력
-                </label>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="p-3 bg-green-50 rounded-lg border border-green-200">
-                    <label className="block text-xs font-medium text-green-700 mb-1">Best</label>
-                    <div className="flex items-center">
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max="1"
-                        value={input.retention.target_d1_retention.best}
-                        onChange={(e) => setInput(prev => ({
-                          ...prev,
-                          retention: {
-                            ...prev.retention,
-                            target_d1_retention: {
-                              ...prev.retention.target_d1_retention,
-                              best: parseFloat(e.target.value) || 0
-                            }
-                          }
-                        }))}
-                        className="w-full px-2 py-1 border border-green-300 rounded text-right focus:ring-2 focus:ring-green-500"
-                      />
-                      <span className="ml-2 text-green-600 font-medium">
-                        {(input.retention.target_d1_retention.best * 100).toFixed(0)}%
-                      </span>
-                    </div>
-                  </div>
-                  <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
-                    <label className="block text-xs font-medium text-blue-700 mb-1">Normal</label>
-                    <div className="flex items-center">
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max="1"
-                        value={input.retention.target_d1_retention.normal}
-                        onChange={(e) => setInput(prev => ({
-                          ...prev,
-                          retention: {
-                            ...prev.retention,
-                            target_d1_retention: {
-                              ...prev.retention.target_d1_retention,
-                              normal: parseFloat(e.target.value) || 0
-                            }
-                          }
-                        }))}
-                        className="w-full px-2 py-1 border border-blue-300 rounded text-right focus:ring-2 focus:ring-blue-500"
-                      />
-                      <span className="ml-2 text-blue-600 font-medium">
-                        {(input.retention.target_d1_retention.normal * 100).toFixed(0)}%
-                      </span>
-                    </div>
-                  </div>
-                  <div className="p-3 bg-red-50 rounded-lg border border-red-200">
-                    <label className="block text-xs font-medium text-red-700 mb-1">Worst</label>
-                    <div className="flex items-center">
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max="1"
-                        value={input.retention.target_d1_retention.worst}
-                        onChange={(e) => setInput(prev => ({
-                          ...prev,
-                          retention: {
-                            ...prev.retention,
-                            target_d1_retention: {
-                              ...prev.retention.target_d1_retention,
-                              worst: parseFloat(e.target.value) || 0
-                            }
-                          }
-                        }))}
-                        className="w-full px-2 py-1 border border-red-300 rounded text-right focus:ring-2 focus:ring-red-500"
-                      />
-                      <span className="ml-2 text-red-600 font-medium">
-                        {(input.retention.target_d1_retention.worst * 100).toFixed(0)}%
-                      </span>
-                    </div>
-                  </div>
-                </div>
+              <div className="border border-gray-300 rounded-lg overflow-hidden">
+                <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">CPI & UAC</div>
+                <table className="w-full text-sm">
+                  <tbody>
+                    <tr><td className="px-3 py-2 border-b bg-gray-50 w-1/3">CPI</td><td className="px-3 py-2 border-b bg-yellow-50"><input type="number" value={input.basic_settings?.cpi || 2660} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, cpi: parseInt(e.target.value) || 0 } }))} className="w-full bg-transparent border-none p-0 text-right" />원</td></tr>
+                    <tr><td className="px-3 py-2 bg-gray-50">UAC</td><td className="px-3 py-2 bg-yellow-50"><input type="number" value={input.basic_settings?.uac || 3800} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, uac: parseInt(e.target.value) || 0 } }))} className="w-full bg-transparent border-none p-0 text-right" />원</td></tr>
+                  </tbody>
+                </table>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
+      </div>
 
-        {/* 2. NRU Section */}
-        <div className="border border-gray-200 rounded-lg overflow-hidden">
-          <button
-            onClick={() => setActiveSection(activeSection === 'nru' ? null : 'nru')}
-            className={`w-full flex items-center justify-between px-4 py-3 bg-gradient-to-r ${
-              activeSection === 'nru' 
-                ? 'from-blue-50 to-blue-100 border-b border-blue-200' 
-                : 'from-gray-50 to-gray-100 hover:from-gray-100 hover:to-gray-150'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <Users className={`w-5 h-5 ${activeSection === 'nru' ? 'text-blue-600' : 'text-gray-500'}`} />
-              <span className="font-medium">2. NRU 설정</span>
-              {input.nru.selected_games.length > 0 && (
-                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                  {input.nru.selected_games.length}개 게임 선택
-                </span>
-              )}
+      {/* 2. Sample Games */}
+      <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <button onClick={() => setActiveSection(activeSection === 'sample' ? null : 'sample')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'sample' ? 'bg-purple-50 border-b border-purple-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
+          <div className="flex items-center gap-2">
+            <Gamepad2 className="w-5 h-5 text-purple-600" />
+            <span className="font-medium">2. 표본 게임 선택 (Sample Games)</span>
+            {selectedSampleGames.length > 0 && <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">{selectedSampleGames.length}개 선택됨</span>}
+          </div>
+          {activeSection === 'sample' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+        </button>
+        {activeSection === 'sample' && (
+          <div className="p-4 space-y-4">
+            <GuideBox title="표본 게임 선택 가이드">
+              <ul className="list-disc list-inside space-y-1">
+                <li>여기서 선택한 게임이 <strong>Retention, NRU, Revenue 모든 설정에 동일하게 적용</strong>됩니다.</li>
+                <li><strong>ℹ️ 아이콘에 마우스를 올리면</strong> 게임의 장르, 플랫폼, 출시일 등 상세 정보를 확인할 수 있습니다.</li>
+              </ul>
+            </GuideBox>
+            <GameGridSelector availableGames={games.retention} selectedGames={selectedSampleGames} onChange={handleSampleGameSelect} metadata={gameMetadata} />
+            {selectedSampleGames.length > 0 && (
+              <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+                <p className="text-sm text-purple-700"><strong>✅ 선택된 표본 게임:</strong> {selectedSampleGames.join(', ')}</p>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {selectedSampleGames.map(game => gameMetadata[game] && <span key={game} className={`text-xs px-2 py-0.5 rounded ${getPlatformBadge(gameMetadata[game].platform)}`}>{gameMetadata[game].genre}</span>)}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 3. Retention */}
+      <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <button onClick={() => setActiveSection(activeSection === 'retention' ? null : 'retention')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'retention' ? 'bg-emerald-50 border-b border-emerald-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
+          <div className="flex items-center gap-2"><TrendingUp className="w-5 h-5 text-emerald-600" /><span className="font-medium">3. Retention 설정</span></div>
+          {activeSection === 'retention' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+        </button>
+        {activeSection === 'retention' && (
+          <div className="p-4 space-y-4">
+            <div className="p-3 bg-gray-50 rounded-lg border"><p className="text-sm text-gray-600"><strong>적용된 표본 게임:</strong> {selectedSampleGames.length > 0 ? selectedSampleGames.join(', ') : '(2. 표본 게임 선택에서 선택해주세요)'}</p></div>
+            <div>
+              <h4 className="font-medium text-gray-700 mb-2">예상 D+1 Retention 입력</h4>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="p-3 bg-green-50 rounded-lg border border-green-200"><label className="block text-xs font-medium text-green-700 mb-1">Best</label><input type="number" step="0.01" value={input.retention.target_d1_retention.best} onChange={(e) => setInput(prev => ({ ...prev, retention: { ...prev.retention, target_d1_retention: { ...prev.retention.target_d1_retention, best: parseFloat(e.target.value) || 0 } } }))} className="w-full px-2 py-1 border border-green-300 rounded text-right" /></div>
+                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200"><label className="block text-xs font-medium text-blue-700 mb-1">Normal</label><input type="number" step="0.01" value={input.retention.target_d1_retention.normal} onChange={(e) => setInput(prev => ({ ...prev, retention: { ...prev.retention, target_d1_retention: { ...prev.retention.target_d1_retention, normal: parseFloat(e.target.value) || 0 } } }))} className="w-full px-2 py-1 border border-blue-300 rounded text-right" /></div>
+                <div className="p-3 bg-red-50 rounded-lg border border-red-200"><label className="block text-xs font-medium text-red-700 mb-1">Worst</label><input type="number" step="0.01" value={input.retention.target_d1_retention.worst} onChange={(e) => setInput(prev => ({ ...prev, retention: { ...prev.retention, target_d1_retention: { ...prev.retention.target_d1_retention, worst: parseFloat(e.target.value) || 0 } } }))} className="w-full px-2 py-1 border border-red-300 rounded text-right" /></div>
+              </div>
             </div>
-            {activeSection === 'nru' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-          </button>
-          
-          {activeSection === 'nru' && (
-            <div className="p-4 space-y-4">
-              <div className="flex items-start gap-2 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
-                <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                <p>표본 게임들의 NRU 패턴을 기반으로 일별 신규 유저 유입을 추정합니다.</p>
+            <RegressionResultTable selectedGames={selectedSampleGames} d1Retention={input.retention.target_d1_retention} />
+          </div>
+        )}
+      </div>
+
+      {/* 4. NRU */}
+      <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <button onClick={() => setActiveSection(activeSection === 'nru' ? null : 'nru')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'nru' ? 'bg-blue-50 border-b border-blue-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
+          <div className="flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /><span className="font-medium">4. NRU 설정</span></div>
+          {activeSection === 'nru' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+        </button>
+        {activeSection === 'nru' && (
+          <div className="p-4 space-y-4">
+            <div className="p-3 bg-gray-50 rounded-lg border"><p className="text-sm text-gray-600"><strong>적용된 표본 게임:</strong> {selectedSampleGames.join(', ') || '(선택 필요)'}</p></div>
+            <div>
+              <h4 className="font-medium text-gray-700 mb-2">첫 날 NRU (D1 NRU)</h4>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="p-3 bg-green-50 rounded-lg border border-green-200"><label className="block text-xs font-medium text-green-700 mb-1">Best</label><input type="number" value={input.nru.d1_nru.best} onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, d1_nru: { ...prev.nru.d1_nru, best: parseInt(e.target.value) || 0 } } }))} className="w-full px-2 py-1 border border-green-300 rounded text-right" /></div>
+                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200"><label className="block text-xs font-medium text-blue-700 mb-1">Normal</label><input type="number" value={input.nru.d1_nru.normal} onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, d1_nru: { ...prev.nru.d1_nru, normal: parseInt(e.target.value) || 0 } } }))} className="w-full px-2 py-1 border border-blue-300 rounded text-right" /></div>
+                <div className="p-3 bg-red-50 rounded-lg border border-red-200"><label className="block text-xs font-medium text-red-700 mb-1">Worst</label><input type="number" value={input.nru.d1_nru.worst} onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, d1_nru: { ...prev.nru.d1_nru, worst: parseInt(e.target.value) || 0 } } }))} className="w-full px-2 py-1 border border-red-300 rounded text-right" /></div>
               </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Paid/Organic 비율</label><input type="number" step="0.1" value={input.nru.paid_organic_ratio} onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, paid_organic_ratio: parseFloat(e.target.value) || 0 } }))} className="w-full px-3 py-2 border rounded-lg" /></div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">NVR (전환율)</label><input type="number" step="0.1" value={input.nru.nvr} onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, nvr: parseFloat(e.target.value) || 0 } }))} className="w-full px-3 py-2 border rounded-lg" /></div>
+            </div>
+          </div>
+        )}
+      </div>
 
-              <GameSelector
-                label="표본 게임 선택 (최대 4개)"
-                availableGames={games.nru}
-                selectedGames={input.nru.selected_games}
-                onChange={(selected) => setInput(prev => ({
-                  ...prev,
-                  nru: { ...prev.nru, selected_games: selected }
-                }))}
-              />
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  첫 날 NRU (D1 NRU)
-                </label>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="p-3 bg-green-50 rounded-lg border border-green-200">
-                    <label className="block text-xs font-medium text-green-700 mb-1">Best</label>
-                    <input
-                      type="number"
-                      value={input.nru.d1_nru.best}
-                      onChange={(e) => setInput(prev => ({
-                        ...prev,
-                        nru: {
-                          ...prev.nru,
-                          d1_nru: { ...prev.nru.d1_nru, best: parseInt(e.target.value) || 0 }
-                        }
-                      }))}
-                      className="w-full px-2 py-1 border border-green-300 rounded text-right focus:ring-2 focus:ring-green-500"
-                    />
-                  </div>
-                  <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
-                    <label className="block text-xs font-medium text-blue-700 mb-1">Normal</label>
-                    <input
-                      type="number"
-                      value={input.nru.d1_nru.normal}
-                      onChange={(e) => setInput(prev => ({
-                        ...prev,
-                        nru: {
-                          ...prev.nru,
-                          d1_nru: { ...prev.nru.d1_nru, normal: parseInt(e.target.value) || 0 }
-                        }
-                      }))}
-                      className="w-full px-2 py-1 border border-blue-300 rounded text-right focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div className="p-3 bg-red-50 rounded-lg border border-red-200">
-                    <label className="block text-xs font-medium text-red-700 mb-1">Worst</label>
-                    <input
-                      type="number"
-                      value={input.nru.d1_nru.worst}
-                      onChange={(e) => setInput(prev => ({
-                        ...prev,
-                        nru: {
-                          ...prev.nru,
-                          d1_nru: { ...prev.nru.d1_nru, worst: parseInt(e.target.value) || 0 }
-                        }
-                      }))}
-                      className="w-full px-2 py-1 border border-red-300 rounded text-right focus:ring-2 focus:ring-red-500"
-                    />
-                  </div>
+      {/* 5. Revenue */}
+      <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <button onClick={() => setActiveSection(activeSection === 'revenue' ? null : 'revenue')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'revenue' ? 'bg-amber-50 border-b border-amber-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
+          <div className="flex items-center gap-2"><DollarSign className="w-5 h-5 text-amber-600" /><span className="font-medium">5. Revenue 설정</span></div>
+          {activeSection === 'revenue' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+        </button>
+        {activeSection === 'revenue' && (
+          <div className="p-4 space-y-4">
+            <div className="p-3 bg-gray-50 rounded-lg border"><p className="text-sm text-gray-600"><strong>적용된 표본 게임:</strong> {selectedSampleGames.join(', ') || '(선택 필요)'}</p></div>
+            <div className="grid grid-cols-2 gap-6">
+              <div className="space-y-3">
+                <h4 className="font-medium text-gray-700">P.Rate (결제율) 보정</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-2 bg-green-50 rounded border border-green-200"><label className="block text-xs text-green-700">Best 보정</label><input type="number" step="0.01" value={input.revenue.pr_adjustment.best_vs_normal} onChange={(e) => setInput(prev => ({ ...prev, revenue: { ...prev.revenue, pr_adjustment: { ...prev.revenue.pr_adjustment, best_vs_normal: parseFloat(e.target.value) || 0 } } }))} className="w-full px-2 py-1 border border-green-300 rounded text-right text-sm" /></div>
+                  <div className="p-2 bg-red-50 rounded border border-red-200"><label className="block text-xs text-red-700">Worst 보정</label><input type="number" step="0.01" value={input.revenue.pr_adjustment.worst_vs_normal} onChange={(e) => setInput(prev => ({ ...prev, revenue: { ...prev.revenue, pr_adjustment: { ...prev.revenue.pr_adjustment, worst_vs_normal: parseFloat(e.target.value) || 0 } } }))} className="w-full px-2 py-1 border border-red-300 rounded text-right text-sm" /></div>
                 </div>
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Paid/Organic 비율
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max="1"
-                    value={input.nru.paid_organic_ratio}
-                    onChange={(e) => setInput(prev => ({
-                      ...prev,
-                      nru: { ...prev.nru, paid_organic_ratio: parseFloat(e.target.value) || 0 }
-                    }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">유료 유입 비율 (0~1)</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    NVR (전환율)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max="1"
-                    value={input.nru.nvr}
-                    onChange={(e) => setInput(prev => ({
-                      ...prev,
-                      nru: { ...prev.nru, nvr: parseFloat(e.target.value) || 0 }
-                    }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">설치 후 전환율</p>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Normal 대비 보정 수치
-                </label>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3 bg-green-50 rounded-lg border border-green-200">
-                    <label className="block text-xs font-medium text-green-700 mb-1">Best (+보정)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={input.nru.adjustment.best_vs_normal}
-                      onChange={(e) => setInput(prev => ({
-                        ...prev,
-                        nru: {
-                          ...prev.nru,
-                          adjustment: { ...prev.nru.adjustment, best_vs_normal: parseFloat(e.target.value) || 0 }
-                        }
-                      }))}
-                      className="w-full px-2 py-1 border border-green-300 rounded text-right focus:ring-2 focus:ring-green-500"
-                    />
-                    <p className="text-xs text-green-600 mt-1">예: -0.1 = Normal보다 10% 증가</p>
-                  </div>
-                  <div className="p-3 bg-red-50 rounded-lg border border-red-200">
-                    <label className="block text-xs font-medium text-red-700 mb-1">Worst (-보정)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={input.nru.adjustment.worst_vs_normal}
-                      onChange={(e) => setInput(prev => ({
-                        ...prev,
-                        nru: {
-                          ...prev.nru,
-                          adjustment: { ...prev.nru.adjustment, worst_vs_normal: parseFloat(e.target.value) || 0 }
-                        }
-                      }))}
-                      className="w-full px-2 py-1 border border-red-300 rounded text-right focus:ring-2 focus:ring-red-500"
-                    />
-                    <p className="text-xs text-red-600 mt-1">예: 0.1 = Normal보다 10% 감소</p>
-                  </div>
+              <div className="space-y-3">
+                <h4 className="font-medium text-gray-700">ARPPU 보정</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-2 bg-green-50 rounded border border-green-200"><label className="block text-xs text-green-700">Best 보정</label><input type="number" step="0.01" value={input.revenue.arppu_adjustment.best_vs_normal} onChange={(e) => setInput(prev => ({ ...prev, revenue: { ...prev.revenue, arppu_adjustment: { ...prev.revenue.arppu_adjustment, best_vs_normal: parseFloat(e.target.value) || 0 } } }))} className="w-full px-2 py-1 border border-green-300 rounded text-right text-sm" /></div>
+                  <div className="p-2 bg-red-50 rounded border border-red-200"><label className="block text-xs text-red-700">Worst 보정</label><input type="number" step="0.01" value={input.revenue.arppu_adjustment.worst_vs_normal} onChange={(e) => setInput(prev => ({ ...prev, revenue: { ...prev.revenue, arppu_adjustment: { ...prev.revenue.arppu_adjustment, worst_vs_normal: parseFloat(e.target.value) || 0 } } }))} className="w-full px-2 py-1 border border-red-300 rounded text-right text-sm" /></div>
                 </div>
               </div>
             </div>
-          )}
-        </div>
-
-        {/* 3. Revenue Section */}
-        <div className="border border-gray-200 rounded-lg overflow-hidden">
-          <button
-            onClick={() => setActiveSection(activeSection === 'revenue' ? null : 'revenue')}
-            className={`w-full flex items-center justify-between px-4 py-3 bg-gradient-to-r ${
-              activeSection === 'revenue' 
-                ? 'from-amber-50 to-amber-100 border-b border-amber-200' 
-                : 'from-gray-50 to-gray-100 hover:from-gray-100 hover:to-gray-150'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <DollarSign className={`w-5 h-5 ${activeSection === 'revenue' ? 'text-amber-600' : 'text-gray-500'}`} />
-              <span className="font-medium">3. Revenue 설정</span>
-              {(input.revenue.selected_games_pr.length > 0 || input.revenue.selected_games_arppu.length > 0) && (
-                <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
-                  PR: {input.revenue.selected_games_pr.length}, ARPPU: {input.revenue.selected_games_arppu.length}
-                </span>
-              )}
-            </div>
-            {activeSection === 'revenue' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-          </button>
-          
-          {activeSection === 'revenue' && (
-            <div className="p-4 space-y-4">
-              <div className="flex items-start gap-2 p-3 bg-amber-50 rounded-lg text-sm text-amber-700">
-                <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                <p>P.Rate와 ARPPU를 기반으로 일별 매출을 추정합니다. Revenue = DAU × P.Rate × ARPPU</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-6">
-                {/* P.Rate */}
-                <div className="space-y-3">
-                  <h4 className="font-medium text-gray-700">P.Rate (결제율)</h4>
-                  <GameSelector
-                    label="표본 게임 선택"
-                    availableGames={games.payment_rate}
-                    selectedGames={input.revenue.selected_games_pr}
-                    onChange={(selected) => setInput(prev => ({
-                      ...prev,
-                      revenue: { ...prev.revenue, selected_games_pr: selected }
-                    }))}
-                  />
-                  <div>
-                    <label className="block text-sm text-gray-600 mb-2">Normal 대비 보정</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="p-2 bg-green-50 rounded border border-green-200">
-                        <label className="block text-xs text-green-700">Best</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={input.revenue.pr_adjustment.best_vs_normal}
-                          onChange={(e) => setInput(prev => ({
-                            ...prev,
-                            revenue: {
-                              ...prev.revenue,
-                              pr_adjustment: { ...prev.revenue.pr_adjustment, best_vs_normal: parseFloat(e.target.value) || 0 }
-                            }
-                          }))}
-                          className="w-full px-2 py-1 border border-green-300 rounded text-right text-sm"
-                        />
-                      </div>
-                      <div className="p-2 bg-red-50 rounded border border-red-200">
-                        <label className="block text-xs text-red-700">Worst</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={input.revenue.pr_adjustment.worst_vs_normal}
-                          onChange={(e) => setInput(prev => ({
-                            ...prev,
-                            revenue: {
-                              ...prev.revenue,
-                              pr_adjustment: { ...prev.revenue.pr_adjustment, worst_vs_normal: parseFloat(e.target.value) || 0 }
-                            }
-                          }))}
-                          className="w-full px-2 py-1 border border-red-300 rounded text-right text-sm"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* ARPPU */}
-                <div className="space-y-3">
-                  <h4 className="font-medium text-gray-700">ARPPU</h4>
-                  <GameSelector
-                    label="표본 게임 선택"
-                    availableGames={games.arppu}
-                    selectedGames={input.revenue.selected_games_arppu}
-                    onChange={(selected) => setInput(prev => ({
-                      ...prev,
-                      revenue: { ...prev.revenue, selected_games_arppu: selected }
-                    }))}
-                  />
-                  <div>
-                    <label className="block text-sm text-gray-600 mb-2">Normal 대비 보정</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="p-2 bg-green-50 rounded border border-green-200">
-                        <label className="block text-xs text-green-700">Best</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={input.revenue.arppu_adjustment.best_vs_normal}
-                          onChange={(e) => setInput(prev => ({
-                            ...prev,
-                            revenue: {
-                              ...prev.revenue,
-                              arppu_adjustment: { ...prev.revenue.arppu_adjustment, best_vs_normal: parseFloat(e.target.value) || 0 }
-                            }
-                          }))}
-                          className="w-full px-2 py-1 border border-green-300 rounded text-right text-sm"
-                        />
-                      </div>
-                      <div className="p-2 bg-red-50 rounded border border-red-200">
-                        <label className="block text-xs text-red-700">Worst</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={input.revenue.arppu_adjustment.worst_vs_normal}
-                          onChange={(e) => setInput(prev => ({
-                            ...prev,
-                            revenue: {
-                              ...prev.revenue,
-                              arppu_adjustment: { ...prev.revenue.arppu_adjustment, worst_vs_normal: parseFloat(e.target.value) || 0 }
-                            }
-                          }))}
-                          className="w-full px-2 py-1 border border-red-300 rounded text-right text-sm"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

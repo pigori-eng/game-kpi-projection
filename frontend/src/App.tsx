@@ -11,8 +11,7 @@ import {
   ChevronDown,
   Play,
   Download,
-  Upload,
-  Settings
+  Settings,
 } from 'lucide-react';
 import InputPanel from './components/InputPanel';
 import ResultsPanel from './components/ResultsPanel';
@@ -20,7 +19,8 @@ import type {
   ProjectionInput, 
   ProjectionResult, 
   GameListResponse,
-  TabType 
+  TabType,
+  BasicSettings
 } from './types';
 import { getAvailableGames, calculateProjection, getDefaultConfig } from './utils/api';
 
@@ -36,6 +36,21 @@ function App() {
     projection: false,
     rawData: false,
   });
+
+  // Default basic settings
+  const defaultBasicSettings: BasicSettings = {
+    launch_date: '2026-11-12',
+    infrastructure_cost_ratio: 0.03,
+    market_fee_ratio: 0.30,
+    vat_ratio: 0.10,
+    hr_cost_monthly: 1720000000,
+    sustaining_mkt_ratio: 0.07,
+    launch_mkt_best: 4319591521,
+    launch_mkt_normal: 3926901383,
+    launch_mkt_worst: 3534211245,
+    cpi: 2660,
+    uac: 3800,
+  };
 
   // Input state
   const [input, setInput] = useState<ProjectionInput>({
@@ -58,6 +73,7 @@ function App() {
       pr_adjustment: { best_vs_normal: -0.03, worst_vs_normal: 0.01 },
       arppu_adjustment: { best_vs_normal: -0.05, worst_vs_normal: 0.05 },
     },
+    basic_settings: defaultBasicSettings,
   });
 
   useEffect(() => {
@@ -73,29 +89,28 @@ function App() {
       ]);
       setGames(gamesData);
       
-      // Apply default config
       setInput(prev => ({
         ...prev,
-        launch_date: configData.basic_settings.launch_date.split('T')[0],
+        launch_date: configData.basic_settings.launch_date?.split('T')[0] || '2026-11-12',
         retention: {
           ...prev.retention,
-          target_d1_retention: configData.retention_settings,
+          target_d1_retention: configData.retention_settings || prev.retention.target_d1_retention,
         },
         nru: {
           ...prev.nru,
-          d1_nru: configData.nru_settings.d1_nru,
-          paid_organic_ratio: configData.nru_settings.paid_organic_ratio,
-          nvr: configData.nru_settings.nvr,
-          adjustment: configData.nru_settings.adjustment,
+          d1_nru: configData.nru_settings?.d1_nru || prev.nru.d1_nru,
+          paid_organic_ratio: configData.nru_settings?.paid_organic_ratio || prev.nru.paid_organic_ratio,
+          nvr: configData.nru_settings?.nvr || prev.nru.nvr,
+          adjustment: configData.nru_settings?.adjustment || prev.nru.adjustment,
         },
         revenue: {
           ...prev.revenue,
-          pr_adjustment: configData.revenue_settings.pr_adjustment,
-          arppu_adjustment: configData.revenue_settings.arppu_adjustment,
+          pr_adjustment: configData.revenue_settings?.pr_adjustment || prev.revenue.pr_adjustment,
+          arppu_adjustment: configData.revenue_settings?.arppu_adjustment || prev.revenue.arppu_adjustment,
         },
       }));
     } catch (err) {
-      setError('데이터 로딩 중 오류가 발생했습니다.');
+      setError('데이터 로딩 중 오류가 발생했습니다. 서버 연결을 확인해주세요.');
       console.error(err);
     } finally {
       setLoading(false);
@@ -103,21 +118,8 @@ function App() {
   };
 
   const handleCalculate = async () => {
-    // Validate input
     if (input.retention.selected_games.length === 0) {
-      setError('Retention 표본 게임을 최소 1개 이상 선택해주세요.');
-      return;
-    }
-    if (input.nru.selected_games.length === 0) {
-      setError('NRU 표본 게임을 최소 1개 이상 선택해주세요.');
-      return;
-    }
-    if (input.revenue.selected_games_pr.length === 0) {
-      setError('P.Rate 표본 게임을 최소 1개 이상 선택해주세요.');
-      return;
-    }
-    if (input.revenue.selected_games_arppu.length === 0) {
-      setError('ARPPU 표본 게임을 최소 1개 이상 선택해주세요.');
+      setError('표본 게임을 최소 1개 이상 선택해주세요. (Retention 설정에서 선택)');
       return;
     }
 
@@ -129,8 +131,9 @@ function App() {
       setResults(result);
       setActiveTab('overview');
       setExpandedSections(prev => ({ ...prev, overview: true }));
-    } catch (err: any) {
-      setError(err.response?.data?.detail || '계산 중 오류가 발생했습니다.');
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : '계산 중 오류가 발생했습니다.';
+      setError(errorMessage);
       console.error(err);
     } finally {
       setCalculating(false);
@@ -192,15 +195,20 @@ function App() {
               </div>
               <div>
                 <h1 className="text-xl font-bold text-gray-900">Game KPI Projection Tool</h1>
-                <p className="text-sm text-gray-500">게임 지표 프로젝션 분석</p>
+                <p className="text-sm text-gray-500">게임 지표 프로젝션 분석 (회귀분석 기반)</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
               {results && (
-                <button className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
-                  <Download className="w-4 h-4" />
-                  PDF Export
-                </button>
+                <>
+                  <button 
+                    onClick={() => window.print()}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    <Download className="w-4 h-4" />
+                    PDF Export
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -210,11 +218,11 @@ function App() {
       <div className="max-w-[1920px] mx-auto px-4 py-6">
         {/* Error Alert */}
         {error && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
-            {error}
+          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 flex justify-between items-center">
+            <span>{error}</span>
             <button 
               onClick={() => setError(null)}
-              className="ml-4 text-red-500 hover:text-red-700"
+              className="text-red-500 hover:text-red-700 font-bold"
             >
               ✕
             </button>
@@ -222,7 +230,7 @@ function App() {
         )}
 
         {/* Input Panel */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-6 print:hidden">
           <div className="p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <Settings className="w-5 h-5 text-blue-600" />
@@ -241,7 +249,7 @@ function App() {
               <button
                 onClick={handleCalculate}
                 disabled={calculating}
-                className="flex items-center gap-2 px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                className="flex items-center gap-2 px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium text-lg"
               >
                 {calculating ? (
                   <>
@@ -263,11 +271,11 @@ function App() {
         {results && (
           <div className="flex gap-6">
             {/* Sidebar */}
-            <div className="w-64 flex-shrink-0">
+            <div className="w-64 flex-shrink-0 print:hidden">
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 sticky top-6">
                 <div className="p-4">
                   <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                    Results
+                    📊 Results
                   </h3>
                   
                   {/* Overview Section */}
@@ -387,6 +395,7 @@ function App() {
                 results={results} 
                 activeTab={activeTab}
                 games={games}
+                basicSettings={input.basic_settings}
               />
             </div>
           </div>

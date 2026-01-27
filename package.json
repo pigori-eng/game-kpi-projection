@@ -1,0 +1,12 @@
+{
+  "name": "game-kpi-projection",
+  "version": "1.0.0",
+  "description": "Game KPI Projection Tool - 게임 지표 프로젝션 분석",
+  "type": "module",
+  "scripts": {
+    "dev": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "start:backend": "cd backend && uvicorn main:app --host 0.0.0.0 --port 8000",
+    "start:frontend": "cd frontend && npm run preview"
+  }
+}

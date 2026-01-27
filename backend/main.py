@@ -6,8 +6,9 @@ import numpy as np
 from scipy.optimize import curve_fit
 import json
 import os
+import httpx
 
-app = FastAPI(title="Game KPI Projection API", version="1.0.0")
+app = FastAPI(title="Game KPI Projection API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,6 +23,10 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 RAW_DATA_PATH = os.path.join(DATA_DIR, "raw_game_data.json")
 CONFIG_PATH = os.path.join(DATA_DIR, "default_config.json")
 
+# Gemini API Configuration
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+
 def load_raw_data():
     with open(RAW_DATA_PATH, 'r', encoding='utf-8') as f:
         return json.load(f)
@@ -33,7 +38,7 @@ def load_config():
 # Pydantic Models
 class RetentionInput(BaseModel):
     selected_games: List[str]
-    target_d1_retention: Dict[str, float]  # best, normal, worst
+    target_d1_retention: Dict[str, float]
 
 class NRUInput(BaseModel):
     selected_games: List[str]
@@ -56,16 +61,18 @@ class ProjectionInput(BaseModel):
     revenue: RevenueInput
     basic_settings: Optional[Dict[str, Any]] = None
 
+class AIInsightRequest(BaseModel):
+    projection_summary: Dict[str, Any]
+    analysis_type: str = "general"  # general, retention, nru, revenue, risk
+
 # Retention Curve: a * (day)^b
 def retention_curve(x, a, b):
     return a * np.power(x, b)
 
 def fit_retention_curve(retention_data: List[float]):
-    """Fit power law curve to retention data"""
     days = np.arange(1, len(retention_data) + 1)
     retention = np.array(retention_data)
     
-    # Filter out zeros and invalid values
     valid_mask = (retention > 0) & (retention <= 1)
     if np.sum(valid_mask) < 3:
         return None, None
@@ -79,12 +86,11 @@ def fit_retention_curve(retention_data: List[float]):
             bounds=([0, -2], [2, 0]),
             maxfev=5000
         )
-        return popt[0], popt[1]  # a, b
+        return popt[0], popt[1]
     except:
-        return retention_data[0], -0.5  # fallback
+        return retention_data[0], -0.5
 
 def calculate_retention_coefficients(selected_games: List[str], raw_data: dict):
-    """Calculate average a, b coefficients from selected games"""
     retention_games = raw_data['games']['retention']
     
     a_values = []
@@ -98,73 +104,67 @@ def calculate_retention_coefficients(selected_games: List[str], raw_data: dict):
                 b_values.append(b)
     
     if not a_values:
-        return 1.0, -0.5  # default
+        return 1.0, -0.5
     
     return np.mean(a_values), np.mean(b_values)
 
 def generate_retention_curve(a: float, b: float, target_d1: float, days: int = 365):
-    """Generate retention curve adjusted to target D+1 retention"""
-    # Adjust 'a' so that day 1 retention equals target_d1
-    adjusted_a = target_d1 / retention_curve(1, a, b) * a
+    base_d1 = retention_curve(1, a, b)
+    if base_d1 > 0:
+        scale_factor = target_d1 / base_d1
+    else:
+        scale_factor = 1.0
     
     curve = []
     for day in range(1, days + 1):
-        ret = retention_curve(day, adjusted_a, b)
-        curve.append(min(max(ret, 0), 1))  # Clamp to [0, 1]
+        ret = retention_curve(day, a, b) * scale_factor
+        curve.append(min(max(ret, 0.001), 1))
     
     return curve
 
-def calculate_nru_pattern(selected_games: List[str], raw_data: dict, adjustment: float = 0):
-    """Calculate NRU decay pattern from selected games"""
+def calculate_nru_pattern(selected_games: List[str], raw_data: dict):
     nru_games = raw_data['games']['nru']
     
-    # Find minimum length
-    min_len = 365
-    valid_games = []
-    for game in selected_games:
-        if game in nru_games:
-            valid_games.append(game)
-            min_len = min(min_len, len(nru_games[game]))
-    
+    valid_games = [g for g in selected_games if g in nru_games]
     if not valid_games:
-        return [1.0] * 365
+        return [0.98 ** i for i in range(365)]
     
-    # Calculate day-over-day change ratios
+    min_len = min(len(nru_games[g]) for g in valid_games)
+    min_len = min(min_len, 365)
+    
     daily_ratios = []
     for day in range(1, min_len):
         day_ratios = []
         for game in valid_games:
             data = nru_games[game]
-            if data[day-1] > 0:
+            if day < len(data) and data[day-1] > 0:
                 ratio = data[day] / data[day-1]
-                day_ratios.append(ratio)
+                if 0 < ratio < 2:
+                    day_ratios.append(ratio)
         if day_ratios:
-            avg_ratio = np.mean(day_ratios)
-            # Apply adjustment
-            adjusted_ratio = avg_ratio * (1 + adjustment)
-            daily_ratios.append(adjusted_ratio)
+            daily_ratios.append(np.mean(day_ratios))
         else:
-            daily_ratios.append(0.9)
+            daily_ratios.append(0.98)
     
-    # Extend to 365 days if needed
     while len(daily_ratios) < 364:
-        daily_ratios.append(daily_ratios[-1] if daily_ratios else 0.95)
+        daily_ratios.append(daily_ratios[-1] if daily_ratios else 0.98)
     
     return daily_ratios
 
 def generate_nru_series(d1_nru: int, daily_ratios: List[float], days: int = 365):
-    """Generate NRU series from D1 NRU and daily decay ratios"""
     nru_series = [d1_nru]
-    current_nru = d1_nru
+    current_nru = float(d1_nru)
     
     for i in range(min(len(daily_ratios), days - 1)):
         current_nru = current_nru * daily_ratios[i]
-        nru_series.append(max(int(current_nru), 0))
+        nru_series.append(max(int(current_nru), 1))
+    
+    while len(nru_series) < days:
+        nru_series.append(max(int(nru_series[-1] * 0.98), 1))
     
     return nru_series
 
-def calculate_pr_pattern(selected_games: List[str], raw_data: dict, adjustment: float = 0):
-    """Calculate payment rate pattern from selected games"""
+def calculate_pr_pattern(selected_games: List[str], raw_data: dict):
     pr_games = raw_data['games']['payment_rate']
     
     valid_games = [g for g in selected_games if g in pr_games]
@@ -172,20 +172,20 @@ def calculate_pr_pattern(selected_games: List[str], raw_data: dict, adjustment: 
         return [0.02] * 365
     
     min_len = min(len(pr_games[g]) for g in valid_games)
+    min_len = min(min_len, 365)
     
     pattern = []
     for day in range(min_len):
-        day_values = [pr_games[g][day] for g in valid_games if day < len(pr_games[g])]
+        day_values = [pr_games[g][day] for g in valid_games if day < len(pr_games[g]) and pr_games[g][day] > 0]
         avg_pr = np.mean(day_values) if day_values else 0.02
-        pattern.append(avg_pr * (1 + adjustment))
+        pattern.append(max(avg_pr, 0.001))
     
     while len(pattern) < 365:
         pattern.append(pattern[-1] if pattern else 0.02)
     
     return pattern[:365]
 
-def calculate_arppu_pattern(selected_games: List[str], raw_data: dict, adjustment: float = 0):
-    """Calculate ARPPU pattern from selected games"""
+def calculate_arppu_pattern(selected_games: List[str], raw_data: dict):
     arppu_games = raw_data['games']['arppu']
     
     valid_games = [g for g in selected_games if g in arppu_games]
@@ -193,12 +193,13 @@ def calculate_arppu_pattern(selected_games: List[str], raw_data: dict, adjustmen
         return [50000] * 365
     
     min_len = min(len(arppu_games[g]) for g in valid_games)
+    min_len = min(min_len, 365)
     
     pattern = []
     for day in range(min_len):
-        day_values = [arppu_games[g][day] for g in valid_games if day < len(arppu_games[g])]
+        day_values = [arppu_games[g][day] for g in valid_games if day < len(arppu_games[g]) and arppu_games[g][day] > 0]
         avg_arppu = np.mean(day_values) if day_values else 50000
-        pattern.append(avg_arppu * (1 + adjustment))
+        pattern.append(max(avg_arppu, 1000))
     
     while len(pattern) < 365:
         pattern.append(pattern[-1] if pattern else 50000)
@@ -206,23 +207,21 @@ def calculate_arppu_pattern(selected_games: List[str], raw_data: dict, adjustmen
     return pattern[:365]
 
 def calculate_dau_matrix(nru_series: List[int], retention_curve: List[float], days: int = 365):
-    """Calculate DAU using cohort-based matrix calculation"""
-    dau_matrix = np.zeros((days, days))
+    daily_dau = []
     
-    for cohort_day in range(days):
-        nru = nru_series[cohort_day] if cohort_day < len(nru_series) else 0
-        for active_day in range(cohort_day, days):
+    for active_day in range(days):
+        total_dau = 0
+        for cohort_day in range(active_day + 1):
             days_since_install = active_day - cohort_day
-            if days_since_install < len(retention_curve):
+            if cohort_day < len(nru_series) and days_since_install < len(retention_curve):
+                nru = nru_series[cohort_day]
                 retention = retention_curve[days_since_install]
-                dau_matrix[cohort_day, active_day] = nru * retention
+                total_dau += nru * retention
+        daily_dau.append(int(total_dau))
     
-    # Sum columns to get daily DAU
-    daily_dau = np.sum(dau_matrix, axis=0)
-    return daily_dau.tolist()
+    return daily_dau
 
 def calculate_revenue(dau: List[float], pr: List[float], arppu: List[float]):
-    """Calculate daily revenue"""
     revenue = []
     for i in range(len(dau)):
         pr_val = pr[i] if i < len(pr) else pr[-1]
@@ -230,14 +229,120 @@ def calculate_revenue(dau: List[float], pr: List[float], arppu: List[float]):
         revenue.append(dau[i] * pr_val * arppu_val)
     return revenue
 
+# Gemini AI Integration
+async def get_gemini_insight(prompt: str) -> str:
+    """Call Gemini API for AI insights"""
+    if not GEMINI_API_KEY:
+        return "AI 인사이트를 사용하려면 GEMINI_API_KEY 환경변수를 설정해주세요."
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{GEMINI_API_URL}?key={GEMINI_API_KEY}",
+                json={
+                    "contents": [{
+                        "parts": [{"text": prompt}]
+                    }],
+                    "generationConfig": {
+                        "temperature": 0.7,
+                        "maxOutputTokens": 1024
+                    }
+                },
+                timeout=30.0
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                return data["candidates"][0]["content"]["parts"][0]["text"]
+            else:
+                return f"AI 분석 오류: {response.status_code}"
+    except Exception as e:
+        return f"AI 연결 실패: {str(e)}"
+
+def create_insight_prompt(summary: Dict[str, Any], analysis_type: str) -> str:
+    """Create prompt for Gemini based on analysis type"""
+    
+    base_context = f"""
+당신은 게임 산업 전문 데이터 분석가입니다. 아래 게임 KPI 프로젝션 결과를 분석하고 인사이트를 제공해주세요.
+
+## 프로젝션 결과 요약:
+- 프로젝션 기간: {summary.get('projection_days', 365)}일
+- 런칭일: {summary.get('launch_date', 'N/A')}
+
+### Best 시나리오:
+- 총 Gross Revenue: {summary.get('best', {}).get('gross_revenue', 0):,.0f}원
+- 총 NRU: {summary.get('best', {}).get('total_nru', 0):,}명
+- Peak DAU: {summary.get('best', {}).get('peak_dau', 0):,}명
+- 평균 DAU: {summary.get('best', {}).get('average_dau', 0):,}명
+
+### Normal 시나리오:
+- 총 Gross Revenue: {summary.get('normal', {}).get('gross_revenue', 0):,.0f}원
+- 총 NRU: {summary.get('normal', {}).get('total_nru', 0):,}명
+- Peak DAU: {summary.get('normal', {}).get('peak_dau', 0):,}명
+- 평균 DAU: {summary.get('normal', {}).get('average_dau', 0):,}명
+
+### Worst 시나리오:
+- 총 Gross Revenue: {summary.get('worst', {}).get('gross_revenue', 0):,.0f}원
+- 총 NRU: {summary.get('worst', {}).get('total_nru', 0):,}명
+- Peak DAU: {summary.get('worst', {}).get('peak_dau', 0):,}명
+- 평균 DAU: {summary.get('worst', {}).get('average_dau', 0):,}명
+"""
+    
+    type_prompts = {
+        "general": """
+위 데이터를 바탕으로 다음을 분석해주세요:
+1. 전반적인 프로젝션 평가 (낙관적/현실적/비관적 시나리오 간 차이 분석)
+2. 주요 성과 지표에 대한 코멘트
+3. 의사결정자에게 권장하는 액션 아이템 3가지
+한국어로 간결하게 답변해주세요 (300자 이내).
+""",
+        "reliability": """
+이 프로젝션의 신뢰도를 종합적으로 평가해주세요:
+1. **신뢰도 점수** (100점 만점): 표본 데이터의 품질, Best/Normal/Worst 간 편차, 시장 일반적인 KPI 대비 현실성을 고려하여 점수 산정
+2. **신뢰도 등급** (A/B/C/D/F): 해당 점수에 맞는 등급
+3. **주요 신뢰도 영향 요인**: 신뢰도에 긍정적/부정적으로 영향을 미치는 요소 각 2개씩
+4. **신뢰도 향상을 위한 제안**: 프로젝션 정확도를 높이기 위해 추가로 검토해야 할 사항
+한국어로 답변해주세요 (400자 이내).
+""",
+        "retention": """
+리텐션 관점에서 분석해주세요:
+1. DAU 패턴이 건강한지 평가
+2. 리텐션 개선을 위한 구체적인 제안 2가지
+3. 비슷한 장르 게임 대비 예상 성과 평가
+한국어로 간결하게 답변해주세요 (300자 이내).
+""",
+        "revenue": """
+매출 관점에서 분석해주세요:
+1. 매출 예측의 현실성 평가
+2. 매출 극대화를 위한 구체적 제안 2가지
+3. 손익분기점 예상 시점 (가능하다면)
+한국어로 간결하게 답변해주세요 (300자 이내).
+""",
+        "risk": """
+리스크 관점에서 분석해주세요:
+1. Best와 Worst 시나리오 간 편차 분석 및 리스크 수준 평가
+2. 가장 주의해야 할 리스크 요인 2가지
+3. 리스크 완화 전략 제안
+한국어로 간결하게 답변해주세요 (300자 이내).
+""",
+        "competitive": """
+경쟁력 관점에서 분석해주세요:
+1. 예상 지표가 시장에서 경쟁력이 있는지 평가
+2. 차별화를 위한 전략적 제안 2가지
+3. 타겟 시장 포지셔닝 조언
+한국어로 간결하게 답변해주세요 (300자 이내).
+"""
+    }
+    
+    return base_context + type_prompts.get(analysis_type, type_prompts["general"])
+
 # API Endpoints
 @app.get("/")
 async def root():
-    return {"message": "Game KPI Projection API", "version": "1.0.0"}
+    return {"message": "Game KPI Projection API", "version": "2.0.0", "ai_enabled": bool(GEMINI_API_KEY)}
 
 @app.get("/api/games")
 async def get_available_games():
-    """Get list of available games for each metric"""
     raw_data = load_raw_data()
     return {
         "retention": list(raw_data['games']['retention'].keys()),
@@ -246,9 +351,14 @@ async def get_available_games():
         "arppu": list(raw_data['games']['arppu'].keys())
     }
 
+@app.get("/api/games/metadata")
+async def get_games_metadata():
+    """Get metadata for all games (release date, genre, platform, etc.)"""
+    raw_data = load_raw_data()
+    return raw_data.get('game_metadata', {})
+
 @app.get("/api/games/{metric}/{game_name}")
 async def get_game_data(metric: str, game_name: str):
-    """Get specific game data"""
     raw_data = load_raw_data()
     
     if metric not in raw_data['games']:
@@ -265,81 +375,57 @@ async def get_game_data(metric: str, game_name: str):
 
 @app.get("/api/config")
 async def get_default_config():
-    """Get default configuration"""
     return load_config()
 
 @app.post("/api/projection")
 async def calculate_projection(input_data: ProjectionInput):
-    """Calculate full KPI projection"""
     raw_data = load_raw_data()
     
     days = input_data.projection_days
     results = {"best": {}, "normal": {}, "worst": {}}
     
-    # Calculate retention coefficients
-    a, b = calculate_retention_coefficients(
-        input_data.retention.selected_games, 
-        raw_data
-    )
+    # Calculate coefficients
+    a, b = calculate_retention_coefficients(input_data.retention.selected_games, raw_data)
+    nru_ratios = calculate_nru_pattern(input_data.nru.selected_games, raw_data)
+    pr_pattern = calculate_pr_pattern(input_data.revenue.selected_games_pr, raw_data)
+    arppu_pattern = calculate_arppu_pattern(input_data.revenue.selected_games_arppu, raw_data)
     
     for scenario in ["best", "normal", "worst"]:
-        # 1. Retention curve
         target_d1 = input_data.retention.target_d1_retention[scenario]
         ret_curve = generate_retention_curve(a, b, target_d1, days)
         
-        # 2. NRU series
-        adjustment = 0
-        if scenario == "best":
-            adjustment = input_data.nru.adjustment.get("best_vs_normal", -0.1)
-        elif scenario == "worst":
-            adjustment = input_data.nru.adjustment.get("worst_vs_normal", 0.1)
-        
-        nru_ratios = calculate_nru_pattern(
-            input_data.nru.selected_games, 
-            raw_data, 
-            adjustment
-        )
         d1_nru = input_data.nru.d1_nru[scenario]
-        nru_series = generate_nru_series(d1_nru, nru_ratios, days)
+        adjusted_ratios = nru_ratios.copy()
+        if scenario == "best":
+            adjusted_ratios = [min(r * 1.02, 1.0) for r in nru_ratios]
+        elif scenario == "worst":
+            adjusted_ratios = [r * 0.98 for r in nru_ratios]
         
-        # 3. DAU calculation
+        nru_series = generate_nru_series(d1_nru, adjusted_ratios, days)
         dau_series = calculate_dau_matrix(nru_series, ret_curve, days)
         
-        # 4. Payment rate
         pr_adj = 0
         if scenario == "best":
-            pr_adj = input_data.revenue.pr_adjustment.get("best_vs_normal", -0.03)
+            pr_adj = input_data.revenue.pr_adjustment.get("best_vs_normal", 0)
         elif scenario == "worst":
-            pr_adj = input_data.revenue.pr_adjustment.get("worst_vs_normal", 0.01)
+            pr_adj = input_data.revenue.pr_adjustment.get("worst_vs_normal", 0)
         
-        pr_series = calculate_pr_pattern(
-            input_data.revenue.selected_games_pr, 
-            raw_data, 
-            pr_adj
-        )
+        pr_series = [p * (1 + pr_adj) for p in pr_pattern]
         
-        # 5. ARPPU
         arppu_adj = 0
         if scenario == "best":
-            arppu_adj = input_data.revenue.arppu_adjustment.get("best_vs_normal", -0.05)
+            arppu_adj = input_data.revenue.arppu_adjustment.get("best_vs_normal", 0)
         elif scenario == "worst":
-            arppu_adj = input_data.revenue.arppu_adjustment.get("worst_vs_normal", 0.05)
+            arppu_adj = input_data.revenue.arppu_adjustment.get("worst_vs_normal", 0)
         
-        arppu_series = calculate_arppu_pattern(
-            input_data.revenue.selected_games_arppu, 
-            raw_data, 
-            arppu_adj
-        )
-        
-        # 6. Revenue calculation
+        arppu_series = [a * (1 + arppu_adj) for a in arppu_pattern]
         revenue_series = calculate_revenue(dau_series, pr_series, arppu_series)
         
-        # Store results
         results[scenario] = {
             "retention": {
-                "coefficients": {"a": a, "b": b},
+                "coefficients": {"a": float(a), "b": float(b)},
                 "target_d1": target_d1,
-                "curve": ret_curve[:90]  # First 90 days for display
+                "curve": ret_curve[:90]
             },
             "nru": {
                 "d1_nru": d1_nru,
@@ -347,7 +433,7 @@ async def calculate_projection(input_data: ProjectionInput):
                 "total": sum(nru_series)
             },
             "dau": {
-                "series": [int(d) for d in dau_series[:90]],
+                "series": dau_series[:90],
                 "peak": int(max(dau_series)),
                 "average": int(np.mean(dau_series))
             },
@@ -356,11 +442,11 @@ async def calculate_projection(input_data: ProjectionInput):
                 "arppu_series": arppu_series[:90],
                 "daily_revenue": revenue_series[:90],
                 "total_gross": sum(revenue_series),
-                "average_daily": np.mean(revenue_series)
+                "average_daily": float(np.mean(revenue_series))
             },
             "full_data": {
                 "nru": nru_series,
-                "dau": [int(d) for d in dau_series],
+                "dau": dau_series,
                 "revenue": revenue_series,
                 "retention": ret_curve,
                 "pr": pr_series,
@@ -373,7 +459,12 @@ async def calculate_projection(input_data: ProjectionInput):
     for scenario in ["best", "normal", "worst"]:
         basic = input_data.basic_settings or load_config()["basic_settings"]
         gross = results[scenario]["revenue"]["total_gross"]
-        net = gross * (1 - basic.get("market_fee_ratio", 0.3) - basic.get("vat_ratio", 0.1) - basic.get("infrastructure_cost_ratio", 0.03))
+        
+        market_fee = basic.get("market_fee_ratio", 0.3)
+        vat = basic.get("vat_ratio", 0.1)
+        infra = basic.get("infrastructure_cost_ratio", 0.03)
+        
+        net = gross * (1 - market_fee - vat - infra)
         
         summary[scenario] = {
             "gross_revenue": gross,
@@ -398,14 +489,35 @@ async def calculate_projection(input_data: ProjectionInput):
         "results": results
     }
 
+# AI Insight Endpoint
+@app.post("/api/ai/insight")
+async def get_ai_insight(request: AIInsightRequest):
+    """Get AI-powered insights for projection results"""
+    prompt = create_insight_prompt(request.projection_summary, request.analysis_type)
+    insight = await get_gemini_insight(prompt)
+    
+    return {
+        "status": "success",
+        "analysis_type": request.analysis_type,
+        "insight": insight,
+        "ai_model": "gemini-1.5-flash"
+    }
+
+@app.get("/api/ai/status")
+async def get_ai_status():
+    """Check AI integration status"""
+    return {
+        "enabled": bool(GEMINI_API_KEY),
+        "model": "gemini-1.5-flash",
+        "available_types": ["general", "retention", "revenue", "risk", "competitive"]
+    }
+
 @app.get("/api/raw-data")
 async def get_raw_data():
-    """Get all raw game data"""
     return load_raw_data()
 
 @app.post("/api/raw-data/upload")
 async def upload_game_data(file: UploadFile = File(...), metric: str = "retention"):
-    """Upload new game data via CSV"""
     if not file.filename.endswith('.csv'):
         raise HTTPException(status_code=400, detail="Only CSV files are supported")
     
@@ -415,7 +527,6 @@ async def upload_game_data(file: UploadFile = File(...), metric: str = "retentio
     content = await file.read()
     df = pd.read_csv(StringIO(content.decode('utf-8')))
     
-    # Expected CSV format: game_name, day1, day2, day3, ...
     raw_data = load_raw_data()
     
     for _, row in df.iterrows():
@@ -426,33 +537,12 @@ async def upload_game_data(file: UploadFile = File(...), metric: str = "retentio
         if metric in raw_data['games']:
             raw_data['games'][metric][game_name] = values
     
-    # Update metadata
     raw_data['metadata'][f'{metric}_games'] = list(raw_data['games'][metric].keys())
     
-    # Save updated data
     with open(RAW_DATA_PATH, 'w', encoding='utf-8') as f:
         json.dump(raw_data, f, ensure_ascii=False, indent=2)
     
     return {"status": "success", "message": f"Added/updated games in {metric}"}
-
-@app.delete("/api/raw-data/{metric}/{game_name}")
-async def delete_game_data(metric: str, game_name: str):
-    """Delete a game from raw data"""
-    raw_data = load_raw_data()
-    
-    if metric not in raw_data['games']:
-        raise HTTPException(status_code=404, detail=f"Metric '{metric}' not found")
-    
-    if game_name not in raw_data['games'][metric]:
-        raise HTTPException(status_code=404, detail=f"Game '{game_name}' not found")
-    
-    del raw_data['games'][metric][game_name]
-    raw_data['metadata'][f'{metric}_games'] = list(raw_data['games'][metric].keys())
-    
-    with open(RAW_DATA_PATH, 'w', encoding='utf-8') as f:
-        json.dump(raw_data, f, ensure_ascii=False, indent=2)
-    
-    return {"status": "success", "message": f"Deleted {game_name} from {metric}"}
 
 if __name__ == "__main__":
     import uvicorn

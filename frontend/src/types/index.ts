@@ -20,6 +20,28 @@ export interface RawGameData {
   };
 }
 
+// Basic Settings (산정 정보)
+export interface BasicSettings {
+  launch_date: string;
+  infrastructure_cost_ratio: number;
+  market_fee_ratio: number;
+  vat_ratio: number;
+  hr_cost_monthly: number;
+  sustaining_mkt_ratio: number;
+  // 런칭 MKT
+  launch_mkt_best?: number;
+  launch_mkt_normal?: number;
+  launch_mkt_worst?: number;
+  // CPI & UAC
+  cpi?: number;
+  uac?: number;
+  // 팀 구성
+  dev_team_size?: number;
+  ops_team_size?: number;
+  qa_team_size?: number;
+  biz_team_size?: number;
+}
+
 // Input Types
 export interface RetentionInput {
   selected_games: string[];
@@ -56,15 +78,6 @@ export interface RevenueInput {
     best_vs_normal: number;
     worst_vs_normal: number;
   };
-}
-
-export interface BasicSettings {
-  launch_date: string;
-  infrastructure_cost_ratio: number;
-  market_fee_ratio: number;
-  vat_ratio: number;
-  hr_cost_monthly: number;
-  sustaining_mkt_ratio: number;
 }
 
 export interface ProjectionInput {
