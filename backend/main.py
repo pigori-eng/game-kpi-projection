@@ -25,7 +25,7 @@ CONFIG_PATH = os.path.join(DATA_DIR, "default_config.json")
 
 # Gemini API Configuration
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro:generateContent"
 
 def load_raw_data():
     with open(RAW_DATA_PATH, 'r', encoding='utf-8') as f:
@@ -508,13 +508,103 @@ async def get_ai_status():
     """Check AI integration status"""
     return {
         "enabled": bool(GEMINI_API_KEY),
-        "model": "gemini-1.5-flash",
-        "available_types": ["general", "retention", "revenue", "risk", "competitive"]
+        "model": "gemini-3-pro",
+        "available_types": ["general", "reliability", "retention", "revenue", "risk", "competitive"]
     }
 
 @app.get("/api/raw-data")
 async def get_raw_data():
     return load_raw_data()
+
+@app.get("/api/raw-data/download")
+async def download_raw_data_excel():
+    """Download raw game data as Excel file (same format as original)"""
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
+    from fastapi.responses import StreamingResponse
+    
+    raw_data = load_raw_data()
+    wb = Workbook()
+    
+    # 스타일 정의
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_font = Font(color="FFFFFF", bold=True)
+    thin_border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    
+    def create_raw_sheet(ws, sheet_title, metric_name, description, data_dict):
+        """Raw 데이터 시트 생성 (원본 엑셀 형식)"""
+        # Row 1: 안내 문구
+        ws['B1'] = f'- 아래 게임 추가 시 {sheet_title} 게임 리스트에 자동으로 추가됩니다.'
+        ws['B1'].font = Font(color="FF0000")
+        
+        # Row 2: 메트릭명 및 설명
+        ws['B2'] = metric_name
+        ws['B2'].font = Font(bold=True)
+        ws['C2'] = description
+        
+        # Row 3: 헤더 (게임명, 1, 2, 3, ... 365)
+        ws['B3'] = '게임명'
+        ws['B3'].fill = header_fill
+        ws['B3'].font = header_font
+        ws['B3'].border = thin_border
+        
+        max_days = 90 if metric_name == '리텐션' else 365
+        for day in range(1, max_days + 1):
+            col = day + 2  # C부터 시작
+            cell = ws.cell(row=3, column=col, value=day)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.border = thin_border
+        
+        # Row 4+: 게임 데이터
+        row_idx = 4
+        for game_name, values in data_dict.items():
+            ws.cell(row=row_idx, column=2, value=game_name).border = thin_border
+            for i, val in enumerate(values[:max_days]):
+                cell = ws.cell(row=row_idx, column=i + 3, value=val)
+                cell.border = thin_border
+                if metric_name in ['리텐션', 'PR']:
+                    cell.number_format = '0.00%'
+            row_idx += 1
+        
+        # 열 너비 조정
+        ws.column_dimensions['B'].width = 20
+        for col in range(3, max_days + 3):
+            ws.column_dimensions[ws.cell(row=3, column=col).column_letter].width = 8
+    
+    # Raw_Retention 시트
+    ws_retention = wb.active
+    ws_retention.title = "Raw_Retention"
+    create_raw_sheet(ws_retention, "1. Retention", "리텐션", "론칭 ~ 90일까지의 리텐션 정보 입력", raw_data['games'].get('retention', {}))
+    
+    # Raw_NRU 시트
+    ws_nru = wb.create_sheet("Raw_NRU")
+    create_raw_sheet(ws_nru, "2. NRU", "NRU", "론칭 ~ 365일까지의 데이터 입력", raw_data['games'].get('nru', {}))
+    
+    # Raw_PR 시트
+    ws_pr = wb.create_sheet("Raw_PR")
+    create_raw_sheet(ws_pr, "3. Revenue", "PR", "론칭 ~ 365일까지의 데이터 입력", raw_data['games'].get('payment_rate', {}))
+    
+    # Raw_ARPPU 시트
+    ws_arppu = wb.create_sheet("Raw_ARPPU")
+    create_raw_sheet(ws_arppu, "3. Revenue", "ARPPU", "론칭 ~ 365일까지의 데이터 입력", raw_data['games'].get('arppu', {}))
+    
+    # 메모리에 저장
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=raw_game_data.xlsx"}
+    )
 
 @app.post("/api/raw-data/upload")
 async def upload_game_data(file: UploadFile = File(...), metric: str = "retention"):

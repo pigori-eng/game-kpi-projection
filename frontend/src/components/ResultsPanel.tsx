@@ -214,15 +214,45 @@ const DAUTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
 
 const RawDataTab: React.FC<{ games: GameListResponse | null }> = ({ games }) => {
   if (!games) return null;
+  
+  const handleExcelDownload = async () => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://game-kpi-projection.onrender.com'}/api/raw-data/download`);
+      if (!response.ok) throw new Error('Download failed');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'raw_game_data.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Excel download error:', error);
+      alert('엑셀 다운로드 중 오류가 발생했습니다.');
+    }
+  };
+  
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-xl border p-6">
-        <div className="flex justify-between items-center mb-4"><h3 className="text-lg font-semibold">Raw Data 관리</h3><button className="flex items-center gap-1 text-sm bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"><FileSpreadsheet className="w-4 h-4" />새 데이터 업로드</button></div>
-        <p className="text-gray-600 mb-4">현재 등록된 게임 데이터 목록입니다.</p>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold">Raw Data 관리</h3>
+          <div className="flex gap-2">
+            <button onClick={handleExcelDownload} className="flex items-center gap-1 text-sm bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
+              <Download className="w-4 h-4" />전체 엑셀 다운로드
+            </button>
+            <button className="flex items-center gap-1 text-sm bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+              <FileSpreadsheet className="w-4 h-4" />새 데이터 업로드
+            </button>
+          </div>
+        </div>
+        <p className="text-gray-600 mb-4">현재 등록된 게임 데이터 목록입니다. 엑셀 다운로드 시 원본 형식(Raw_Retention, Raw_NRU, Raw_PR, Raw_ARPPU 시트)으로 제공됩니다.</p>
         <div className="grid grid-cols-2 gap-6">
           {[{ key: 'retention', label: 'Retention', data: games.retention }, { key: 'nru', label: 'NRU', data: games.nru }, { key: 'payment_rate', label: 'Payment Rate', data: games.payment_rate }, { key: 'arppu', label: 'ARPPU', data: games.arppu }].map(({ key, label, data }) => (
             <div key={key} className="border rounded-lg overflow-hidden">
-              <div className="bg-gray-100 px-3 py-2 flex justify-between"><span className="font-medium">{label} ({data.length}개)</span><button onClick={() => downloadCSV(data.map(g => ({ game: g })), `${key}.csv`, ['game'])} className="text-xs text-blue-600 flex items-center gap-1"><Download className="w-3 h-3" />다운로드</button></div>
+              <div className="bg-gray-100 px-3 py-2 flex justify-between"><span className="font-medium">{label} ({data.length}개)</span></div>
               <div className="max-h-48 overflow-y-auto">{data.map((g, i) => <div key={g} className={`px-3 py-2 text-sm ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} border-b last:border-b-0`}>{g}</div>)}</div>
             </div>
           ))}

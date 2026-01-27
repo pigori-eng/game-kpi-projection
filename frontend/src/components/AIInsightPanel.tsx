@@ -151,7 +151,7 @@ const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ results }) => {
         <div className="flex items-start gap-2 text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
           <span className="text-lg">💡</span>
           <div>
-            <p>AI 인사이트는 <strong>Gemini 1.5 Flash</strong> 모델을 사용합니다.</p>
+            <p>AI 인사이트는 <strong>Gemini 3 Pro</strong> 모델을 사용합니다.</p>
             <p className="mt-1">분석 결과는 참고용이며, 실제 의사결정 시에는 추가적인 검토가 필요합니다.</p>
             {selectedType === 'reliability' && (
               <p className="mt-1 text-indigo-600">🔒 신뢰도 평가는 표본 데이터 품질, 시나리오 간 편차, 시장 현실성을 종합적으로 분석합니다.</p>
