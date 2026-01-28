@@ -180,9 +180,9 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
               <div className="space-y-4">
                 <div className="border border-gray-300 rounded-lg overflow-hidden">
                   <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">기본 정보</div>
-                  <table className="w-full text-sm">
+                  <table className="w-full text-sm table-fixed">
                     <tbody>
-                      <tr><td className="px-3 py-2 border-b bg-gray-50 w-1/2">런칭 예정일</td><td className="px-3 py-2 border-b bg-yellow-50"><input type="date" value={input.launch_date} onChange={(e) => setInput(prev => ({ ...prev, launch_date: e.target.value }))} className="w-full bg-transparent border-none p-0" /></td></tr>
+                      <tr><td className="px-3 py-2 border-b bg-gray-50 w-2/5">런칭 예정일</td><td className="px-3 py-2 border-b bg-yellow-50"><input type="date" value={input.launch_date} onChange={(e) => setInput(prev => ({ ...prev, launch_date: e.target.value }))} className="w-full bg-transparent border-none p-0" /></td></tr>
                       <tr><td className="px-3 py-2 border-b bg-gray-50">프로젝션 기간 (Day)</td><td className="px-3 py-2 border-b bg-yellow-50"><input type="number" value={input.projection_days} onChange={(e) => setInput(prev => ({ ...prev, projection_days: parseInt(e.target.value) || 365 }))} className="w-full bg-transparent border-none p-0 text-right" /></td></tr>
                       <tr><td className="px-3 py-2 border-b bg-gray-50">인프라 비용 (%)</td><td className="px-3 py-2 border-b bg-yellow-50"><input type="number" step="1" value={Math.round((input.basic_settings?.infrastructure_cost_ratio || 0.03) * 100)} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, infrastructure_cost_ratio: (parseFloat(e.target.value) || 0) / 100 } }))} className="w-full bg-transparent border-none p-0 text-right" /></td></tr>
                       <tr><td className="px-3 py-2 border-b bg-gray-50">마켓 수수료 (%)</td><td className="px-3 py-2 border-b bg-yellow-50"><input type="number" step="1" value={Math.round((input.basic_settings?.market_fee_ratio || 0.30) * 100)} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, market_fee_ratio: (parseFloat(e.target.value) || 0) / 100 } }))} className="w-full bg-transparent border-none p-0 text-right" /></td></tr>
@@ -192,10 +192,10 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                 </div>
                 <div className="border border-gray-300 rounded-lg overflow-hidden">
                   <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">CPI & UAC</div>
-                  <table className="w-full text-sm">
+                  <table className="w-full text-sm table-fixed">
                     <tbody>
-                      <tr><td className="px-3 py-2 border-b bg-gray-50 w-1/2">CPI (Cost Per Install)</td><td className="px-3 py-2 border-b bg-yellow-50"><input type="number" value={input.basic_settings?.cpi || 2660} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, cpi: parseInt(e.target.value) || 0 } }))} className="w-full bg-transparent border-none p-0 text-right" />원</td></tr>
-                      <tr><td className="px-3 py-2 bg-gray-50">UAC (User Acquisition Cost)</td><td className="px-3 py-2 bg-yellow-50"><input type="number" value={input.basic_settings?.uac || 3800} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, uac: parseInt(e.target.value) || 0 } }))} className="w-full bg-transparent border-none p-0 text-right" />원</td></tr>
+                      <tr><td className="px-3 py-2 border-b bg-gray-50 w-2/5">CPI (Cost Per Install)</td><td className="px-3 py-2 border-b bg-yellow-50"><div className="flex items-center"><input type="number" value={input.basic_settings?.cpi || 2660} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, cpi: parseInt(e.target.value) || 0 } }))} className="flex-1 bg-transparent border-none p-0 text-right min-w-0" /><span className="ml-1 flex-shrink-0">원</span></div></td></tr>
+                      <tr><td className="px-3 py-2 bg-gray-50">UAC (User Acquisition Cost)</td><td className="px-3 py-2 bg-yellow-50"><div className="flex items-center"><input type="number" value={input.basic_settings?.uac || 3800} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, uac: parseInt(e.target.value) || 0 } }))} className="flex-1 bg-transparent border-none p-0 text-right min-w-0" /><span className="ml-1 flex-shrink-0">원</span></div></td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -203,20 +203,20 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
               <div className="space-y-4">
                 <div className="border border-gray-300 rounded-lg overflow-hidden">
                   <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">HR Cost (월간, 인당 1,500만원 기준)</div>
-                  <table className="w-full text-sm">
+                  <table className="w-full text-sm table-fixed">
                     <tbody>
-                      <tr><td className="px-3 py-2 border-b bg-gray-50 w-1/2">직접 인건비 (인원수)</td><td className="px-3 py-2 border-b bg-yellow-50"><input type="number" value={input.basic_settings?.hr_direct_headcount || 50} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, hr_direct_headcount: parseInt(e.target.value) || 0 } }))} className="w-full bg-transparent border-none p-0 text-right" />명</td></tr>
-                      <tr><td className="px-3 py-2 border-b bg-gray-50">직접 인건비 (월)</td><td className="px-3 py-2 border-b bg-gray-100 text-right">{((input.basic_settings?.hr_direct_headcount || 50) * 15000000).toLocaleString()}원</td></tr>
-                      <tr><td className="px-3 py-2 border-b bg-gray-50">간접 인건비 (월)</td><td className="px-3 py-2 border-b bg-yellow-50"><input type="number" value={input.basic_settings?.hr_indirect_monthly || 14000000} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, hr_indirect_monthly: parseInt(e.target.value) || 0 } }))} className="w-full bg-transparent border-none p-0 text-right" />원</td></tr>
-                      <tr><td className="px-3 py-2 bg-gray-50 font-medium">총 HR Cost (월)</td><td className="px-3 py-2 bg-blue-50 text-right font-medium">{(((input.basic_settings?.hr_direct_headcount || 50) * 15000000) + (input.basic_settings?.hr_indirect_monthly || 14000000)).toLocaleString()}원</td></tr>
+                      <tr><td className="px-3 py-2 border-b bg-gray-50 w-2/5">직접 인건비 (인원수)</td><td className="px-3 py-2 border-b bg-yellow-50"><div className="flex items-center"><input type="number" value={input.basic_settings?.hr_direct_headcount || 50} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, hr_direct_headcount: parseInt(e.target.value) || 0 } }))} className="flex-1 bg-transparent border-none p-0 text-right min-w-0" /><span className="ml-1 flex-shrink-0">명</span></div></td></tr>
+                      <tr><td className="px-3 py-2 border-b bg-gray-50">직접 인건비 (월)</td><td className="px-3 py-2 border-b bg-gray-100 text-right whitespace-nowrap">{((input.basic_settings?.hr_direct_headcount || 50) * 15000000).toLocaleString()}원</td></tr>
+                      <tr><td className="px-3 py-2 border-b bg-gray-50">간접 인건비 (월)</td><td className="px-3 py-2 border-b bg-yellow-50"><div className="flex items-center"><input type="number" value={input.basic_settings?.hr_indirect_monthly || 14000000} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, hr_indirect_monthly: parseInt(e.target.value) || 0 } }))} className="flex-1 bg-transparent border-none p-0 text-right min-w-0" /><span className="ml-1 flex-shrink-0">원</span></div></td></tr>
+                      <tr><td className="px-3 py-2 bg-gray-50 font-medium">총 HR Cost (월)</td><td className="px-3 py-2 bg-blue-50 text-right font-medium whitespace-nowrap">{(((input.basic_settings?.hr_direct_headcount || 50) * 15000000) + (input.basic_settings?.hr_indirect_monthly || 14000000)).toLocaleString()}원</td></tr>
                     </tbody>
                   </table>
                 </div>
                 <div className="border border-gray-300 rounded-lg overflow-hidden">
                   <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">MKT 비용</div>
-                  <table className="w-full text-sm">
+                  <table className="w-full text-sm table-fixed">
                     <tbody>
-                      <tr><td className="px-3 py-2 bg-gray-50 w-1/2">Sustaining MKT (매출의 %)</td><td className="px-3 py-2 bg-yellow-50"><input type="number" step="1" value={Math.round((input.basic_settings?.sustaining_mkt_ratio || 0.07) * 100)} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, sustaining_mkt_ratio: (parseFloat(e.target.value) || 0) / 100 } }))} className="w-full bg-transparent border-none p-0 text-right" />%</td></tr>
+                      <tr><td className="px-3 py-2 bg-gray-50 w-2/5">Sustaining MKT (매출의 %)</td><td className="px-3 py-2 bg-yellow-50"><div className="flex items-center"><input type="number" step="1" value={Math.round((input.basic_settings?.sustaining_mkt_ratio || 0.07) * 100)} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, sustaining_mkt_ratio: (parseFloat(e.target.value) || 0) / 100 } }))} className="flex-1 bg-transparent border-none p-0 text-right min-w-0" /><span className="ml-1 flex-shrink-0">%</span></div></td></tr>
                     </tbody>
                   </table>
                   <div className="px-3 py-2 text-xs text-gray-500">* 런칭 후 지속 마케팅 비용</div>

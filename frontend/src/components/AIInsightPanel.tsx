@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Sparkles, RefreshCw, Brain, TrendingUp, DollarSign, AlertTriangle, Target, Shield } from 'lucide-react';
 import { getAIInsight } from '../utils/api';
 import type { ProjectionResult } from '../types';
@@ -9,22 +9,30 @@ interface AIInsightPanelProps {
 
 type AnalysisType = 'general' | 'reliability' | 'retention' | 'revenue' | 'risk' | 'competitive';
 
+// 캐시된 인사이트 저장
+type InsightCache = Partial<Record<AnalysisType, string>>;
+
 const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ results }) => {
   const [loading, setLoading] = useState(false);
-  const [insight, setInsight] = useState<string | null>(null);
+  const [insightCache, setInsightCache] = useState<InsightCache>({});
   const [selectedType, setSelectedType] = useState<AnalysisType>('general');
   const [error, setError] = useState<string | null>(null);
 
   const analysisTypes = [
-    { id: 'general' as AnalysisType, label: '종합 분석', icon: Brain, color: 'blue', description: '전반적인 프로젝션 평가 및 액션 아이템' },
-    { id: 'reliability' as AnalysisType, label: '신뢰도 평가', icon: Shield, color: 'indigo', description: '프로젝션 신뢰도 점수 및 영향 요인 분석' },
-    { id: 'retention' as AnalysisType, label: '리텐션 분석', icon: TrendingUp, color: 'emerald', description: 'DAU 패턴 및 리텐션 개선 제안' },
-    { id: 'revenue' as AnalysisType, label: '매출 분석', icon: DollarSign, color: 'amber', description: '매출 예측 평가 및 극대화 제안' },
-    { id: 'risk' as AnalysisType, label: '리스크 분석', icon: AlertTriangle, color: 'red', description: '리스크 요인 및 완화 전략' },
-    { id: 'competitive' as AnalysisType, label: '경쟁력 분석', icon: Target, color: 'purple', description: '시장 경쟁력 및 포지셔닝 평가' },
+    { id: 'general' as AnalysisType, label: '종합 분석', icon: Brain, color: 'blue', description: '4명의 전문가(재무이사, 마케팅팀장, 데이터과학자, 퍼블리싱 전문가)가 종합 평가' },
+    { id: 'reliability' as AnalysisType, label: '신뢰도 평가', icon: Shield, color: 'indigo', description: '프로젝션 신뢰도 점수 및 전문가별 평가' },
+    { id: 'retention' as AnalysisType, label: '리텐션 분석', icon: TrendingUp, color: 'emerald', description: 'DAU 패턴 및 리텐션 개선 액션 플랜' },
+    { id: 'revenue' as AnalysisType, label: '매출 분석', icon: DollarSign, color: 'amber', description: '손익분기점, ARPU, 매출 극대화 전략' },
+    { id: 'risk' as AnalysisType, label: '리스크 분석', icon: AlertTriangle, color: 'red', description: '전문가별 리스크 식별 및 완화 전략' },
+    { id: 'competitive' as AnalysisType, label: '경쟁력 분석', icon: Target, color: 'purple', description: '시장 경쟁력 등급 및 강화 전략' },
   ];
 
-  const handleAnalyze = async () => {
+  const handleAnalyze = useCallback(async () => {
+    // 이미 캐시에 있으면 API 호출 안함
+    if (insightCache[selectedType]) {
+      return;
+    }
+
     setLoading(true);
     setError(null);
     
@@ -39,12 +47,22 @@ const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ results }) => {
       };
       
       const response = await getAIInsight(summaryData, selectedType);
-      setInsight(response.insight);
+      
+      // 캐시에 저장
+      setInsightCache(prev => ({
+        ...prev,
+        [selectedType]: response.insight
+      }));
     } catch (err: any) {
       setError(err.response?.data?.detail || err.message || 'AI 분석 중 오류가 발생했습니다.');
     } finally {
       setLoading(false);
     }
+  }, [results, selectedType, insightCache]);
+
+  const handleTypeChange = (type: AnalysisType) => {
+    setSelectedType(type);
+    setError(null);
   };
 
   const getTypeStyles = (type: AnalysisType, isSelected: boolean) => {
@@ -60,13 +78,15 @@ const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ results }) => {
   };
 
   const selectedAnalysis = analysisTypes.find(t => t.id === selectedType);
+  const currentInsight = insightCache[selectedType];
 
   return (
     <div className="border border-gray-300 rounded-lg overflow-hidden">
       <div className="bg-gradient-to-r from-purple-600 to-blue-600 px-4 py-3">
         <div className="flex items-center gap-2 text-white">
           <Sparkles className="w-5 h-5" />
-          <span className="font-semibold">AI 인사이트 (Gemini)</span>
+          <span className="font-semibold">AI 인사이트 (Claude Sonnet 4)</span>
+          <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">Multi-Persona</span>
         </div>
       </div>
 
@@ -78,14 +98,13 @@ const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ results }) => {
             {analysisTypes.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
-                onClick={() => {
-                  setSelectedType(id);
-                  setInsight(null);
-                }}
+                onClick={() => handleTypeChange(id)}
                 className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm border transition-colors ${getTypeStyles(id, selectedType === id)}`}
               >
                 <Icon className="w-4 h-4" />
                 <span className="font-medium">{label}</span>
+                {/* 캐시 있으면 체크 표시 */}
+                {insightCache[id] && <span className="ml-auto text-green-500">✓</span>}
               </button>
             ))}
           </div>
@@ -109,6 +128,11 @@ const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ results }) => {
               <RefreshCw className="w-4 h-4 animate-spin" />
               AI 분석 중...
             </>
+          ) : currentInsight ? (
+            <>
+              <RefreshCw className="w-4 h-4" />
+              다시 분석하기
+            </>
           ) : (
             <>
               <Sparkles className="w-4 h-4" />
@@ -124,8 +148,8 @@ const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ results }) => {
           </div>
         )}
 
-        {/* 인사이트 결과 */}
-        {insight && (
+        {/* 인사이트 결과 - 캐시된 결과 표시 */}
+        {currentInsight && (
           <div className={`p-4 rounded-lg border ${
             selectedType === 'reliability' 
               ? 'bg-indigo-50 border-indigo-200' 
@@ -142,7 +166,7 @@ const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ results }) => {
               </span>
             </div>
             <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-              {insight}
+              {currentInsight}
             </div>
           </div>
         )}
@@ -151,11 +175,8 @@ const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ results }) => {
         <div className="flex items-start gap-2 text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
           <span className="text-lg">💡</span>
           <div>
-            <p>AI 인사이트는 <strong>Claude Sonnet 4</strong> 모델을 사용합니다.</p>
-            <p className="mt-1">분석 결과는 참고용이며, 실제 의사결정 시에는 추가적인 검토가 필요합니다.</p>
-            {selectedType === 'reliability' && (
-              <p className="mt-1 text-indigo-600">🔒 신뢰도 평가는 표본 데이터 품질, 시나리오 간 편차, 시장 현실성을 종합적으로 분석합니다.</p>
-            )}
+            <p>4명의 전문가(재무이사, 마케팅팀장, 데이터과학자, 퍼블리싱 전문가)가 각자의 관점에서 분석합니다.</p>
+            <p className="mt-1">생성된 인사이트는 유형 변경 시에도 유지됩니다. (✓ 표시)</p>
           </div>
         </div>
       </div>

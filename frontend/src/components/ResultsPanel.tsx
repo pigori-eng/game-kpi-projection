@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Download, FileSpreadsheet } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Download, FileSpreadsheet, RefreshCw } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, AreaChart, Area, ComposedChart, Bar
@@ -213,12 +213,22 @@ const DAUTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
 };
 
 const RawDataTab: React.FC<{ games: GameListResponse | null }> = ({ games }) => {
+  const [uploading, setUploading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
   if (!games) return null;
   
+  const API_BASE = import.meta.env.VITE_API_URL || 'https://game-kpi-projection.onrender.com/api';
+  
   const handleExcelDownload = async () => {
+    setDownloading(true);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://game-kpi-projection.onrender.com'}/api/raw-data/download`);
-      if (!response.ok) throw new Error('Download failed');
+      const response = await fetch(`${API_BASE}/raw-data/download`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`다운로드 실패: ${response.status} - ${errorText}`);
+      }
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -228,9 +238,57 @@ const RawDataTab: React.FC<{ games: GameListResponse | null }> = ({ games }) => 
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Excel download error:', error);
-      alert('엑셀 다운로드 중 오류가 발생했습니다.');
+      alert(`엑셀 다운로드 중 오류: ${error.message}`);
+    } finally {
+      setDownloading(false);
+    }
+  };
+  
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+  
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    if (!file.name.endsWith('.csv')) {
+      alert('CSV 파일만 업로드 가능합니다. (.csv)');
+      return;
+    }
+    
+    const metric = prompt('업로드할 지표 유형을 입력하세요:\nretention, nru, payment_rate, arppu 중 하나', 'retention');
+    if (!metric || !['retention', 'nru', 'payment_rate', 'arppu'].includes(metric)) {
+      alert('올바른 지표 유형을 입력해주세요.');
+      return;
+    }
+    
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const response = await fetch(`${API_BASE}/raw-data/upload?metric=${metric}`, {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || '업로드 실패');
+      }
+      
+      const result = await response.json();
+      alert(`업로드 성공: ${result.message}\n페이지를 새로고침하면 반영됩니다.`);
+      window.location.reload();
+    } catch (error: any) {
+      console.error('Upload error:', error);
+      alert(`업로드 중 오류: ${error.message}`);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
   
@@ -240,15 +298,39 @@ const RawDataTab: React.FC<{ games: GameListResponse | null }> = ({ games }) => 
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold">Raw Data 관리</h3>
           <div className="flex gap-2">
-            <button onClick={handleExcelDownload} className="flex items-center gap-1 text-sm bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
-              <Download className="w-4 h-4" />전체 엑셀 다운로드
+            <button 
+              onClick={handleExcelDownload} 
+              disabled={downloading}
+              className="flex items-center gap-1 text-sm bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
+            >
+              {downloading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+              {downloading ? '다운로드 중...' : '전체 엑셀 다운로드'}
             </button>
-            <button className="flex items-center gap-1 text-sm bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-              <FileSpreadsheet className="w-4 h-4" />새 데이터 업로드
+            <button 
+              onClick={handleUploadClick}
+              disabled={uploading}
+              className="flex items-center gap-1 text-sm bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
+            >
+              {uploading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
+              {uploading ? '업로드 중...' : '새 데이터 업로드 (CSV)'}
             </button>
+            <input 
+              ref={fileInputRef}
+              type="file" 
+              accept=".csv" 
+              onChange={handleFileChange}
+              className="hidden"
+            />
           </div>
         </div>
-        <p className="text-gray-600 mb-4">현재 등록된 게임 데이터 목록입니다. 엑셀 다운로드 시 원본 형식(Raw_Retention, Raw_NRU, Raw_PR, Raw_ARPPU 시트)으로 제공됩니다.</p>
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-sm">
+          <p className="text-amber-800"><strong>📌 데이터 관리 안내:</strong></p>
+          <ul className="text-amber-700 mt-1 space-y-1">
+            <li>• <strong>다운로드:</strong> Raw_Retention, Raw_NRU, Raw_PR, Raw_ARPPU 시트가 포함된 엑셀 파일</li>
+            <li>• <strong>업로드:</strong> CSV 형식만 지원 (첫 열: 게임명, 이후 열: 일별 데이터)</li>
+            <li>• <strong>GitHub 업로드:</strong> data/raw_game_data.json 파일 직접 수정 후 커밋</li>
+          </ul>
+        </div>
         <div className="grid grid-cols-2 gap-6">
           {[{ key: 'retention', label: 'Retention', data: games.retention }, { key: 'nru', label: 'NRU', data: games.nru }, { key: 'payment_rate', label: 'Payment Rate', data: games.payment_rate }, { key: 'arppu', label: 'ARPPU', data: games.arppu }].map(({ key, label, data }) => (
             <div key={key} className="border rounded-lg overflow-hidden">
