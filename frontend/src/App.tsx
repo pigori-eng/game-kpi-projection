@@ -52,7 +52,7 @@ function App() {
     uac: 3800,
   };
 
-  // Input state
+  // Input state - 피드백 반영 디폴트값
   const [input, setInput] = useState<ProjectionInput>({
     launch_date: '2026-11-12',
     projection_days: 365,
@@ -65,15 +65,19 @@ function App() {
       d1_nru: { best: 440000, normal: 400000, worst: 360000 },
       paid_organic_ratio: 0.5,
       nvr: 0.7,
-      adjustment: { best_vs_normal: -0.1, worst_vs_normal: 0.1 },
+      adjustment: { best_vs_normal: 0.05, worst_vs_normal: -0.05 },  // 피드백 #13: ±5%
     },
     revenue: {
       selected_games_pr: [],
       selected_games_arppu: [],
-      pr_adjustment: { best_vs_normal: -0.03, worst_vs_normal: 0.01 },
-      arppu_adjustment: { best_vs_normal: -0.05, worst_vs_normal: 0.05 },
+      pr_adjustment: { best_vs_normal: 0.05, worst_vs_normal: -0.05 },      // 피드백 #14: PR ±5%
+      arppu_adjustment: { best_vs_normal: 0.10, worst_vs_normal: -0.10 },   // 피드백 #14: ARPPU ±10%
     },
-    basic_settings: defaultBasicSettings,
+    basic_settings: {
+      ...defaultBasicSettings,
+      hr_direct_headcount: 50,
+      hr_indirect_headcount: 20,  // 피드백 #3: 간접인건비 디폴트 20명
+    },
   });
 
   useEffect(() => {
