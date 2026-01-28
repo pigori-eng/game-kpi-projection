@@ -28,6 +28,38 @@ const downloadCSV = (data: any[], filename: string, headers: string[]) => {
 
 const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSettings }> = ({ results, basicSettings }) => {
   const { summary } = results;
+  
+  // Phase 2: LTV & ROAS 계산
+  const calculateLtvRoas = (scenario: 'best' | 'normal' | 'worst') => {
+    const s = summary[scenario];
+    const mktBudget = basicSettings?.launch_mkt_budget || 0;
+    const totalNru = s.total_nru || 1;
+    
+    const ltv = s.gross_revenue / totalNru;  // 유저당 평균 수익
+    const cac = mktBudget / totalNru;        // 유저당 획득 비용
+    const roas = mktBudget > 0 ? (s.gross_revenue / mktBudget) * 100 : 0;  // ROAS %
+    
+    // 손익분기점 추정 (일별 누적 매출이 MKT 예산을 넘는 시점)
+    let breakEvenDay = 0;
+    let cumRevenue = 0;
+    const dailyRevenue = results.results[scenario].revenue.daily_revenue;
+    for (let i = 0; i < dailyRevenue.length; i++) {
+      cumRevenue += dailyRevenue[i];
+      if (cumRevenue >= mktBudget && breakEvenDay === 0) {
+        breakEvenDay = i + 1;
+        break;
+      }
+    }
+    
+    return { ltv, cac, roas, breakEvenDay };
+  };
+
+  const ltvRoas = {
+    best: calculateLtvRoas('best'),
+    normal: calculateLtvRoas('normal'),
+    worst: calculateLtvRoas('worst'),
+  };
+
   return (
     <div className="space-y-6">
       <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-xl p-6 text-white">
@@ -46,10 +78,14 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
             <tr><td className="px-4 py-2 border-b">런칭 예정일</td><td className="px-4 py-2 border-b text-right bg-yellow-50">{results.input.launch_date}</td><td className="px-4 py-2 border-b text-gray-500"></td></tr>
             <tr><td className="px-4 py-2 border-b">인프라 비용</td><td className="px-4 py-2 border-b text-right bg-yellow-50">{((basicSettings?.infrastructure_cost_ratio || 0.03) * 100).toFixed(0)}%</td><td className="px-4 py-2 border-b text-gray-500">서버 비용</td></tr>
             <tr><td className="px-4 py-2 border-b">마켓 수수료</td><td className="px-4 py-2 border-b text-right bg-yellow-50">{((basicSettings?.market_fee_ratio || 0.30) * 100).toFixed(0)}%</td><td className="px-4 py-2 border-b text-gray-500">30%</td></tr>
-            <tr><td className="px-4 py-2">V.A.T</td><td className="px-4 py-2 text-right bg-yellow-50">{((basicSettings?.vat_ratio || 0.10) * 100).toFixed(0)}%</td><td className="px-4 py-2 text-gray-500">부가세</td></tr>
+            <tr><td className="px-4 py-2 border-b">V.A.T</td><td className="px-4 py-2 border-b text-right bg-yellow-50">{((basicSettings?.vat_ratio || 0.10) * 100).toFixed(0)}%</td><td className="px-4 py-2 border-b text-gray-500">부가세</td></tr>
+            {basicSettings?.launch_mkt_budget && basicSettings.launch_mkt_budget > 0 && (
+              <tr><td className="px-4 py-2">런칭 MKT 예산</td><td className="px-4 py-2 text-right bg-orange-50 font-medium">{formatCurrency(basicSettings.launch_mkt_budget)}</td><td className="px-4 py-2 text-gray-500">마케팅 투자금</td></tr>
+            )}
           </tbody>
         </table>
       </div>
+
       <div className="border border-gray-300 rounded-lg overflow-hidden">
         <div className="bg-gray-100 px-4 py-2 border-b font-semibold">2. 핵심 KPI 요약</div>
         <table className="w-full text-sm">
@@ -63,6 +99,49 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
           </tbody>
         </table>
       </div>
+
+      {/* Phase 2: LTV & ROAS */}
+      {basicSettings?.launch_mkt_budget && basicSettings.launch_mkt_budget > 0 && (
+        <div className="border border-orange-300 rounded-lg overflow-hidden">
+          <div className="bg-orange-100 px-4 py-2 border-b font-semibold flex items-center gap-2">
+            <span>3. LTV & ROAS 분석</span>
+            <span className="text-xs bg-orange-200 text-orange-800 px-2 py-0.5 rounded-full">Phase 2</span>
+          </div>
+          <table className="w-full text-sm">
+            <thead><tr className="bg-gray-50"><th className="px-4 py-2 text-left border-b">지표</th><th className="px-4 py-2 text-right border-b bg-green-50 text-green-700">Best</th><th className="px-4 py-2 text-right border-b bg-blue-50 text-blue-700">Normal</th><th className="px-4 py-2 text-right border-b bg-red-50 text-red-700">Worst</th></tr></thead>
+            <tbody>
+              <tr>
+                <td className="px-4 py-2 border-b">LTV (유저당 수익)</td>
+                <td className="px-4 py-2 border-b text-right bg-green-50">{formatCurrency(ltvRoas.best.ltv)}</td>
+                <td className="px-4 py-2 border-b text-right bg-blue-50">{formatCurrency(ltvRoas.normal.ltv)}</td>
+                <td className="px-4 py-2 border-b text-right bg-red-50">{formatCurrency(ltvRoas.worst.ltv)}</td>
+              </tr>
+              <tr>
+                <td className="px-4 py-2 border-b">CAC (유저 획득 비용)</td>
+                <td className="px-4 py-2 border-b text-right bg-green-50">{formatCurrency(ltvRoas.best.cac)}</td>
+                <td className="px-4 py-2 border-b text-right bg-blue-50">{formatCurrency(ltvRoas.normal.cac)}</td>
+                <td className="px-4 py-2 border-b text-right bg-red-50">{formatCurrency(ltvRoas.worst.cac)}</td>
+              </tr>
+              <tr>
+                <td className="px-4 py-2 border-b font-medium">ROAS (광고 회수율)</td>
+                <td className="px-4 py-2 border-b text-right bg-green-50 font-bold text-green-700">{ltvRoas.best.roas.toFixed(0)}%</td>
+                <td className="px-4 py-2 border-b text-right bg-blue-50 font-bold text-blue-700">{ltvRoas.normal.roas.toFixed(0)}%</td>
+                <td className="px-4 py-2 border-b text-right bg-red-50 font-bold text-red-700">{ltvRoas.worst.roas.toFixed(0)}%</td>
+              </tr>
+              <tr>
+                <td className="px-4 py-2">손익분기점 (BEP)</td>
+                <td className="px-4 py-2 text-right bg-green-50">{ltvRoas.best.breakEvenDay > 0 ? `D+${ltvRoas.best.breakEvenDay}` : '-'}</td>
+                <td className="px-4 py-2 text-right bg-blue-50">{ltvRoas.normal.breakEvenDay > 0 ? `D+${ltvRoas.normal.breakEvenDay}` : '-'}</td>
+                <td className="px-4 py-2 text-right bg-red-50">{ltvRoas.worst.breakEvenDay > 0 ? `D+${ltvRoas.worst.breakEvenDay}` : '-'}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div className="px-4 py-2 bg-orange-50 text-xs text-orange-700">
+            * LTV = 총 매출 ÷ 총 NRU | CAC = MKT 예산 ÷ 총 NRU | ROAS = 총 매출 ÷ MKT 예산 × 100 | BEP = 누적 매출이 MKT 예산을 넘는 시점
+          </div>
+        </div>
+      )}
+
       <div className="bg-gray-50 rounded-lg p-4">
         <h3 className="font-medium text-gray-700 mb-3">선택된 표본 게임</h3>
         <div className="grid grid-cols-4 gap-4 text-sm">

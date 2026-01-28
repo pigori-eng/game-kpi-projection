@@ -116,8 +116,10 @@ const RegressionResultTable: React.FC<{ selectedGames: string[]; d1Retention: { 
 };
 
 const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
-  const [activeSection, setActiveSection] = useState<'basic' | 'sample' | 'retention' | 'nru' | 'revenue' | null>('basic');
+  const [activeSection, setActiveSection] = useState<'basic' | 'sample' | 'retention' | 'nru' | 'revenue' | 'mkt-calc' | 'seasonality' | null>('basic');
   const [gameMetadata, setGameMetadata] = useState<Record<string, GameMetadata>>({});
+  const [nruAutoCalc, setNruAutoCalc] = useState(false);
+  const [seasonalityEnabled, setSeasonalityEnabled] = useState(false);
 
   useEffect(() => {
     const loadMetadata = async () => {
@@ -138,6 +140,44 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
       nru: { ...prev.nru, selected_games: selectedGames },
       revenue: { ...prev.revenue, selected_games_pr: selectedGames, selected_games_arppu: selectedGames },
     }));
+  };
+
+  // Phase 2: MKT → NRU 자동 계산
+  const calculateNRUFromMKT = () => {
+    const budget = input.basic_settings?.launch_mkt_budget || 0;
+    const cpi = input.basic_settings?.cpi || 2660;
+    const paidRatio = input.nru.paid_organic_ratio || 0.5;
+    const nvr = input.nru.nvr || 0.7;
+
+    if (budget <= 0 || cpi <= 0) return { best: 0, normal: 0, worst: 0 };
+
+    const paidInstall = Math.floor(budget / cpi);
+    const organicInstall = Math.floor(paidInstall * ((1 - paidRatio) / paidRatio));
+    const totalInstall = paidInstall + organicInstall;
+    const d1Nru = Math.floor(totalInstall * nvr);
+
+    return {
+      best: Math.floor(d1Nru * 1.1),    // +10%
+      normal: d1Nru,
+      worst: Math.floor(d1Nru * 0.9),   // -10%
+    };
+  };
+
+  // MKT 예산 변경 시 NRU 자동 업데이트
+  const handleMktBudgetChange = (budget: number) => {
+    setInput(prev => ({
+      ...prev,
+      basic_settings: { ...prev.basic_settings!, launch_mkt_budget: budget }
+    }));
+
+    if (nruAutoCalc) {
+      const calculated = calculateNRUFromMKT();
+      setInput(prev => ({
+        ...prev,
+        basic_settings: { ...prev.basic_settings!, launch_mkt_budget: budget },
+        nru: { ...prev.nru, d1_nru: calculated }
+      }));
+    }
   };
 
   const selectedSampleGames = input.retention.selected_games;
@@ -359,6 +399,214 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
               </div>
             </div>
             <div className="text-xs text-gray-500">* 예: Best 보정 5 = Normal 대비 +5% / Worst 보정 -5 = Normal 대비 -5%</div>
+          </div>
+        )}
+      </div>
+
+      {/* 6. Phase 2: MKT → NRU 자동 계산 */}
+      <div className="border border-orange-200 rounded-lg overflow-hidden">
+        <button onClick={() => setActiveSection(activeSection === 'mkt-calc' ? null : 'mkt-calc')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'mkt-calc' ? 'bg-orange-50 border-b border-orange-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
+          <div className="flex items-center gap-2">
+            <DollarSign className="w-5 h-5 text-orange-600" />
+            <span className="font-medium">6. MKT → NRU 자동 계산</span>
+            <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">Phase 2</span>
+          </div>
+          {activeSection === 'mkt-calc' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+        </button>
+        {activeSection === 'mkt-calc' && (
+          <div className="p-4 space-y-4">
+            <GuideBox title="MKT 기반 NRU 자동 산출">
+              <div className="space-y-1 text-xs">
+                <p><strong>계산식:</strong> D1 NRU = (마케팅 예산 ÷ CPI × Organic 배수) × NVR</p>
+                <p><strong>예시:</strong> 50억 ÷ 2,660원 × 2(Paid 50%) × 70% = <strong>약 263만명</strong></p>
+              </div>
+            </GuideBox>
+
+            <div className="flex items-center gap-3 p-3 bg-orange-50 rounded-lg border border-orange-200">
+              <input 
+                type="checkbox" 
+                id="nru-auto-calc" 
+                checked={nruAutoCalc}
+                onChange={(e) => {
+                  setNruAutoCalc(e.target.checked);
+                  if (e.target.checked) {
+                    const calculated = calculateNRUFromMKT();
+                    setInput(prev => ({ ...prev, nru: { ...prev.nru, d1_nru: calculated } }));
+                  }
+                }}
+                className="w-4 h-4 text-orange-600"
+              />
+              <label htmlFor="nru-auto-calc" className="text-sm font-medium text-orange-800">
+                MKT 예산 기반 D1 NRU 자동 계산 활성화
+              </label>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="border border-gray-300 rounded-lg overflow-hidden">
+                <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">MKT 예산 입력</div>
+                <table className="w-full text-sm table-fixed">
+                  <tbody>
+                    <tr>
+                      <td className="px-3 py-2 border-b bg-gray-50 w-2/5">런칭 MKT 예산</td>
+                      <td className="px-3 py-2 border-b bg-yellow-50">
+                        <div className="flex items-center">
+                          <input 
+                            type="number" 
+                            value={input.basic_settings?.launch_mkt_budget || 0} 
+                            onChange={(e) => handleMktBudgetChange(parseInt(e.target.value) || 0)}
+                            className="flex-1 bg-transparent border-none p-0 text-right min-w-0" 
+                          />
+                          <span className="ml-1 flex-shrink-0">원</span>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 border-b bg-gray-50">CPI</td>
+                      <td className="px-3 py-2 border-b bg-gray-100 text-right whitespace-nowrap">{(input.basic_settings?.cpi || 2660).toLocaleString()}원</td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 border-b bg-gray-50">Paid/Organic 비율</td>
+                      <td className="px-3 py-2 border-b bg-gray-100 text-right">{Math.round(input.nru.paid_organic_ratio * 100)}% / {Math.round((1 - input.nru.paid_organic_ratio) * 100)}%</td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 bg-gray-50">NVR (전환율)</td>
+                      <td className="px-3 py-2 bg-gray-100 text-right">{Math.round(input.nru.nvr * 100)}%</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="border border-gray-300 rounded-lg overflow-hidden">
+                <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">자동 계산 결과</div>
+                <table className="w-full text-sm table-fixed">
+                  <tbody>
+                    <tr>
+                      <td className="px-3 py-2 border-b bg-gray-50 w-2/5">Paid Install</td>
+                      <td className="px-3 py-2 border-b bg-blue-50 text-right whitespace-nowrap">
+                        {Math.floor((input.basic_settings?.launch_mkt_budget || 0) / (input.basic_settings?.cpi || 2660)).toLocaleString()}명
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-3 py-2 border-b bg-gray-50">Total Install</td>
+                      <td className="px-3 py-2 border-b bg-blue-50 text-right whitespace-nowrap">
+                        {(() => {
+                          const paid = Math.floor((input.basic_settings?.launch_mkt_budget || 0) / (input.basic_settings?.cpi || 2660));
+                          const paidRatio = input.nru.paid_organic_ratio || 0.5;
+                          const organic = Math.floor(paid * ((1 - paidRatio) / paidRatio));
+                          return (paid + organic).toLocaleString();
+                        })()}명
+                      </td>
+                    </tr>
+                    <tr className="bg-green-50">
+                      <td className="px-3 py-2 border-b bg-green-100 font-medium">D1 NRU (Best)</td>
+                      <td className="px-3 py-2 border-b text-right font-medium text-green-700">{calculateNRUFromMKT().best.toLocaleString()}명</td>
+                    </tr>
+                    <tr className="bg-blue-50">
+                      <td className="px-3 py-2 border-b bg-blue-100 font-medium">D1 NRU (Normal)</td>
+                      <td className="px-3 py-2 border-b text-right font-medium text-blue-700">{calculateNRUFromMKT().normal.toLocaleString()}명</td>
+                    </tr>
+                    <tr className="bg-red-50">
+                      <td className="px-3 py-2 bg-red-100 font-medium">D1 NRU (Worst)</td>
+                      <td className="px-3 py-2 text-right font-medium text-red-700">{calculateNRUFromMKT().worst.toLocaleString()}명</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 7. Phase 2: 계절성 팩터 */}
+      <div className="border border-teal-200 rounded-lg overflow-hidden">
+        <button onClick={() => setActiveSection(activeSection === 'seasonality' ? null : 'seasonality')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'seasonality' ? 'bg-teal-50 border-b border-teal-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
+          <div className="flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-teal-600" />
+            <span className="font-medium">7. 계절성 팩터 (Seasonality)</span>
+            <span className="text-xs bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full">Phase 2</span>
+          </div>
+          {activeSection === 'seasonality' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+        </button>
+        {activeSection === 'seasonality' && (
+          <div className="p-4 space-y-4">
+            <GuideBox title="계절성 팩터 적용">
+              <div className="space-y-1 text-xs">
+                <p>실제 게임 지표는 요일/계절에 따라 변동합니다. 이 팩터를 적용하면 더 현실적인 프로젝션이 가능합니다.</p>
+                <p><strong>주말 효과:</strong> 금~일요일 DAU/매출 증가</p>
+                <p><strong>성수기:</strong> 여름방학(7-8월), 연말(12월), 설연휴(1월)</p>
+              </div>
+            </GuideBox>
+
+            <div className="flex items-center gap-3 p-3 bg-teal-50 rounded-lg border border-teal-200">
+              <input 
+                type="checkbox" 
+                id="seasonality-enabled" 
+                checked={seasonalityEnabled}
+                onChange={(e) => setSeasonalityEnabled(e.target.checked)}
+                className="w-4 h-4 text-teal-600"
+              />
+              <label htmlFor="seasonality-enabled" className="text-sm font-medium text-teal-800">
+                계절성 팩터 적용 (프로젝션에 반영)
+              </label>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="border border-gray-300 rounded-lg overflow-hidden">
+                <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">요일별 가중치</div>
+                <table className="w-full text-sm">
+                  <tbody>
+                    {[
+                      { day: '월요일', key: 'mon', value: 0.85 },
+                      { day: '화요일', key: 'tue', value: 0.85 },
+                      { day: '수요일', key: 'wed', value: 0.85 },
+                      { day: '목요일', key: 'thu', value: 0.85 },
+                      { day: '금요일', key: 'fri', value: 1.05 },
+                      { day: '토요일', key: 'sat', value: 1.25 },
+                      { day: '일요일', key: 'sun', value: 1.15 },
+                    ].map(({ day, value }, i) => (
+                      <tr key={day} className={i === 6 ? '' : 'border-b'}>
+                        <td className="px-3 py-1.5 bg-gray-50 w-1/2 text-xs">{day}</td>
+                        <td className={`px-3 py-1.5 text-right text-xs ${value > 1 ? 'bg-green-50 text-green-700' : 'bg-gray-50'}`}>
+                          ×{value.toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="border border-gray-300 rounded-lg overflow-hidden">
+                <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">월별 가중치</div>
+                <div className="max-h-48 overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {[
+                        { month: '1월 (설연휴)', value: 1.15 },
+                        { month: '2월', value: 1.00 },
+                        { month: '3월', value: 0.95 },
+                        { month: '4월', value: 0.95 },
+                        { month: '5월', value: 1.00 },
+                        { month: '6월', value: 1.00 },
+                        { month: '7월 (여름방학)', value: 1.20 },
+                        { month: '8월 (여름방학)', value: 1.20 },
+                        { month: '9월', value: 0.95 },
+                        { month: '10월', value: 0.95 },
+                        { month: '11월', value: 0.95 },
+                        { month: '12월 (연말)', value: 1.10 },
+                      ].map(({ month, value }, i) => (
+                        <tr key={month} className={i === 11 ? '' : 'border-b'}>
+                          <td className="px-3 py-1.5 bg-gray-50 w-1/2 text-xs">{month}</td>
+                          <td className={`px-3 py-1.5 text-right text-xs ${value > 1 ? 'bg-green-50 text-green-700' : value < 1 ? 'bg-red-50 text-red-700' : 'bg-gray-50'}`}>
+                            ×{value.toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div className="text-xs text-gray-500">* 현재 버전에서는 가중치 값이 고정되어 있습니다. 향후 커스텀 설정 기능이 추가될 예정입니다.</div>
           </div>
         )}
       </div>

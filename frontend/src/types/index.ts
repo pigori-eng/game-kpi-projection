@@ -28,7 +28,8 @@ export interface BasicSettings {
   vat_ratio: number;
   hr_cost_monthly: number;
   sustaining_mkt_ratio: number;
-  // 런칭 MKT
+  // 런칭 MKT (Phase 2: MKT → NRU 자동 계산)
+  launch_mkt_budget?: number;  // 런칭 마케팅 예산 (원)
   launch_mkt_best?: number;
   launch_mkt_normal?: number;
   launch_mkt_worst?: number;
@@ -43,6 +44,34 @@ export interface BasicSettings {
   ops_team_size?: number;
   qa_team_size?: number;
   biz_team_size?: number;
+}
+
+// Phase 2: NRU 자동 계산 모드
+export interface NRUAutoCalcSettings {
+  enabled: boolean;
+  launch_mkt_budget: number;  // 런칭 마케팅 예산
+  cpi: number;                // Cost Per Install
+  paid_ratio: number;         // Paid 비율 (0~1)
+  nvr: number;                // Net Value Rate (설치→실행 전환율)
+}
+
+// Phase 2: 계절성 설정
+export interface SeasonalitySettings {
+  enabled: boolean;
+  // 요일 가중치 (월~일)
+  weekday_weights: {
+    mon: number;
+    tue: number;
+    wed: number;
+    thu: number;
+    fri: number;
+    sat: number;
+    sun: number;
+  };
+  // 월별 가중치 (1~12월)
+  monthly_weights: {
+    [month: number]: number;
+  };
 }
 
 // Input Types
@@ -145,6 +174,11 @@ export interface SummaryResult {
   peak_dau: number;
   average_dau: number;
   average_daily_revenue: number;
+  // Phase 2: LTV & ROAS
+  ltv?: number;           // Life Time Value (유저당 평균 수익)
+  cac?: number;           // Customer Acquisition Cost
+  roas?: number;          // Return On Ad Spend (%)
+  break_even_day?: number; // 손익분기점 도달 일수
 }
 
 export interface ProjectionResult {
