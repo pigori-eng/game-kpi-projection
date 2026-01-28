@@ -141,6 +141,13 @@ export interface RevenueInput {
   };
 }
 
+// Phase 4: 블렌딩 설정
+export interface BlendingSettings {
+  weight: number;        // 내부 표본 가중치 (0~1), 기본값 0.7
+  genre: string;         // 벤치마크용 장르
+  platforms: string[];   // 벤치마크용 플랫폼
+}
+
 export interface ProjectionInput {
   launch_date: string;
   projection_days: number;
@@ -148,6 +155,7 @@ export interface ProjectionInput {
   nru: NRUInput;
   revenue: RevenueInput;
   basic_settings?: BasicSettings;
+  blending?: BlendingSettings;  // 블렌딩 설정 추가
 }
 
 // Result Types
@@ -219,6 +227,21 @@ export interface ProjectionResult {
     nru_games: string[];
     pr_games: string[];
     arppu_games: string[];
+  };
+  blending?: {
+    weight_internal: number;
+    weight_benchmark: number;
+    genre: string;
+    platforms: string[];
+    benchmark_only: boolean;
+    benchmark_data: {
+      d1: number;
+      d7: number;
+      d30: number;
+      d90: number;
+      pr: number;
+      arppu: number;
+    };
   };
   summary: {
     best: SummaryResult;

@@ -60,6 +60,139 @@ class ProjectionInput(BaseModel):
     nru: NRUInput
     revenue: RevenueInput
     basic_settings: Optional[Dict[str, Any]] = None
+    # 블렌딩 설정 추가
+    blending: Optional[Dict[str, Any]] = None  # { weight: 0.7, genre: "MMORPG", platform: "PC" }
+
+# ============================================
+# 시장 벤치마크 데이터 (SensorTower/Newzoo 기반)
+# ============================================
+BENCHMARK_DATA = {
+    "PC": {
+        "MMORPG": {"d1": 0.32, "d7": 0.20, "d30": 0.11, "d90": 0.06, "pr": 0.06, "arppu": 78000},
+        "Action RPG": {"d1": 0.30, "d7": 0.18, "d30": 0.09, "d90": 0.04, "pr": 0.05, "arppu": 65000},
+        "Battle Royale": {"d1": 0.35, "d7": 0.22, "d30": 0.12, "d90": 0.07, "pr": 0.03, "arppu": 45000},
+        "Extraction Shooter": {"d1": 0.28, "d7": 0.16, "d30": 0.08, "d90": 0.04, "pr": 0.04, "arppu": 55000},
+        "FPS/TPS": {"d1": 0.33, "d7": 0.20, "d30": 0.10, "d90": 0.05, "pr": 0.04, "arppu": 50000},
+        "Strategy": {"d1": 0.25, "d7": 0.15, "d30": 0.08, "d90": 0.04, "pr": 0.07, "arppu": 85000},
+        "Casual": {"d1": 0.40, "d7": 0.20, "d30": 0.08, "d90": 0.03, "pr": 0.02, "arppu": 25000},
+        "Sports": {"d1": 0.30, "d7": 0.18, "d30": 0.09, "d90": 0.04, "pr": 0.05, "arppu": 60000},
+    },
+    "Mobile": {
+        "MMORPG": {"d1": 0.42, "d7": 0.18, "d30": 0.07, "d90": 0.03, "pr": 0.05, "arppu": 52000},
+        "Action RPG": {"d1": 0.38, "d7": 0.15, "d30": 0.06, "d90": 0.02, "pr": 0.04, "arppu": 45000},
+        "Battle Royale": {"d1": 0.45, "d7": 0.20, "d30": 0.08, "d90": 0.04, "pr": 0.02, "arppu": 35000},
+        "Extraction Shooter": {"d1": 0.35, "d7": 0.14, "d30": 0.05, "d90": 0.02, "pr": 0.03, "arppu": 40000},
+        "FPS/TPS": {"d1": 0.40, "d7": 0.17, "d30": 0.07, "d90": 0.03, "pr": 0.03, "arppu": 38000},
+        "Strategy": {"d1": 0.35, "d7": 0.16, "d30": 0.07, "d90": 0.03, "pr": 0.06, "arppu": 68000},
+        "Casual": {"d1": 0.50, "d7": 0.22, "d30": 0.09, "d90": 0.04, "pr": 0.02, "arppu": 18000},
+        "Sports": {"d1": 0.38, "d7": 0.16, "d30": 0.06, "d90": 0.02, "pr": 0.04, "arppu": 42000},
+    },
+    "Console": {
+        "MMORPG": {"d1": 0.35, "d7": 0.22, "d30": 0.12, "d90": 0.06, "pr": 0.05, "arppu": 70000},
+        "Action RPG": {"d1": 0.33, "d7": 0.20, "d30": 0.10, "d90": 0.05, "pr": 0.04, "arppu": 60000},
+        "Battle Royale": {"d1": 0.38, "d7": 0.24, "d30": 0.13, "d90": 0.07, "pr": 0.02, "arppu": 40000},
+        "Extraction Shooter": {"d1": 0.30, "d7": 0.18, "d30": 0.09, "d90": 0.04, "pr": 0.03, "arppu": 50000},
+        "FPS/TPS": {"d1": 0.36, "d7": 0.22, "d30": 0.11, "d90": 0.06, "pr": 0.03, "arppu": 48000},
+        "Strategy": {"d1": 0.28, "d7": 0.17, "d30": 0.09, "d90": 0.04, "pr": 0.06, "arppu": 75000},
+        "Casual": {"d1": 0.42, "d7": 0.20, "d30": 0.08, "d90": 0.03, "pr": 0.02, "arppu": 22000},
+        "Sports": {"d1": 0.35, "d7": 0.20, "d30": 0.10, "d90": 0.05, "pr": 0.05, "arppu": 55000},
+    }
+}
+
+def get_benchmark_data(genre: str, platforms: List[str]) -> Dict[str, float]:
+    """장르/플랫폼에 맞는 벤치마크 데이터 반환 (다중 플랫폼은 평균)"""
+    if not platforms:
+        platforms = ["PC"]
+    
+    values = []
+    for platform in platforms:
+        if platform in BENCHMARK_DATA and genre in BENCHMARK_DATA[platform]:
+            values.append(BENCHMARK_DATA[platform][genre])
+    
+    if not values:
+        # 기본값 (PC/MMORPG)
+        return {"d1": 0.32, "d7": 0.20, "d30": 0.11, "d90": 0.06, "pr": 0.06, "arppu": 78000}
+    
+    # 다중 플랫폼이면 평균
+    return {
+        "d1": np.mean([v["d1"] for v in values]),
+        "d7": np.mean([v["d7"] for v in values]),
+        "d30": np.mean([v["d30"] for v in values]),
+        "d90": np.mean([v["d90"] for v in values]),
+        "pr": np.mean([v["pr"] for v in values]),
+        "arppu": np.mean([v["arppu"] for v in values]),
+    }
+
+def generate_benchmark_retention_curve(benchmark: Dict[str, float], days: int = 365) -> List[float]:
+    """벤치마크 데이터로 Power Law 리텐션 커브 생성"""
+    # D1, D7, D30, D90 데이터로 회귀분석
+    x_data = np.array([1, 7, 30, 90])
+    y_data = np.array([benchmark["d1"], benchmark["d7"], benchmark["d30"], benchmark["d90"]])
+    
+    try:
+        popt, _ = curve_fit(retention_curve, x_data, y_data, p0=[0.5, -0.3], maxfev=5000)
+        a, b = popt
+    except:
+        a, b = benchmark["d1"], -0.5  # 기본값
+    
+    curve = []
+    for day in range(1, days + 1):
+        ret = a * np.power(day, b)
+        ret = max(min(ret, 1.0), 0.001)
+        curve.append(ret)
+    
+    return curve
+
+def calculate_blended_retention(
+    internal_curve: List[float],
+    benchmark_curve: List[float],
+    weight_internal: float
+) -> List[float]:
+    """내부 표본과 벤치마크를 블렌딩한 리텐션 커브 생성"""
+    weight_benchmark = 1 - weight_internal
+    
+    blended = []
+    for i in range(len(internal_curve)):
+        internal_val = internal_curve[i] if i < len(internal_curve) else internal_curve[-1]
+        benchmark_val = benchmark_curve[i] if i < len(benchmark_curve) else benchmark_curve[-1]
+        blended_val = (internal_val * weight_internal) + (benchmark_val * weight_benchmark)
+        blended.append(max(min(blended_val, 1.0), 0.001))
+    
+    return blended
+
+def calculate_blended_pr(
+    internal_pr: List[float],
+    benchmark_pr: float,
+    weight_internal: float,
+    days: int = 365
+) -> List[float]:
+    """PR 블렌딩"""
+    weight_benchmark = 1 - weight_internal
+    
+    blended = []
+    for i in range(days):
+        internal_val = internal_pr[i] if i < len(internal_pr) else internal_pr[-1]
+        blended_val = (internal_val * weight_internal) + (benchmark_pr * weight_benchmark)
+        blended.append(max(min(blended_val, 1.0), 0.001))
+    
+    return blended
+
+def calculate_blended_arppu(
+    internal_arppu: List[float],
+    benchmark_arppu: float,
+    weight_internal: float,
+    days: int = 365
+) -> List[float]:
+    """ARPPU 블렌딩"""
+    weight_benchmark = 1 - weight_internal
+    
+    blended = []
+    for i in range(days):
+        internal_val = internal_arppu[i] if i < len(internal_arppu) else internal_arppu[-1]
+        blended_val = (internal_val * weight_internal) + (benchmark_arppu * weight_benchmark)
+        blended.append(max(blended_val, 1000))
+    
+    return blended
 
 class AIInsightRequest(BaseModel):
     projection_summary: Dict[str, Any]
@@ -443,7 +576,24 @@ async def calculate_projection(input_data: ProjectionInput):
     days = input_data.projection_days
     results = {"best": {}, "normal": {}, "worst": {}}
     
-    # Calculate coefficients
+    # 블렌딩 설정 추출
+    blending = input_data.blending or {}
+    weight_internal = blending.get("weight", 1.0)  # 기본값: 내부 표본 100%
+    genre = blending.get("genre", "MMORPG")
+    platforms = blending.get("platforms", ["PC"])
+    use_benchmark_only = blending.get("benchmark_only", False)  # 표본 없을 때 자동 설정
+    
+    # 표본 게임이 없으면 벤치마크 100% 사용
+    has_sample_games = len(input_data.retention.selected_games) > 0
+    if not has_sample_games:
+        weight_internal = 0.0
+        use_benchmark_only = True
+    
+    # 벤치마크 데이터 가져오기
+    benchmark = get_benchmark_data(genre, platforms)
+    benchmark_ret_curve = generate_benchmark_retention_curve(benchmark, days)
+    
+    # Calculate coefficients (내부 표본 기반)
     a, b = calculate_retention_coefficients(input_data.retention.selected_games, raw_data)
     nru_ratios = calculate_nru_pattern(input_data.nru.selected_games, raw_data)
     pr_pattern = calculate_pr_pattern(input_data.revenue.selected_games_pr, raw_data)
@@ -451,7 +601,18 @@ async def calculate_projection(input_data: ProjectionInput):
     
     for scenario in ["best", "normal", "worst"]:
         target_d1 = input_data.retention.target_d1_retention[scenario]
-        ret_curve = generate_retention_curve(a, b, target_d1, days)
+        
+        # 내부 표본 기반 리텐션 커브
+        internal_ret_curve = generate_retention_curve(a, b, target_d1, days)
+        
+        # 블렌딩 적용
+        if weight_internal < 1.0:
+            # 벤치마크 커브도 target_d1에 맞게 스케일링
+            benchmark_scale = target_d1 / benchmark["d1"] if benchmark["d1"] > 0 else 1.0
+            scaled_benchmark_curve = [min(r * benchmark_scale, 1.0) for r in benchmark_ret_curve]
+            ret_curve = calculate_blended_retention(internal_ret_curve, scaled_benchmark_curve, weight_internal)
+        else:
+            ret_curve = internal_ret_curve
         
         d1_nru = input_data.nru.d1_nru[scenario]
         adjusted_ratios = nru_ratios.copy()
@@ -469,7 +630,12 @@ async def calculate_projection(input_data: ProjectionInput):
         elif scenario == "worst":
             pr_adj = input_data.revenue.pr_adjustment.get("worst_vs_normal", 0)
         
-        pr_series = [p * (1 + pr_adj) for p in pr_pattern]
+        # PR 블렌딩
+        if weight_internal < 1.0:
+            pr_series = calculate_blended_pr(pr_pattern, benchmark["pr"], weight_internal, days)
+        else:
+            pr_series = pr_pattern[:days]
+        pr_series = [p * (1 + pr_adj) for p in pr_series]
         
         arppu_adj = 0
         if scenario == "best":
@@ -477,7 +643,12 @@ async def calculate_projection(input_data: ProjectionInput):
         elif scenario == "worst":
             arppu_adj = input_data.revenue.arppu_adjustment.get("worst_vs_normal", 0)
         
-        arppu_series = [a * (1 + arppu_adj) for a in arppu_pattern]
+        # ARPPU 블렌딩
+        if weight_internal < 1.0:
+            arppu_series = calculate_blended_arppu(arppu_pattern, benchmark["arppu"], weight_internal, days)
+        else:
+            arppu_series = arppu_pattern[:days]
+        arppu_series = [a * (1 + arppu_adj) for a in arppu_series]
         revenue_series = calculate_revenue(dau_series, pr_series, arppu_series)
         
         results[scenario] = {
@@ -543,6 +714,14 @@ async def calculate_projection(input_data: ProjectionInput):
             "nru_games": input_data.nru.selected_games,
             "pr_games": input_data.revenue.selected_games_pr,
             "arppu_games": input_data.revenue.selected_games_arppu
+        },
+        "blending": {
+            "weight_internal": weight_internal,
+            "weight_benchmark": 1 - weight_internal,
+            "genre": genre,
+            "platforms": platforms,
+            "benchmark_only": use_benchmark_only,
+            "benchmark_data": benchmark
         },
         "summary": summary,
         "results": results

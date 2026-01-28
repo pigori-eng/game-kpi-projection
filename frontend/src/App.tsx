@@ -52,6 +52,7 @@ function App() {
     uac: 3800,
   };
 
+  // Input state
   // Input state - 피드백 반영 디폴트값
   const [input, setInput] = useState<ProjectionInput>({
     launch_date: '2026-11-12',
@@ -65,18 +66,17 @@ function App() {
       d1_nru: { best: 440000, normal: 400000, worst: 360000 },
       paid_organic_ratio: 0.5,
       nvr: 0.7,
-      adjustment: { best_vs_normal: 0.05, worst_vs_normal: -0.05 },  // 피드백 #13: ±5%
+      adjustment: { best_vs_normal: -0.05, worst_vs_normal: 0.05 },  // #13: Best -5%, Worst +5%
     },
     revenue: {
       selected_games_pr: [],
       selected_games_arppu: [],
-      pr_adjustment: { best_vs_normal: 0.05, worst_vs_normal: -0.05 },      // 피드백 #14: PR ±5%
-      arppu_adjustment: { best_vs_normal: 0.10, worst_vs_normal: -0.10 },   // 피드백 #14: ARPPU ±10%
+      pr_adjustment: { best_vs_normal: 0.05, worst_vs_normal: -0.05 },      // #14: PR Best +5%, Worst -5%
+      arppu_adjustment: { best_vs_normal: 0.10, worst_vs_normal: -0.10 },   // #14: ARPPU Best +10%, Worst -10%
     },
     basic_settings: {
       ...defaultBasicSettings,
-      hr_direct_headcount: 50,
-      hr_indirect_headcount: 20,  // 피드백 #3: 간접인건비 디폴트 20명
+      hr_indirect_headcount: 20,  // #3: 간접인건비 디폴트 20명
     },
   });
 
@@ -122,9 +122,10 @@ function App() {
   };
 
   const handleCalculate = async () => {
-    if (input.retention.selected_games.length === 0) {
-      setError('표본 게임을 최소 1개 이상 선택해주세요. (Retention 설정에서 선택)');
-      return;
+    // 블렌딩 설정이 없고 표본도 없으면 경고만 표시 (계산은 진행)
+    if (input.retention.selected_games.length === 0 && !input.blending) {
+      // 표본 없으면 자동으로 벤치마크 100% 사용
+      console.log('표본 게임 없음 - 벤치마크 100% 모드로 전환');
     }
 
     setCalculating(true);
