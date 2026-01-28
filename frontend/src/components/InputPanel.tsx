@@ -120,6 +120,11 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
   const [gameMetadata, setGameMetadata] = useState<Record<string, GameMetadata>>({});
   const [nruAutoCalc, setNruAutoCalc] = useState(false);
   const [seasonalityEnabled, setSeasonalityEnabled] = useState(false);
+  
+  // Phase 3: 프로젝트 정보 및 유사도 추천
+  const [projectInfo, setProjectInfo] = useState({ genre: '', platform: '', region: '' });
+  const [useAIRecommend, setUseAIRecommend] = useState(false);
+  const [useBenchmark, setUseBenchmark] = useState(false);
 
   useEffect(() => {
     const loadMetadata = async () => {
@@ -141,6 +146,59 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
       revenue: { ...prev.revenue, selected_games_pr: selectedGames, selected_games_arppu: selectedGames },
     }));
   };
+
+  // Phase 3: 유사도 기반 게임 추천
+  const calculateSimilarity = (gameName: string): { score: number; reason: string } => {
+    const meta = gameMetadata[gameName];
+    if (!meta || !projectInfo.genre) return { score: 0, reason: '정보 없음' };
+
+    let score = 0;
+    const reasons: string[] = [];
+
+    // 장르 일치 (50점)
+    if (meta.genre?.toLowerCase().includes(projectInfo.genre.toLowerCase())) {
+      score += 50;
+      reasons.push('장르O');
+    } else {
+      reasons.push('장르X');
+    }
+
+    // 지역 일치 (30점) - 게임명에서 추출
+    const gameRegion = gameName.match(/\((.*?)\)/)?.[1] || '';
+    if (projectInfo.region && gameRegion.toLowerCase().includes(projectInfo.region.toLowerCase())) {
+      score += 30;
+      reasons.push('지역O');
+    } else if (projectInfo.region) {
+      reasons.push('지역X');
+    }
+
+    // 최신성 보정 (20점)
+    if (meta.release_date) {
+      const year = parseInt(meta.release_date.substring(0, 4));
+      if (year >= 2021) {
+        score += 20;
+        reasons.push('최신');
+      } else if (year >= 2019) {
+        score += 10;
+      }
+    }
+
+    return { score, reason: reasons.join(' / ') };
+  };
+
+  const getRecommendedGames = () => {
+    if (!useAIRecommend || !projectInfo.genre) return [];
+    
+    return games.retention
+      .map(game => ({
+        game,
+        ...calculateSimilarity(game)
+      }))
+      .filter(g => g.score >= 40)
+      .sort((a, b) => b.score - a.score);
+  };
+
+  const recommendedGames = getRecommendedGames();
 
   // Phase 2: MKT → NRU 자동 계산
   const calculateNRUFromMKT = () => {
@@ -202,18 +260,18 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
       {/* 1. Basic Settings */}
       <div className="border border-gray-200 rounded-lg overflow-hidden">
         <button onClick={() => setActiveSection(activeSection === 'basic' ? null : 'basic')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'basic' ? 'bg-slate-100 border-b' : 'bg-gray-50 hover:bg-gray-100'}`}>
-          <div className="flex items-center gap-2"><Building className="w-5 h-5 text-slate-600" /><span className="font-medium">1. 산정 정보 (Basic Settings)</span></div>
+          <div className="flex items-center gap-2"><Building className="w-5 h-5 text-slate-600" /><span className="font-medium">1. 기본 산정 정보</span></div>
           {activeSection === 'basic' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
         </button>
         {activeSection === 'basic' && (
           <div className="p-4 space-y-4">
-            <GuideBox title="산정 정보 입력 가이드">
+            <GuideBox title="기본 산정 정보 가이드">
               <ul className="list-disc list-inside space-y-1 text-xs">
                 <li><strong>V.A.T:</strong> 한국 10%, 일본 8%, 대만 5%, 미국 ~10% (주별 상이)</li>
                 <li><strong>마켓 수수료:</strong> Google Play/App Store 기본 30%, 소규모 개발사 프로그램 15%</li>
                 <li><strong>인프라 비용:</strong> 매출의 약 3% (서버, CDN, 클라우드 비용)</li>
-                <li><strong>직접 인건비:</strong> 프로덕트 직접 담당 인원 (급여+복리후생 약 1억/연 + 인원연동비 약 3천만/연)</li>
-                <li><strong>간접 인건비:</strong> 공용 조직 배부 비용 (참고: inZOI 14.3M, DKO 13.4M, AOD 14.5M원/월)</li>
+                <li><strong>직접 인건비:</strong> 프로덕트 직접 담당 인원 (인당 약 1,500만원/월)</li>
+                <li><strong>간접 인건비:</strong> 공용 조직 배부 비용</li>
               </ul>
             </GuideBox>
             <div className="grid grid-cols-2 gap-4">
@@ -222,7 +280,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                   <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">기본 정보</div>
                   <table className="w-full text-sm table-fixed">
                     <tbody>
-                      <tr><td className="px-3 py-2 border-b bg-gray-50 w-2/5">런칭 예정일</td><td className="px-3 py-2 border-b bg-yellow-50"><input type="date" value={input.launch_date} onChange={(e) => setInput(prev => ({ ...prev, launch_date: e.target.value }))} className="w-full bg-transparent border-none p-0" /></td></tr>
+                      <tr><td className="px-3 py-2 border-b bg-gray-50 w-2/5">런칭 예정일</td><td className="px-3 py-2 border-b bg-yellow-50"><input type="date" value={input.launch_date} onChange={(e) => setInput(prev => ({ ...prev, launch_date: e.target.value }))} className="w-full bg-transparent border-none p-0 text-right" /></td></tr>
                       <tr><td className="px-3 py-2 border-b bg-gray-50">프로젝션 기간 (Day)</td><td className="px-3 py-2 border-b bg-yellow-50"><input type="number" value={input.projection_days} onChange={(e) => setInput(prev => ({ ...prev, projection_days: parseInt(e.target.value) || 365 }))} className="w-full bg-transparent border-none p-0 text-right" /></td></tr>
                       <tr><td className="px-3 py-2 border-b bg-gray-50">인프라 비용 (%)</td><td className="px-3 py-2 border-b bg-yellow-50"><input type="number" step="1" value={Math.round((input.basic_settings?.infrastructure_cost_ratio || 0.03) * 100)} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, infrastructure_cost_ratio: (parseFloat(e.target.value) || 0) / 100 } }))} className="w-full bg-transparent border-none p-0 text-right" /></td></tr>
                       <tr><td className="px-3 py-2 border-b bg-gray-50">마켓 수수료 (%)</td><td className="px-3 py-2 border-b bg-yellow-50"><input type="number" step="1" value={Math.round((input.basic_settings?.market_fee_ratio || 0.30) * 100)} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, market_fee_ratio: (parseFloat(e.target.value) || 0) / 100 } }))} className="w-full bg-transparent border-none p-0 text-right" /></td></tr>
@@ -230,36 +288,19 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                     </tbody>
                   </table>
                 </div>
-                <div className="border border-gray-300 rounded-lg overflow-hidden">
-                  <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">CPI & UAC</div>
-                  <table className="w-full text-sm table-fixed">
-                    <tbody>
-                      <tr><td className="px-3 py-2 border-b bg-gray-50 w-2/5">CPI (Cost Per Install)</td><td className="px-3 py-2 border-b bg-yellow-50"><div className="flex items-center"><input type="number" value={input.basic_settings?.cpi || 2660} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, cpi: parseInt(e.target.value) || 0 } }))} className="flex-1 bg-transparent border-none p-0 text-right min-w-0" /><span className="ml-1 flex-shrink-0">원</span></div></td></tr>
-                      <tr><td className="px-3 py-2 bg-gray-50">UAC (User Acquisition Cost)</td><td className="px-3 py-2 bg-yellow-50"><div className="flex items-center"><input type="number" value={input.basic_settings?.uac || 3800} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, uac: parseInt(e.target.value) || 0 } }))} className="flex-1 bg-transparent border-none p-0 text-right min-w-0" /><span className="ml-1 flex-shrink-0">원</span></div></td></tr>
-                    </tbody>
-                  </table>
-                </div>
               </div>
               <div className="space-y-4">
                 <div className="border border-gray-300 rounded-lg overflow-hidden">
-                  <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">HR Cost (월간, 인당 1,500만원 기준)</div>
+                  <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">HR Cost (월간)</div>
                   <table className="w-full text-sm table-fixed">
                     <tbody>
                       <tr><td className="px-3 py-2 border-b bg-gray-50 w-2/5">직접 인건비 (인원수)</td><td className="px-3 py-2 border-b bg-yellow-50"><div className="flex items-center"><input type="number" value={input.basic_settings?.hr_direct_headcount || 50} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, hr_direct_headcount: parseInt(e.target.value) || 0 } }))} className="flex-1 bg-transparent border-none p-0 text-right min-w-0" /><span className="ml-1 flex-shrink-0">명</span></div></td></tr>
-                      <tr><td className="px-3 py-2 border-b bg-gray-50">직접 인건비 (월)</td><td className="px-3 py-2 border-b bg-gray-100 text-right whitespace-nowrap">{((input.basic_settings?.hr_direct_headcount || 50) * 15000000).toLocaleString()}원</td></tr>
-                      <tr><td className="px-3 py-2 border-b bg-gray-50">간접 인건비 (월)</td><td className="px-3 py-2 border-b bg-yellow-50"><div className="flex items-center"><input type="number" value={input.basic_settings?.hr_indirect_monthly || 14000000} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, hr_indirect_monthly: parseInt(e.target.value) || 0 } }))} className="flex-1 bg-transparent border-none p-0 text-right min-w-0" /><span className="ml-1 flex-shrink-0">원</span></div></td></tr>
-                      <tr><td className="px-3 py-2 bg-gray-50 font-medium">총 HR Cost (월)</td><td className="px-3 py-2 bg-blue-50 text-right font-medium whitespace-nowrap">{(((input.basic_settings?.hr_direct_headcount || 50) * 15000000) + (input.basic_settings?.hr_indirect_monthly || 14000000)).toLocaleString()}원</td></tr>
+                      <tr><td className="px-3 py-2 border-b bg-gray-50 text-xs text-gray-500">직접 인건비 (인당 1,500만원)</td><td className="px-3 py-2 border-b bg-gray-100 text-right whitespace-nowrap">{((input.basic_settings?.hr_direct_headcount || 50) * 15000000).toLocaleString()}원</td></tr>
+                      <tr><td className="px-3 py-2 border-b bg-gray-50 w-2/5">간접 인건비 (인원수)</td><td className="px-3 py-2 border-b bg-yellow-50"><div className="flex items-center"><input type="number" value={input.basic_settings?.hr_indirect_headcount || 1} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, hr_indirect_headcount: parseInt(e.target.value) || 0 } }))} className="flex-1 bg-transparent border-none p-0 text-right min-w-0" /><span className="ml-1 flex-shrink-0">명</span></div></td></tr>
+                      <tr><td className="px-3 py-2 border-b bg-gray-50 text-xs text-gray-500">간접 인건비 (인당 1,400만원)</td><td className="px-3 py-2 border-b bg-gray-100 text-right whitespace-nowrap">{((input.basic_settings?.hr_indirect_headcount || 1) * 14000000).toLocaleString()}원</td></tr>
+                      <tr><td className="px-3 py-2 bg-gray-50 font-medium">총 HR Cost (월간)</td><td className="px-3 py-2 bg-blue-50 text-right font-medium whitespace-nowrap">{(((input.basic_settings?.hr_direct_headcount || 50) * 15000000) + ((input.basic_settings?.hr_indirect_headcount || 1) * 14000000)).toLocaleString()}원</td></tr>
                     </tbody>
                   </table>
-                </div>
-                <div className="border border-gray-300 rounded-lg overflow-hidden">
-                  <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">MKT 비용</div>
-                  <table className="w-full text-sm table-fixed">
-                    <tbody>
-                      <tr><td className="px-3 py-2 bg-gray-50 w-2/5">Sustaining MKT (매출의 %)</td><td className="px-3 py-2 bg-yellow-50"><div className="flex items-center"><input type="number" step="1" value={Math.round((input.basic_settings?.sustaining_mkt_ratio || 0.07) * 100)} onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, sustaining_mkt_ratio: (parseFloat(e.target.value) || 0) / 100 } }))} className="flex-1 bg-transparent border-none p-0 text-right min-w-0" /><span className="ml-1 flex-shrink-0">%</span></div></td></tr>
-                    </tbody>
-                  </table>
-                  <div className="px-3 py-2 text-xs text-gray-500">* 런칭 후 지속 마케팅 비용</div>
                 </div>
               </div>
             </div>
@@ -267,25 +308,188 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
         )}
       </div>
 
-      {/* 2. Sample Games */}
-      <div className="border border-gray-200 rounded-lg overflow-hidden">
+      {/* 2. 프로젝트 정보 및 표본 추천 */}
+      <div className="border border-purple-200 rounded-lg overflow-hidden">
         <button onClick={() => setActiveSection(activeSection === 'sample' ? null : 'sample')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'sample' ? 'bg-purple-50 border-b border-purple-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
           <div className="flex items-center gap-2">
             <Gamepad2 className="w-5 h-5 text-purple-600" />
-            <span className="font-medium">2. 표본 게임 선택 (Sample Games)</span>
+            <span className="font-medium">2. 프로젝트 정보 & 표본 추천</span>
             {selectedSampleGames.length > 0 && <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">{selectedSampleGames.length}개 선택됨</span>}
           </div>
           {activeSection === 'sample' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
         </button>
         {activeSection === 'sample' && (
           <div className="p-4 space-y-4">
-            <GuideBox title="표본 게임 선택 가이드">
-              <ul className="list-disc list-inside space-y-1">
-                <li>여기서 선택한 게임이 <strong>Retention, NRU, Revenue 모든 설정에 동일하게 적용</strong>됩니다.</li>
-                <li><strong>ℹ️ 아이콘에 마우스를 올리면</strong> 게임의 장르, 출시일 정보를 확인할 수 있습니다.</li>
-              </ul>
-            </GuideBox>
-            <GameGridSelector availableGames={games.retention} selectedGames={selectedSampleGames} onChange={handleSampleGameSelect} metadata={gameMetadata} />
+            {/* 프로젝트 정보 입력 */}
+            <div className="border border-gray-300 rounded-lg overflow-hidden">
+              <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm flex items-center gap-2">
+                <span>1️⃣ 프로젝트 정보 입력</span>
+                <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Phase 3</span>
+              </div>
+              <div className="p-3 grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">장르</label>
+                  <select 
+                    value={projectInfo.genre} 
+                    onChange={(e) => setProjectInfo(prev => ({ ...prev, genre: e.target.value }))}
+                    className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                  >
+                    <option value="">선택하세요</option>
+                    <option value="MMORPG">MMORPG</option>
+                    <option value="RPG">RPG</option>
+                    <option value="Action RPG">Action RPG</option>
+                    <option value="Battle Royale">Battle Royale</option>
+                    <option value="FPS">FPS/TPS</option>
+                    <option value="Strategy">전략/시뮬레이션</option>
+                    <option value="Casual">캐주얼</option>
+                    <option value="Sports">스포츠</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">플랫폼</label>
+                  <select 
+                    value={projectInfo.platform} 
+                    onChange={(e) => setProjectInfo(prev => ({ ...prev, platform: e.target.value }))}
+                    className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                  >
+                    <option value="">선택하세요</option>
+                    <option value="Mobile">Mobile</option>
+                    <option value="PC">PC</option>
+                    <option value="Console">Console</option>
+                    <option value="Cross">Cross-Platform</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">출시 지역</label>
+                  <select 
+                    value={projectInfo.region} 
+                    onChange={(e) => setProjectInfo(prev => ({ ...prev, region: e.target.value }))}
+                    className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                  >
+                    <option value="">선택하세요</option>
+                    <option value="한국">한국</option>
+                    <option value="일본">일본</option>
+                    <option value="대만">대만</option>
+                    <option value="글로벌">글로벌</option>
+                    <option value="북미">북미</option>
+                    <option value="유럽">유럽</option>
+                    <option value="동남아">동남아</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* AI 추천 옵션 */}
+            <div className="flex items-center gap-4 p-3 bg-purple-50 rounded-lg border border-purple-200">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={useAIRecommend}
+                  onChange={(e) => setUseAIRecommend(e.target.checked)}
+                  className="w-4 h-4 text-purple-600"
+                />
+                <span className="text-sm font-medium text-purple-800">🤖 AI 유사도 기반 추천</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={useBenchmark}
+                  onChange={(e) => setUseBenchmark(e.target.checked)}
+                  className="w-4 h-4 text-purple-600"
+                />
+                <span className="text-sm font-medium text-purple-800">📊 시장 벤치마크 활용</span>
+              </label>
+            </div>
+
+            {/* AI 추천 결과 */}
+            {useAIRecommend && projectInfo.genre && (
+              <div className="border border-purple-300 rounded-lg overflow-hidden">
+                <div className="bg-purple-100 px-3 py-2 border-b font-medium text-sm text-purple-800">
+                  2️⃣ AI 추천 표본 (유사도 40점 이상)
+                </div>
+                <div className="p-3">
+                  {recommendedGames.length > 0 ? (
+                    <div className="space-y-2">
+                      {recommendedGames.map(({ game, score, reason }) => (
+                        <label key={game} className="flex items-center gap-3 p-2 rounded hover:bg-purple-50 cursor-pointer">
+                          <input 
+                            type="checkbox"
+                            checked={selectedSampleGames.includes(game)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                handleSampleGameSelect([...selectedSampleGames, game]);
+                              } else {
+                                handleSampleGameSelect(selectedSampleGames.filter(g => g !== game));
+                              }
+                            }}
+                            className="w-4 h-4 text-purple-600"
+                          />
+                          <span className="flex-1 text-sm">{game}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${
+                            score >= 80 ? 'bg-green-100 text-green-700' :
+                            score >= 60 ? 'bg-blue-100 text-blue-700' :
+                            'bg-gray-100 text-gray-700'
+                          }`}>
+                            유사도 {score}%
+                          </span>
+                          <span className="text-xs text-gray-500">{reason}</span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">유사한 표본 게임이 없습니다. 장르/지역을 변경해보세요.</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* 벤치마크 데이터 */}
+            {useBenchmark && (
+              <div className="border border-orange-300 rounded-lg overflow-hidden">
+                <div className="bg-orange-100 px-3 py-2 border-b font-medium text-sm text-orange-800">
+                  📊 시장 벤치마크 데이터 (장르/지역별 평균)
+                </div>
+                <div className="p-3">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-2 py-1 text-left border-b">지표</th>
+                        <th className="px-2 py-1 text-right border-b">RPG/한국</th>
+                        <th className="px-2 py-1 text-right border-b">RPG/일본</th>
+                        <th className="px-2 py-1 text-right border-b">RPG/글로벌</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td className="px-2 py-1 border-b">D1 Retention</td><td className="px-2 py-1 border-b text-right">35%</td><td className="px-2 py-1 border-b text-right">40%</td><td className="px-2 py-1 border-b text-right">30%</td></tr>
+                      <tr><td className="px-2 py-1 border-b">D7 Retention</td><td className="px-2 py-1 border-b text-right">15%</td><td className="px-2 py-1 border-b text-right">18%</td><td className="px-2 py-1 border-b text-right">12%</td></tr>
+                      <tr><td className="px-2 py-1 border-b">D30 Retention</td><td className="px-2 py-1 border-b text-right">8%</td><td className="px-2 py-1 border-b text-right">10%</td><td className="px-2 py-1 border-b text-right">5%</td></tr>
+                      <tr><td className="px-2 py-1 border-b">P.Rate</td><td className="px-2 py-1 border-b text-right">5~8%</td><td className="px-2 py-1 border-b text-right">4~6%</td><td className="px-2 py-1 border-b text-right">1~3%</td></tr>
+                      <tr><td className="px-2 py-1">ARPPU (월)</td><td className="px-2 py-1 text-right">₩50,000</td><td className="px-2 py-1 text-right">¥6,000</td><td className="px-2 py-1 text-right">$30</td></tr>
+                    </tbody>
+                  </table>
+                  <p className="mt-2 text-xs text-orange-600">* 출처: SensorTower, Data.ai 리포트 기반 추정치 (2024~2025)</p>
+                </div>
+              </div>
+            )}
+
+            {/* 기존 수동 선택 */}
+            <div className="border border-gray-300 rounded-lg overflow-hidden">
+              <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">
+                3️⃣ 수동 표본 선택 (전체 목록)
+              </div>
+              <div className="p-3">
+                <GuideBox title="표본 게임 선택 가이드">
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>여기서 선택한 게임이 <strong>Retention, NRU, Revenue 모든 설정에 동일하게 적용</strong>됩니다.</li>
+                    <li><strong>ℹ️ 아이콘에 마우스를 올리면</strong> 게임의 장르, 출시일 정보를 확인할 수 있습니다.</li>
+                  </ul>
+                </GuideBox>
+                <div className="mt-3">
+                  <GameGridSelector availableGames={games.retention} selectedGames={selectedSampleGames} onChange={handleSampleGameSelect} metadata={gameMetadata} />
+                </div>
+              </div>
+            </div>
+
             {selectedSampleGames.length > 0 && (
               <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
                 <p className="text-sm text-purple-700"><strong>✅ 선택된 표본 게임:</strong> {selectedSampleGames.join(', ')}</p>
@@ -317,22 +521,19 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
         )}
       </div>
 
-      {/* 4. NRU */}
+      {/* 3. NRU */}
       <div className="border border-gray-200 rounded-lg overflow-hidden">
         <button onClick={() => setActiveSection(activeSection === 'nru' ? null : 'nru')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'nru' ? 'bg-blue-50 border-b border-blue-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
-          <div className="flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /><span className="font-medium">4. NRU 설정</span></div>
+          <div className="flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /><span className="font-medium">3. NRU 설정</span></div>
           {activeSection === 'nru' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
         </button>
         {activeSection === 'nru' && (
           <div className="p-4 space-y-4">
-            <GuideBox title="NRU 입력 가이드 (엑셀 로직 기준)">
+            <GuideBox title="NRU 입력 가이드">
               <ul className="list-disc list-inside space-y-1 text-xs">
                 <li><strong>D1 NRU:</strong> 첫 날 예상 신규 유저 수 (Best/Normal/Worst 시나리오별)</li>
-                <li><strong>Paid/Organic Ratio:</strong> 유료 마케팅 유입 비율 (예: 50%)</li>
-                <li><strong>NVR (Net Value Rate):</strong> 설치 후 전환율 (예: 70%)</li>
-                <li><strong>Best:</strong> 표본 게임 평균 NRU 감소율 그대로 적용</li>
-                <li><strong>Normal:</strong> Best 대비 보정값 적용</li>
-                <li><strong>Worst:</strong> Normal 대비 보정값 적용</li>
+                <li><strong>자동 계산:</strong> "5. 마케팅 & UA 설정"에서 MKT 예산 기반 자동 계산 가능</li>
+                <li><strong>보정값:</strong> 일별 NRU 감소율에 대한 시나리오별 보정</li>
               </ul>
             </GuideBox>
             <div className="p-3 bg-gray-50 rounded-lg border"><p className="text-sm text-gray-600"><strong>적용된 표본 게임:</strong> {selectedSampleGames.join(', ') || '(선택 필요)'}</p></div>
@@ -343,10 +544,6 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                 <div className="p-3 bg-blue-50 rounded-lg border border-blue-200"><label className="block text-xs font-medium text-blue-700 mb-1">Normal</label><input type="number" value={input.nru.d1_nru.normal} onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, d1_nru: { ...prev.nru.d1_nru, normal: parseInt(e.target.value) || 0 } } }))} className="w-full px-2 py-1 border border-blue-300 rounded text-right" /></div>
                 <div className="p-3 bg-red-50 rounded-lg border border-red-200"><label className="block text-xs font-medium text-red-700 mb-1">Worst</label><input type="number" value={input.nru.d1_nru.worst} onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, d1_nru: { ...prev.nru.d1_nru, worst: parseInt(e.target.value) || 0 } } }))} className="w-full px-2 py-1 border border-red-300 rounded text-right" /></div>
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Paid/Organic Ratio (%)</label><div className="flex items-center"><input type="number" step="1" value={Math.round(input.nru.paid_organic_ratio * 100)} onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, paid_organic_ratio: (parseFloat(e.target.value) || 0) / 100 } }))} className="w-full px-3 py-2 border rounded-lg text-right" /><span className="ml-2">%</span></div><p className="text-xs text-gray-500 mt-1">유료 마케팅 유입 비율</p></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">NVR - Net Value Rate (%)</label><div className="flex items-center"><input type="number" step="1" value={Math.round(input.nru.nvr * 100)} onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, nvr: (parseFloat(e.target.value) || 0) / 100 } }))} className="w-full px-3 py-2 border rounded-lg text-right" /><span className="ml-2">%</span></div><p className="text-xs text-gray-500 mt-1">설치 후 전환율</p></div>
             </div>
             <div className="border border-gray-300 rounded-lg overflow-hidden">
               <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">노말 대비 보정 수치 (%)</div>
@@ -362,10 +559,10 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
         )}
       </div>
 
-      {/* 5. Revenue */}
+      {/* 4. Revenue */}
       <div className="border border-gray-200 rounded-lg overflow-hidden">
         <button onClick={() => setActiveSection(activeSection === 'revenue' ? null : 'revenue')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'revenue' ? 'bg-amber-50 border-b border-amber-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
-          <div className="flex items-center gap-2"><DollarSign className="w-5 h-5 text-amber-600" /><span className="font-medium">5. Revenue 설정</span></div>
+          <div className="flex items-center gap-2"><DollarSign className="w-5 h-5 text-amber-600" /><span className="font-medium">4. Revenue 설정</span></div>
           {activeSection === 'revenue' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
         </button>
         {activeSection === 'revenue' && (
@@ -403,127 +600,214 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
         )}
       </div>
 
-      {/* 6. Phase 2: MKT → NRU 자동 계산 */}
+      {/* 6. 마케팅 & UA 통합 설정 */}
       <div className="border border-orange-200 rounded-lg overflow-hidden">
         <button onClick={() => setActiveSection(activeSection === 'mkt-calc' ? null : 'mkt-calc')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'mkt-calc' ? 'bg-orange-50 border-b border-orange-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
           <div className="flex items-center gap-2">
             <DollarSign className="w-5 h-5 text-orange-600" />
-            <span className="font-medium">6. MKT → NRU 자동 계산</span>
-            <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">Phase 2</span>
+            <span className="font-medium">5. 마케팅 & UA 설정</span>
           </div>
           {activeSection === 'mkt-calc' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
         </button>
         {activeSection === 'mkt-calc' && (
           <div className="p-4 space-y-4">
-            <GuideBox title="MKT 기반 NRU 자동 산출">
-              <div className="space-y-1 text-xs">
-                <p><strong>계산식:</strong> D1 NRU = (마케팅 예산 ÷ CPI × Organic 배수) × NVR</p>
-                <p><strong>예시:</strong> 50억 ÷ 2,660원 × 2(Paid 50%) × 70% = <strong>약 263만명</strong></p>
-              </div>
+            <GuideBox title="마케팅 & UA 설정 가이드">
+              <ul className="list-disc list-inside space-y-1 text-xs">
+                <li><strong>런칭 MKT 예산:</strong> 런칭 시 집행할 마케팅 예산 (LTV/ROAS 계산에 사용)</li>
+                <li><strong>CPI:</strong> 1건당 설치 비용 (한국 모바일 RPG 평균 2,500~3,500원)</li>
+                <li><strong>UAC:</strong> 유저 1명 획득 비용 (CPI보다 높음, 전환율 고려)</li>
+                <li><strong>Sustaining MKT:</strong> 런칭 후 지속 마케팅 비용 (매출의 5~10%)</li>
+                <li><strong>D1 NRU 자동 계산:</strong> MKT 예산 ÷ CPI × Organic 배수 × NVR</li>
+              </ul>
             </GuideBox>
 
-            <div className="flex items-center gap-3 p-3 bg-orange-50 rounded-lg border border-orange-200">
-              <input 
-                type="checkbox" 
-                id="nru-auto-calc" 
-                checked={nruAutoCalc}
-                onChange={(e) => {
-                  setNruAutoCalc(e.target.checked);
-                  if (e.target.checked) {
-                    const calculated = calculateNRUFromMKT();
-                    setInput(prev => ({ ...prev, nru: { ...prev.nru, d1_nru: calculated } }));
-                  }
-                }}
-                className="w-4 h-4 text-orange-600"
-              />
-              <label htmlFor="nru-auto-calc" className="text-sm font-medium text-orange-800">
-                MKT 예산 기반 D1 NRU 자동 계산 활성화
-              </label>
-            </div>
-
             <div className="grid grid-cols-2 gap-4">
-              <div className="border border-gray-300 rounded-lg overflow-hidden">
-                <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">MKT 예산 입력</div>
-                <table className="w-full text-sm table-fixed">
-                  <tbody>
-                    <tr>
-                      <td className="px-3 py-2 border-b bg-gray-50 w-2/5">런칭 MKT 예산</td>
-                      <td className="px-3 py-2 border-b bg-yellow-50">
-                        <div className="flex items-center">
-                          <input 
-                            type="number" 
-                            value={input.basic_settings?.launch_mkt_budget || 0} 
-                            onChange={(e) => handleMktBudgetChange(parseInt(e.target.value) || 0)}
-                            className="flex-1 bg-transparent border-none p-0 text-right min-w-0" 
-                          />
-                          <span className="ml-1 flex-shrink-0">원</span>
-                        </div>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="px-3 py-2 border-b bg-gray-50">CPI</td>
-                      <td className="px-3 py-2 border-b bg-gray-100 text-right whitespace-nowrap">{(input.basic_settings?.cpi || 2660).toLocaleString()}원</td>
-                    </tr>
-                    <tr>
-                      <td className="px-3 py-2 border-b bg-gray-50">Paid/Organic 비율</td>
-                      <td className="px-3 py-2 border-b bg-gray-100 text-right">{Math.round(input.nru.paid_organic_ratio * 100)}% / {Math.round((1 - input.nru.paid_organic_ratio) * 100)}%</td>
-                    </tr>
-                    <tr>
-                      <td className="px-3 py-2 bg-gray-50">NVR (전환율)</td>
-                      <td className="px-3 py-2 bg-gray-100 text-right">{Math.round(input.nru.nvr * 100)}%</td>
-                    </tr>
-                  </tbody>
-                </table>
+              {/* 왼쪽: MKT 예산 & 비용 설정 */}
+              <div className="space-y-4">
+                <div className="border border-gray-300 rounded-lg overflow-hidden">
+                  <div className="bg-orange-100 px-3 py-2 border-b font-medium text-sm text-orange-800">MKT 예산</div>
+                  <table className="w-full text-sm table-fixed">
+                    <tbody>
+                      <tr>
+                        <td className="px-3 py-2 border-b bg-gray-50 w-2/5">런칭 MKT 예산</td>
+                        <td className="px-3 py-2 border-b bg-yellow-50">
+                          <div className="flex items-center">
+                            <input 
+                              type="number" 
+                              value={input.basic_settings?.launch_mkt_budget || 0} 
+                              onChange={(e) => handleMktBudgetChange(parseInt(e.target.value) || 0)}
+                              className="flex-1 bg-transparent border-none p-0 text-right min-w-0" 
+                            />
+                            <span className="ml-1 flex-shrink-0">원</span>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="px-3 py-2 bg-gray-50">Sustaining MKT</td>
+                        <td className="px-3 py-2 bg-yellow-50">
+                          <div className="flex items-center">
+                            <input 
+                              type="number" 
+                              step="1" 
+                              value={Math.round((input.basic_settings?.sustaining_mkt_ratio || 0.07) * 100)} 
+                              onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, sustaining_mkt_ratio: (parseFloat(e.target.value) || 0) / 100 } }))} 
+                              className="flex-1 bg-transparent border-none p-0 text-right min-w-0" 
+                            />
+                            <span className="ml-1 flex-shrink-0">%</span>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div className="border border-gray-300 rounded-lg overflow-hidden">
+                  <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">CPI & UAC</div>
+                  <table className="w-full text-sm table-fixed">
+                    <tbody>
+                      <tr>
+                        <td className="px-3 py-2 border-b bg-gray-50 w-2/5">CPI (Cost Per Install)</td>
+                        <td className="px-3 py-2 border-b bg-yellow-50">
+                          <div className="flex items-center">
+                            <input 
+                              type="number" 
+                              value={input.basic_settings?.cpi || 2660} 
+                              onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, cpi: parseInt(e.target.value) || 0 } }))} 
+                              className="flex-1 bg-transparent border-none p-0 text-right min-w-0" 
+                            />
+                            <span className="ml-1 flex-shrink-0">원</span>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="px-3 py-2 bg-gray-50">UAC (User Acq. Cost)</td>
+                        <td className="px-3 py-2 bg-yellow-50">
+                          <div className="flex items-center">
+                            <input 
+                              type="number" 
+                              value={input.basic_settings?.uac || 3800} 
+                              onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, uac: parseInt(e.target.value) || 0 } }))} 
+                              className="flex-1 bg-transparent border-none p-0 text-right min-w-0" 
+                            />
+                            <span className="ml-1 flex-shrink-0">원</span>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div className="border border-gray-300 rounded-lg overflow-hidden">
+                  <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">UA 전환 설정</div>
+                  <table className="w-full text-sm table-fixed">
+                    <tbody>
+                      <tr>
+                        <td className="px-3 py-2 border-b bg-gray-50 w-2/5">Paid/Organic 비율</td>
+                        <td className="px-3 py-2 border-b bg-yellow-50">
+                          <div className="flex items-center">
+                            <input 
+                              type="number" 
+                              step="1" 
+                              value={Math.round(input.nru.paid_organic_ratio * 100)} 
+                              onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, paid_organic_ratio: (parseFloat(e.target.value) || 0) / 100 } }))} 
+                              className="flex-1 bg-transparent border-none p-0 text-right min-w-0" 
+                            />
+                            <span className="ml-1 flex-shrink-0">%</span>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="px-3 py-2 bg-gray-50">NVR (전환율)</td>
+                        <td className="px-3 py-2 bg-yellow-50">
+                          <div className="flex items-center">
+                            <input 
+                              type="number" 
+                              step="1" 
+                              value={Math.round(input.nru.nvr * 100)} 
+                              onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, nvr: (parseFloat(e.target.value) || 0) / 100 } }))} 
+                              className="flex-1 bg-transparent border-none p-0 text-right min-w-0" 
+                            />
+                            <span className="ml-1 flex-shrink-0">%</span>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
-              <div className="border border-gray-300 rounded-lg overflow-hidden">
-                <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">자동 계산 결과</div>
-                <table className="w-full text-sm table-fixed">
-                  <tbody>
-                    <tr>
-                      <td className="px-3 py-2 border-b bg-gray-50 w-2/5">Paid Install</td>
-                      <td className="px-3 py-2 border-b bg-blue-50 text-right whitespace-nowrap">
-                        {Math.floor((input.basic_settings?.launch_mkt_budget || 0) / (input.basic_settings?.cpi || 2660)).toLocaleString()}명
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="px-3 py-2 border-b bg-gray-50">Total Install</td>
-                      <td className="px-3 py-2 border-b bg-blue-50 text-right whitespace-nowrap">
-                        {(() => {
-                          const paid = Math.floor((input.basic_settings?.launch_mkt_budget || 0) / (input.basic_settings?.cpi || 2660));
-                          const paidRatio = input.nru.paid_organic_ratio || 0.5;
-                          const organic = Math.floor(paid * ((1 - paidRatio) / paidRatio));
-                          return (paid + organic).toLocaleString();
-                        })()}명
-                      </td>
-                    </tr>
-                    <tr className="bg-green-50">
-                      <td className="px-3 py-2 border-b bg-green-100 font-medium">D1 NRU (Best)</td>
-                      <td className="px-3 py-2 border-b text-right font-medium text-green-700">{calculateNRUFromMKT().best.toLocaleString()}명</td>
-                    </tr>
-                    <tr className="bg-blue-50">
-                      <td className="px-3 py-2 border-b bg-blue-100 font-medium">D1 NRU (Normal)</td>
-                      <td className="px-3 py-2 border-b text-right font-medium text-blue-700">{calculateNRUFromMKT().normal.toLocaleString()}명</td>
-                    </tr>
-                    <tr className="bg-red-50">
-                      <td className="px-3 py-2 bg-red-100 font-medium">D1 NRU (Worst)</td>
-                      <td className="px-3 py-2 text-right font-medium text-red-700">{calculateNRUFromMKT().worst.toLocaleString()}명</td>
-                    </tr>
-                  </tbody>
-                </table>
+              {/* 오른쪽: D1 NRU 자동 계산 */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 p-3 bg-orange-50 rounded-lg border border-orange-200">
+                  <input 
+                    type="checkbox" 
+                    id="nru-auto-calc" 
+                    checked={nruAutoCalc}
+                    onChange={(e) => {
+                      setNruAutoCalc(e.target.checked);
+                      if (e.target.checked) {
+                        const calculated = calculateNRUFromMKT();
+                        setInput(prev => ({ ...prev, nru: { ...prev.nru, d1_nru: calculated } }));
+                      }
+                    }}
+                    className="w-4 h-4 text-orange-600"
+                  />
+                  <label htmlFor="nru-auto-calc" className="text-sm font-medium text-orange-800">
+                    D1 NRU 자동 계산 (4. NRU 설정에 반영)
+                  </label>
+                </div>
+                <div className="border border-orange-300 rounded-lg overflow-hidden">
+                  <div className="bg-orange-100 px-3 py-2 border-b font-medium text-sm text-orange-800">자동 계산 결과</div>
+                  <table className="w-full text-sm table-fixed">
+                    <tbody>
+                      <tr>
+                        <td className="px-3 py-2 border-b bg-gray-50 w-2/5">Paid Install</td>
+                        <td className="px-3 py-2 border-b bg-blue-50 text-right whitespace-nowrap">
+                          {Math.floor((input.basic_settings?.launch_mkt_budget || 0) / (input.basic_settings?.cpi || 2660)).toLocaleString()}명
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="px-3 py-2 border-b bg-gray-50">Total Install</td>
+                        <td className="px-3 py-2 border-b bg-blue-50 text-right whitespace-nowrap">
+                          {(() => {
+                            const paid = Math.floor((input.basic_settings?.launch_mkt_budget || 0) / (input.basic_settings?.cpi || 2660));
+                            const paidRatio = input.nru.paid_organic_ratio || 0.5;
+                            const organic = Math.floor(paid * ((1 - paidRatio) / paidRatio));
+                            return (paid + organic).toLocaleString();
+                          })()}명
+                        </td>
+                      </tr>
+                      <tr className="bg-green-50">
+                        <td className="px-3 py-2 border-b bg-green-100 font-medium">D1 NRU (Best)</td>
+                        <td className="px-3 py-2 border-b text-right font-medium text-green-700">{calculateNRUFromMKT().best.toLocaleString()}명</td>
+                      </tr>
+                      <tr className="bg-blue-50">
+                        <td className="px-3 py-2 border-b bg-blue-100 font-medium">D1 NRU (Normal)</td>
+                        <td className="px-3 py-2 border-b text-right font-medium text-blue-700">{calculateNRUFromMKT().normal.toLocaleString()}명</td>
+                      </tr>
+                      <tr className="bg-red-50">
+                        <td className="px-3 py-2 bg-red-100 font-medium">D1 NRU (Worst)</td>
+                        <td className="px-3 py-2 text-right font-medium text-red-700">{calculateNRUFromMKT().worst.toLocaleString()}명</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div className="p-3 bg-gray-50 rounded-lg border text-xs text-gray-600">
+                  <p><strong>계산식:</strong></p>
+                  <p>D1 NRU = (MKT예산 ÷ CPI) × (1 + Organic배수) × NVR</p>
+                  <p className="mt-1"><strong>예시:</strong> 50억 ÷ 2,660원 × 2(Paid50%) × 70% = 약 263만명</p>
+                </div>
               </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* 7. Phase 2: 계절성 팩터 */}
+      {/* 6. 계절성 팩터 */}
       <div className="border border-teal-200 rounded-lg overflow-hidden">
         <button onClick={() => setActiveSection(activeSection === 'seasonality' ? null : 'seasonality')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'seasonality' ? 'bg-teal-50 border-b border-teal-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
           <div className="flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-teal-600" />
-            <span className="font-medium">7. 계절성 팩터 (Seasonality)</span>
-            <span className="text-xs bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full">Phase 2</span>
+            <span className="font-medium">6. 계절성 팩터 (Seasonality)</span>
+            <span className="text-xs bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full">선택</span>
           </div>
           {activeSection === 'seasonality' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
         </button>

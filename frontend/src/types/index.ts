@@ -38,7 +38,8 @@ export interface BasicSettings {
   uac?: number;
   // HR Cost (직접/간접 분리)
   hr_direct_headcount?: number;
-  hr_indirect_monthly?: number;
+  hr_indirect_headcount?: number;
+  hr_indirect_monthly?: number;  // 레거시 호환
   // 팀 구성
   dev_team_size?: number;
   ops_team_size?: number;
@@ -72,6 +73,34 @@ export interface SeasonalitySettings {
   monthly_weights: {
     [month: number]: number;
   };
+}
+
+// Phase 3: 프로젝트 정보 (유사도 추천용)
+export interface ProjectInfo {
+  genre: string;
+  platform: string;
+  region: string;
+}
+
+// Phase 3: 게임 추천 결과
+export interface GameRecommendation {
+  game: string;
+  score: number;
+  reason: string;
+  isSelected: boolean;
+}
+
+// Phase 3: 벤치마크 데이터
+export interface BenchmarkData {
+  genre: string;
+  region: string;
+  avg_d1_retention: number;
+  avg_d7_retention: number;
+  avg_d30_retention: number;
+  avg_pr: number;
+  avg_arppu: number;
+  source: string;
+  updated_at: string;
 }
 
 // Input Types
