@@ -60,12 +60,127 @@ class ProjectionInput(BaseModel):
     nru: NRUInput
     revenue: RevenueInput
     basic_settings: Optional[Dict[str, Any]] = None
-    # 블렌딩 설정 추가
-    blending: Optional[Dict[str, Any]] = None  # { weight: 0.7, genre: "MMORPG", platform: "PC" }
+    # 블렌딩 설정
+    blending: Optional[Dict[str, Any]] = None  # { weight: 0.7, genre: "MMORPG", platforms: ["PC"] }
+    # V7 추가: 품질 점수, BM 타입, 지역
+    quality_score: Optional[str] = "B"  # S/A/B/C/D
+    bm_type: Optional[str] = "Midcore"  # Hardcore/Midcore/Casual/F2P_Cosmetic/Gacha
+    regions: Optional[List[str]] = None  # ["korea", "japan", "global", ...]
 
 # ============================================
-# 시장 벤치마크 데이터 (SensorTower/Newzoo 기반)
+# 글로벌 계절성 팩터 (지역별 월간 가중치)
 # ============================================
+SEASONALITY_BY_REGION = {
+    "korea": {1: 1.15, 2: 1.20, 3: 1.00, 4: 0.95, 5: 1.00, 6: 0.95, 7: 1.05, 8: 1.10, 9: 1.00, 10: 1.05, 11: 1.10, 12: 1.15},
+    "japan": {1: 1.10, 2: 1.05, 3: 1.05, 4: 1.10, 5: 1.15, 6: 0.95, 7: 1.00, 8: 1.05, 9: 1.00, 10: 1.00, 11: 1.05, 12: 1.20},
+    "china": {1: 1.10, 2: 1.25, 3: 1.00, 4: 0.95, 5: 1.05, 6: 1.10, 7: 1.05, 8: 1.00, 9: 1.00, 10: 1.20, 11: 1.15, 12: 1.05},
+    "global": {1: 0.95, 2: 0.90, 3: 0.95, 4: 1.00, 5: 1.00, 6: 1.00, 7: 1.05, 8: 1.00, 9: 1.00, 10: 1.05, 11: 1.15, 12: 1.25},
+    "sea": {1: 1.05, 2: 1.10, 3: 1.00, 4: 1.00, 5: 1.00, 6: 1.05, 7: 1.05, 8: 1.00, 9: 1.00, 10: 1.00, 11: 1.05, 12: 1.15},
+    "na": {1: 0.90, 2: 0.90, 3: 0.95, 4: 1.00, 5: 1.00, 6: 1.05, 7: 1.05, 8: 1.00, 9: 0.95, 10: 1.05, 11: 1.20, 12: 1.25},
+    "sa": {1: 1.10, 2: 1.05, 3: 1.00, 4: 0.95, 5: 0.95, 6: 1.00, 7: 1.05, 8: 1.00, 9: 1.00, 10: 1.05, 11: 1.10, 12: 1.15},
+    "eu": {1: 0.90, 2: 0.90, 3: 0.95, 4: 1.05, 5: 1.00, 6: 1.00, 7: 1.00, 8: 0.95, 9: 1.00, 10: 1.05, 11: 1.15, 12: 1.25},
+}
+
+def calculate_seasonality(regions: List[str], launch_date: str, days: int = 365) -> List[float]:
+    """
+    지역별 계절성 팩터 계산
+    다중 지역 선택 시 평균 적용
+    """
+    from datetime import datetime, timedelta
+    
+    try:
+        start_date = datetime.strptime(launch_date, "%Y-%m-%d")
+    except:
+        start_date = datetime(2026, 11, 12)  # 기본값
+    
+    factors = []
+    for day in range(days):
+        current_date = start_date + timedelta(days=day)
+        month = current_date.month
+        
+        # 선택된 지역들의 계절성 평균
+        region_factors = []
+        for region in regions:
+            region_key = region.lower()
+            if region_key in SEASONALITY_BY_REGION:
+                region_factors.append(SEASONALITY_BY_REGION[region_key].get(month, 1.0))
+        
+        if region_factors:
+            factors.append(np.mean(region_factors))
+        else:
+            factors.append(1.0)
+    
+    return factors
+
+# ============================================
+# Time-Decay 블렌딩 (시간에 따라 가중치 변경)
+# ============================================
+def calculate_time_decay_weight(day: int, days: int = 365) -> float:
+    """
+    시간 가중치 계산 (Time-Decay)
+    
+    D1: 내부 90% : 벤치마크 10%
+    D180: 내부 50% : 벤치마크 50%
+    D365: 내부 10% : 벤치마크 90%
+    
+    선형 보간으로 매일 가중치 변경
+    """
+    # D1 = 0.9, D365 = 0.1 (선형 감소)
+    weight_internal = 0.9 - (0.8 * (day - 1) / (days - 1)) if days > 1 else 0.9
+    return max(min(weight_internal, 0.9), 0.1)
+
+def calculate_time_decay_blended_retention(
+    internal_curve: List[float],
+    benchmark_curve: List[float],
+    days: int = 365,
+    quality_score: float = 1.0
+) -> List[float]:
+    """
+    Time-Decay 블렌딩 리텐션 커브 생성
+    
+    Args:
+        internal_curve: 내부 표본 리텐션 커브
+        benchmark_curve: 벤치마크 리텐션 커브
+        days: 프로젝션 기간
+        quality_score: 품질 점수 (S=1.2, A=1.1, B=1.0, C=0.9, D=0.8)
+    """
+    blended = []
+    for day in range(days):
+        weight_internal = calculate_time_decay_weight(day + 1, days)
+        weight_benchmark = 1 - weight_internal
+        
+        internal_val = internal_curve[day] if day < len(internal_curve) else internal_curve[-1]
+        benchmark_val = benchmark_curve[day] if day < len(benchmark_curve) else benchmark_curve[-1]
+        
+        # 벤치마크에 품질 점수 적용
+        adjusted_benchmark = benchmark_val * quality_score
+        
+        blended_val = (internal_val * weight_internal) + (adjusted_benchmark * weight_benchmark)
+        blended.append(max(min(blended_val, 1.0), 0.001))
+    
+    return blended
+
+# ============================================
+# Quality Score 정의
+# ============================================
+QUALITY_SCORES = {
+    "S": 1.2,   # 최상급 (FGT/CBT 결과 매우 우수)
+    "A": 1.1,   # 우수
+    "B": 1.0,   # 보통 (기본값)
+    "C": 0.9,   # 미흡
+    "D": 0.8,   # 부진
+}
+
+# ============================================
+# BM 타입별 세분화 벤치마크
+# ============================================
+BM_TYPE_MODIFIERS = {
+    "Hardcore": {"pr_mod": 0.5, "arppu_mod": 2.0},    # 낮은 PR, 고액 ARPPU
+    "Midcore": {"pr_mod": 1.0, "arppu_mod": 1.0},     # 기본
+    "Casual": {"pr_mod": 2.0, "arppu_mod": 0.4},      # 높은 PR, 소액 ARPPU
+    "F2P_Cosmetic": {"pr_mod": 0.8, "arppu_mod": 0.6}, # 무료+꾸미기 중심
+    "Gacha": {"pr_mod": 1.5, "arppu_mod": 1.8},       # 가챠 중심
+}
 BENCHMARK_DATA = {
     "PC": {
         "MMORPG": {"d1": 0.32, "d7": 0.20, "d30": 0.11, "d90": 0.06, "pr": 0.06, "arppu": 78000},
@@ -284,18 +399,43 @@ def calculate_nru_pattern(selected_games: List[str], raw_data: dict):
     
     return daily_ratios
 
-def generate_nru_series(d1_nru: int, daily_ratios: List[float], days: int = 365):
-    nru_series = [d1_nru]
-    current_nru = float(d1_nru)
+def generate_nru_series(d1_nru: int, daily_ratios: List[float], days: int = 365, 
+                         launch_period: int = 30, sustaining_ratio: float = 0.1):
+    """
+    NRU 시리즈 생성 - 런칭 마케팅은 D1~D30에 집중
     
-    for i in range(min(len(daily_ratios), days - 1)):
-        current_nru = current_nru * daily_ratios[i]
-        nru_series.append(max(int(current_nru), 1))
+    Args:
+        d1_nru: D1 NRU (가장 높은 날)
+        daily_ratios: 일별 감소 비율
+        days: 프로젝션 기간
+        launch_period: 런칭 마케팅 집중 기간 (기본 30일)
+        sustaining_ratio: 런칭 후 유지 NRU 비율 (기본 10%)
     
-    while len(nru_series) < days:
-        nru_series.append(max(int(nru_series[-1] * 0.98), 1))
+    Returns:
+        일별 NRU 리스트
+    """
+    nru_series = []
     
-    return nru_series
+    # Phase 1: 런칭 기간 (D1~D30) - 점진적 감소
+    # D1이 최고점, D30까지 약 30% 수준으로 감소
+    for day in range(min(launch_period, days)):
+        # 런칭 기간 동안 지수 감쇠: D1=100%, D7=70%, D14=50%, D30=30%
+        decay = np.exp(-0.04 * day)  # 감쇠율 조정
+        daily_nru = int(d1_nru * decay)
+        nru_series.append(max(daily_nru, 100))
+    
+    # Phase 2: 런칭 후 유지 기간 (D31~D365)
+    # 오가닉 + Sustaining 마케팅으로 D1의 10% 수준 유지
+    sustaining_nru = int(d1_nru * sustaining_ratio)
+    
+    for day in range(launch_period, days):
+        # 유지 기간에도 서서히 감소 (월 5% 감소)
+        months_after_launch = (day - launch_period) / 30
+        decay = np.exp(-0.05 * months_after_launch)
+        daily_nru = int(sustaining_nru * decay)
+        nru_series.append(max(daily_nru, 10))
+    
+    return nru_series[:days]
 
 def calculate_pr_pattern(selected_games: List[str], raw_data: dict):
     pr_games = raw_data['games']['payment_rate']
@@ -355,11 +495,26 @@ def calculate_dau_matrix(nru_series: List[int], retention_curve: List[float], da
     return daily_dau
 
 def calculate_revenue(dau: List[float], pr: List[float], arppu: List[float]):
+    """
+    일별 매출 계산
+    
+    Revenue = DAU × PR × (ARPPU / 30)
+    
+    주의: ARPPU는 '월간' 결제자당 평균 결제액이므로,
+          일별 계산 시 30으로 나눠야 함
+    """
     revenue = []
     for i in range(len(dau)):
         pr_val = pr[i] if i < len(pr) else pr[-1]
         arppu_val = arppu[i] if i < len(arppu) else arppu[-1]
-        revenue.append(dau[i] * pr_val * arppu_val)
+        
+        # ARPPU를 일별로 환산 (월간 ARPPU / 30)
+        daily_arppu = arppu_val / 30
+        
+        # 일별 매출 = DAU × PR × 일별 ARPPU
+        daily_revenue = dau[i] * pr_val * daily_arppu
+        revenue.append(daily_revenue)
+    
     return revenue
 
 # Claude AI Integration
@@ -399,13 +554,17 @@ async def get_claude_insight(prompt: str) -> str:
 def create_insight_prompt(summary: Dict[str, Any], analysis_type: str) -> str:
     """Create prompt for Claude based on analysis type with Multi-Persona approach"""
     
-    base_context = f"""당신은 게임 KPI 프로젝션 분석을 수행하는 4명의 전문가입니다. 각 전문가의 관점에서 토론하고 최종 결론을 도출해주세요.
+    # V7 설정 정보 추출
+    v7_settings = summary.get('v7_settings', {})
+    blending = summary.get('blending', {})
+    
+    base_context = f"""당신은 게임 KPI 프로젝션 분석을 수행하는 4명의 전문가 패널입니다.
 
-[전문가 구성]
-- 재무이사(CFO): 수익성, ROI, 손익분기점 관점
-- 마케팅팀장: UA 효율, 유저 획득, 시장 경쟁력 관점  
-- 데이터과학자: 지표 신뢰도, 통계적 유의성, 예측 정확도 관점
-- 게임 퍼블리싱 전문가: 런칭 전략, 장르 특성, 시장 트렌드 관점
+[V7 전문가 패널 구성]
+1. 글로벌 마케팅 및 UA 전문가: CPI 적정성, 모객 효율, UA 전략, CAC/LTV 분석
+2. 데이터 사이언티스트: 지표 건전성, 리텐션 패턴, 통계적 신뢰도, 예측 정확도
+3. 글로벌 퍼블리싱 전문가: BM 구조, 시장 경쟁력, 장르 특성, 글로벌 트렌드
+4. 재무 설계 건전성 전문가: BEP, ROAS, 투자 회수, 현금흐름, 리스크
 
 [프로젝션 결과 요약]
 프로젝션 기간: {summary.get('projection_days', 365)}일
@@ -429,23 +588,60 @@ Worst 시나리오:
 - Peak DAU: {summary.get('worst', {}).get('peak_dau', 0):,}명
 - 평균 DAU: {summary.get('worst', {}).get('average_dau', 0):,}명
 
+[V7 산술 근거 - 이 결과가 어떻게 도출되었는지]
+- 블렌딩 비율: 내부 표본 {blending.get('weight_internal', 0.7)*100:.0f}% + 벤치마크 {blending.get('weight_benchmark', 0.3)*100:.0f}%
+- Time-Decay: {blending.get('time_decay', True)} (D1:내부90% → D365:벤치마크90%)
+- 품질 등급: {v7_settings.get('quality_score', 'B')}급 (승수 ×{v7_settings.get('quality_multiplier', 1.0)})
+- BM 타입: {v7_settings.get('bm_type', 'Midcore')}
+- 적용 지역: {', '.join(v7_settings.get('regions', ['global']))}
+- 계절성 적용: {v7_settings.get('seasonality_applied', True)}
+- 벤치마크 기준: {blending.get('genre', 'N/A')} / {', '.join(blending.get('platforms', ['PC']))}
+
 [중요 지시사항]
 - 마크다운 문법(###, **, -, * 등)을 절대 사용하지 마세요
 - 일반 텍스트로만 작성하세요
 - 번호는 1. 2. 3. 형식으로 사용하세요
 - 강조는 따옴표나 괄호로 표현하세요
+- 경영진 보고용으로 전문적이고 간결하게 작성하세요
 """
     
     type_prompts = {
+        "executive_report": f"""
+[분석 요청: 경영진용 종합 보고서]
+4명의 전문가가 각자의 관점에서 분석하고, 최종 경영 의사결정을 위한 종합 보고서를 작성해주세요.
+
+응답 형식:
+
+[1. Executive Summary - 핵심 요약]
+Normal 시나리오 기준 1년 예상 매출과 핵심 지표를 한 문장으로 요약
+
+[2. 산술 근거 및 가정]
+- 이 프로젝션이 어떤 가정과 로직으로 도출되었는지 설명
+- 블렌딩 비율, 품질 등급, BM 타입이 결과에 미친 영향
+
+[3. 전문가 패널 분석]
+(1) UA 전문가: CPI {summary.get('cpi', 'N/A')}원 기준 모객 효율 평가, NRU 목표 달성 가능성
+(2) 데이터 사이언티스트: 리텐션 커브 건전성, Best-Worst 편차 {((summary.get('best', {}).get('gross_revenue', 1) / max(summary.get('worst', {}).get('gross_revenue', 1), 1) - 1) * 100):.0f}% 적정성
+(3) 퍼블리싱 전문가: {blending.get('genre', 'N/A')} 장르 시장 대비 경쟁력, BM 구조 적합성
+(4) 재무 전문가: ROAS, 손익분기점 도달 예상, 투자 리스크
+
+[4. Go/No-Go 권고]
+- 최종 권고: (Go / Conditional Go / No-Go 중 하나)
+- 권고 이유: 한 문장
+- 핵심 리스크 3가지
+- 권장 액션 3가지
+
+총 800자 이내로 작성하세요.
+""",
         "general": """
 [분석 요청: 종합 분석]
 4명의 전문가가 각자의 관점에서 핵심 의견을 제시하고, 최종 종합 결론을 도출해주세요.
 
 응답 형식:
-1. 재무이사 의견: (수익성 관점에서 한 문장)
-2. 마케팅팀장 의견: (UA 관점에서 한 문장)  
-3. 데이터과학자 의견: (지표 신뢰도 관점에서 한 문장)
-4. 퍼블리싱 전문가 의견: (런칭 전략 관점에서 한 문장)
+1. UA 전문가 의견: (모객 효율 관점에서 한 문장)
+2. 데이터 사이언티스트 의견: (지표 건전성 관점에서 한 문장)  
+3. 퍼블리싱 전문가 의견: (시장 경쟁력 관점에서 한 문장)
+4. 재무 전문가 의견: (투자 회수 관점에서 한 문장)
 5. 종합 결론: 4명의 의견을 종합한 최종 평가와 권장 액션 3가지
 
 총 400자 이내로 작성하세요.
@@ -458,10 +654,10 @@ Worst 시나리오:
 1. 신뢰도 점수: (100점 만점, 숫자만)
 2. 신뢰도 등급: (A/B/C/D/F 중 하나)
 3. 전문가별 평가
-   - 재무이사: (수익 예측 현실성 평가)
-   - 마케팅팀장: (NRU/DAU 목표 달성 가능성 평가)
-   - 데이터과학자: (표본 데이터 품질, 시나리오 편차 적정성 평가)
+   - UA 전문가: (NRU/CPI 목표 현실성 평가)
+   - 데이터 사이언티스트: (표본 데이터 품질, 시나리오 편차 적정성 평가)
    - 퍼블리싱 전문가: (시장 대비 벤치마크 적정성 평가)
+   - 재무 전문가: (수익 예측 현실성 평가)
 4. 신뢰도 향상 제안: 구체적인 개선 방안 3가지
 
 총 500자 이내로 작성하세요.
@@ -473,9 +669,9 @@ Worst 시나리오:
 응답 형식:
 1. DAU 패턴 건강도: (좋음/보통/우려 중 하나와 이유)
 2. 전문가별 리텐션 인사이트
-   - 데이터과학자: (리텐션 커브 분석)
+   - 데이터 사이언티스트: (리텐션 커브 분석, Power Law 적합도)
    - 퍼블리싱 전문가: (장르 대비 리텐션 수준 평가)
-   - 마케팅팀장: (리텐션 개선이 UA 효율에 미치는 영향)
+   - UA 전문가: (리텐션 개선이 UA 효율에 미치는 영향)
 3. 리텐션 개선 액션 플랜: 우선순위별 3가지
 
 총 400자 이내로 작성하세요.
@@ -487,8 +683,8 @@ Worst 시나리오:
 응답 형식:
 1. 매출 예측 현실성: (낙관적/적정/보수적 중 하나와 이유)
 2. 전문가별 매출 인사이트
-   - 재무이사: (손익분기점 및 투자회수 관점)
-   - 마케팅팀장: (ARPU 및 과금 전환율 관점)
+   - 재무 전문가: (손익분기점 및 투자회수 관점)
+   - UA 전문가: (ARPU 및 과금 전환율 관점)
    - 퍼블리싱 전문가: (시장 규모 대비 점유율 관점)
 3. 매출 극대화 전략: 우선순위별 3가지
 
@@ -502,9 +698,9 @@ Worst 시나리오:
 1. 전체 리스크 수준: (높음/중간/낮음 중 하나)
 2. Best-Worst 편차 분석: (편차 비율과 의미)
 3. 전문가별 리스크 식별
-   - 재무이사: (재무 리스크)
-   - 마케팅팀장: (UA 리스크)
-   - 데이터과학자: (예측 불확실성 리스크)
+   - 재무 전문가: (재무 리스크)
+   - UA 전문가: (UA 리스크)
+   - 데이터 사이언티스트: (예측 불확실성 리스크)
    - 퍼블리싱 전문가: (시장/경쟁 리스크)
 4. 리스크 완화 전략: 우선순위별 3가지
 
@@ -518,8 +714,8 @@ Worst 시나리오:
 1. 시장 경쟁력 등급: (상/중/하 중 하나와 이유)
 2. 전문가별 경쟁력 평가
    - 퍼블리싱 전문가: (장르 내 포지셔닝)
-   - 마케팅팀장: (차별화 포인트)
-   - 재무이사: (수익 모델 경쟁력)
+   - UA 전문가: (차별화 포인트)
+   - 재무 전문가: (수익 모델 경쟁력)
 3. 경쟁력 강화 전략: 우선순위별 3가지
 
 총 400자 이내로 작성하세요.
@@ -576,26 +772,40 @@ async def calculate_projection(input_data: ProjectionInput):
     days = input_data.projection_days
     results = {"best": {}, "normal": {}, "worst": {}}
     
-    # 블렌딩 설정 추출
+    # ============================================
+    # V7: 블렌딩 설정 추출
+    # ============================================
     blending = input_data.blending or {}
-    weight_internal = blending.get("weight", 1.0)  # 기본값: 내부 표본 100%
+    base_weight = blending.get("weight", 0.7)  # 기본값: 내부 70%
     genre = blending.get("genre", "MMORPG")
     platforms = blending.get("platforms", ["PC"])
-    use_benchmark_only = blending.get("benchmark_only", False)  # 표본 없을 때 자동 설정
+    use_benchmark_only = blending.get("benchmark_only", False)
+    use_time_decay = blending.get("time_decay", True)  # V7: Time-Decay 기본 활성화
+    
+    # V7: Quality Score & BM Type
+    quality_grade = input_data.quality_score or "B"
+    quality_multiplier = QUALITY_SCORES.get(quality_grade, 1.0)
+    bm_type = input_data.bm_type or "Midcore"
+    bm_modifier = BM_TYPE_MODIFIERS.get(bm_type, {"pr_mod": 1.0, "arppu_mod": 1.0})
+    
+    # V7: 계절성 팩터
+    regions = input_data.regions or ["global"]
+    seasonality_factors = calculate_seasonality(regions, input_data.launch_date, days)
     
     # 표본 게임이 없으면 벤치마크 100% 사용
     has_sample_games = len(input_data.retention.selected_games) > 0
     if not has_sample_games:
-        weight_internal = 0.0
+        base_weight = 0.0
         use_benchmark_only = True
     
-    # 벤치마크 데이터 가져오기
+    # 벤치마크 데이터 가져오기 (BM Type 적용)
     benchmark = get_benchmark_data(genre, platforms)
+    benchmark["pr"] = benchmark["pr"] * bm_modifier["pr_mod"]
+    benchmark["arppu"] = benchmark["arppu"] * bm_modifier["arppu_mod"]
     benchmark_ret_curve = generate_benchmark_retention_curve(benchmark, days)
     
-    # Calculate coefficients (내부 표본 기반)
+    # 내부 표본 기반 계수 계산
     a, b = calculate_retention_coefficients(input_data.retention.selected_games, raw_data)
-    nru_ratios = calculate_nru_pattern(input_data.nru.selected_games, raw_data)
     pr_pattern = calculate_pr_pattern(input_data.revenue.selected_games_pr, raw_data)
     arppu_pattern = calculate_arppu_pattern(input_data.revenue.selected_games_arppu, raw_data)
     
@@ -605,50 +815,73 @@ async def calculate_projection(input_data: ProjectionInput):
         # 내부 표본 기반 리텐션 커브
         internal_ret_curve = generate_retention_curve(a, b, target_d1, days)
         
-        # 블렌딩 적용
-        if weight_internal < 1.0:
-            # 벤치마크 커브도 target_d1에 맞게 스케일링
+        # V7: Time-Decay 블렌딩 적용
+        if use_time_decay and not use_benchmark_only:
+            # 벤치마크 커브를 target_d1에 맞게 스케일링
             benchmark_scale = target_d1 / benchmark["d1"] if benchmark["d1"] > 0 else 1.0
             scaled_benchmark_curve = [min(r * benchmark_scale, 1.0) for r in benchmark_ret_curve]
-            ret_curve = calculate_blended_retention(internal_ret_curve, scaled_benchmark_curve, weight_internal)
+            ret_curve = calculate_time_decay_blended_retention(
+                internal_ret_curve, scaled_benchmark_curve, days, quality_multiplier
+            )
+        elif not use_benchmark_only:
+            # 기존 고정 블렌딩
+            benchmark_scale = target_d1 / benchmark["d1"] if benchmark["d1"] > 0 else 1.0
+            scaled_benchmark_curve = [min(r * benchmark_scale, 1.0) for r in benchmark_ret_curve]
+            ret_curve = calculate_blended_retention(internal_ret_curve, scaled_benchmark_curve, base_weight)
         else:
-            ret_curve = internal_ret_curve
+            # 벤치마크만 사용
+            benchmark_scale = target_d1 / benchmark["d1"] if benchmark["d1"] > 0 else 1.0
+            ret_curve = [min(r * benchmark_scale * quality_multiplier, 1.0) for r in benchmark_ret_curve]
         
+        # V7: NRU 시리즈 생성 (런칭 마케팅 D1~D30 집중)
         d1_nru = input_data.nru.d1_nru[scenario]
-        adjusted_ratios = nru_ratios.copy()
-        if scenario == "best":
-            adjusted_ratios = [min(r * 1.02, 1.0) for r in nru_ratios]
-        elif scenario == "worst":
-            adjusted_ratios = [r * 0.98 for r in nru_ratios]
         
-        nru_series = generate_nru_series(d1_nru, adjusted_ratios, days)
+        # 시나리오별 NRU 보정
+        nru_adj = input_data.nru.adjustment.get("best_vs_normal", 0) if scenario == "best" else \
+                  input_data.nru.adjustment.get("worst_vs_normal", 0) if scenario == "worst" else 0
+        adjusted_d1_nru = int(d1_nru * (1 + nru_adj))
+        
+        nru_series = generate_nru_series(adjusted_d1_nru, [], days)
+        
+        # V7: 계절성 적용 (NRU에 반영)
+        nru_series = [int(nru * sf) for nru, sf in zip(nru_series, seasonality_factors)]
+        
+        # DAU 계산
         dau_series = calculate_dau_matrix(nru_series, ret_curve, days)
         
-        pr_adj = 0
-        if scenario == "best":
-            pr_adj = input_data.revenue.pr_adjustment.get("best_vs_normal", 0)
-        elif scenario == "worst":
-            pr_adj = input_data.revenue.pr_adjustment.get("worst_vs_normal", 0)
+        # PR 보정
+        pr_adj = input_data.revenue.pr_adjustment.get("best_vs_normal", 0) if scenario == "best" else \
+                 input_data.revenue.pr_adjustment.get("worst_vs_normal", 0) if scenario == "worst" else 0
         
-        # PR 블렌딩
-        if weight_internal < 1.0:
-            pr_series = calculate_blended_pr(pr_pattern, benchmark["pr"], weight_internal, days)
+        # PR 블렌딩 (BM Type 적용됨) + V7: Quality Score도 적용
+        if not use_benchmark_only:
+            weight_internal = base_weight
+            # 벤치마크 PR에 Quality Score 적용
+            adjusted_benchmark_pr = benchmark["pr"] * quality_multiplier
+            pr_series = calculate_blended_pr(pr_pattern, adjusted_benchmark_pr, weight_internal, days)
         else:
-            pr_series = pr_pattern[:days]
+            # 벤치마크만 사용 시에도 Quality Score 적용
+            pr_series = [benchmark["pr"] * quality_multiplier] * days
         pr_series = [p * (1 + pr_adj) for p in pr_series]
         
-        arppu_adj = 0
-        if scenario == "best":
-            arppu_adj = input_data.revenue.arppu_adjustment.get("best_vs_normal", 0)
-        elif scenario == "worst":
-            arppu_adj = input_data.revenue.arppu_adjustment.get("worst_vs_normal", 0)
+        # ARPPU 보정
+        arppu_adj = input_data.revenue.arppu_adjustment.get("best_vs_normal", 0) if scenario == "best" else \
+                    input_data.revenue.arppu_adjustment.get("worst_vs_normal", 0) if scenario == "worst" else 0
         
-        # ARPPU 블렌딩
-        if weight_internal < 1.0:
-            arppu_series = calculate_blended_arppu(arppu_pattern, benchmark["arppu"], weight_internal, days)
+        # ARPPU 블렌딩 (BM Type 적용됨) + V7: Quality Score도 적용
+        if not use_benchmark_only:
+            # 벤치마크 ARPPU에 Quality Score 적용
+            adjusted_benchmark_arppu = benchmark["arppu"] * quality_multiplier
+            arppu_series = calculate_blended_arppu(arppu_pattern, adjusted_benchmark_arppu, base_weight, days)
         else:
-            arppu_series = arppu_pattern[:days]
+            # 벤치마크만 사용 시에도 Quality Score 적용
+            arppu_series = [benchmark["arppu"] * quality_multiplier] * days
         arppu_series = [a * (1 + arppu_adj) for a in arppu_series]
+        
+        # V7: 계절성을 ARPPU에도 반영
+        arppu_series = [arppu * sf for arppu, sf in zip(arppu_series, seasonality_factors)]
+        
+        # Revenue 계산 (일별 ARPPU 환산 적용됨)
         revenue_series = calculate_revenue(dau_series, pr_series, arppu_series)
         
         results[scenario] = {
@@ -716,12 +949,21 @@ async def calculate_projection(input_data: ProjectionInput):
             "arppu_games": input_data.revenue.selected_games_arppu
         },
         "blending": {
-            "weight_internal": weight_internal,
-            "weight_benchmark": 1 - weight_internal,
+            "weight_internal": base_weight,
+            "weight_benchmark": 1 - base_weight,
+            "time_decay": use_time_decay,
             "genre": genre,
             "platforms": platforms,
             "benchmark_only": use_benchmark_only,
             "benchmark_data": benchmark
+        },
+        "v7_settings": {
+            "quality_score": quality_grade,
+            "quality_multiplier": quality_multiplier,
+            "bm_type": bm_type,
+            "bm_modifier": bm_modifier,
+            "regions": regions,
+            "seasonality_applied": True
         },
         "summary": summary,
         "results": results

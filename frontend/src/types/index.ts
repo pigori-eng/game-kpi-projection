@@ -146,6 +146,7 @@ export interface BlendingSettings {
   weight: number;        // 내부 표본 가중치 (0~1), 기본값 0.7
   genre: string;         // 벤치마크용 장르
   platforms: string[];   // 벤치마크용 플랫폼
+  time_decay?: boolean;  // V7: Time-Decay 블렌딩 활성화
 }
 
 export interface ProjectionInput {
@@ -155,7 +156,11 @@ export interface ProjectionInput {
   nru: NRUInput;
   revenue: RevenueInput;
   basic_settings?: BasicSettings;
-  blending?: BlendingSettings;  // 블렌딩 설정 추가
+  blending?: BlendingSettings;
+  // V7 추가
+  quality_score?: string;  // S/A/B/C/D
+  bm_type?: string;        // Hardcore/Midcore/Casual/F2P_Cosmetic/Gacha
+  regions?: string[];      // korea/japan/china/global/sea/na/sa/eu
 }
 
 // Result Types
@@ -231,6 +236,7 @@ export interface ProjectionResult {
   blending?: {
     weight_internal: number;
     weight_benchmark: number;
+    time_decay?: boolean;  // V7
     genre: string;
     platforms: string[];
     benchmark_only: boolean;
@@ -242,6 +248,14 @@ export interface ProjectionResult {
       pr: number;
       arppu: number;
     };
+  };
+  v7_settings?: {  // V7
+    quality_score: string;
+    quality_multiplier: number;
+    bm_type: string;
+    bm_modifier: { pr_mod: number; arppu_mod: number };
+    regions: string[];
+    seasonality_applied: boolean;
   };
   summary: {
     best: SummaryResult;

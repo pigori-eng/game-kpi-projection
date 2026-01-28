@@ -122,7 +122,13 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
   const [seasonalityEnabled, setSeasonalityEnabled] = useState(false);
   
   // Phase 3: 프로젝트 정보 및 유사도 추천 (다중선택 지원)
-  const [projectInfo, setProjectInfo] = useState({ genre: '', platforms: [] as string[], regions: [] as string[] });
+  const [projectInfo, setProjectInfo] = useState({ 
+    genre: '', 
+    platforms: [] as string[], 
+    regions: [] as string[],
+    qualityScore: 'B',  // V7: 품질 등급
+    bmType: 'Midcore'   // V7: BM 모델 타입
+  });
   const [useAIRecommend, setUseAIRecommend] = useState(false);
   const [useBenchmark, setUseBenchmark] = useState(false);
   // 블렌딩 가중치 (내부 표본 vs 시장 벤치마크)
@@ -367,6 +373,61 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                     ))}
                   </div>
                 </div>
+                {/* V7: Quality Score (FGT/CBT 결과) */}
+                <div className="border border-amber-200 rounded-lg p-3 bg-amber-50/50">
+                  <label className="block text-sm font-semibold text-amber-800 mb-2">⭐ 품질 등급 (내부 테스트 결과)</label>
+                  <p className="text-xs text-amber-700 mb-3">
+                    <strong>작동 원리:</strong> 벤치마크 값에만 승수(×)를 적용합니다. 내부 데이터는 건드리지 않습니다.
+                    <br />Time-Decay와 결합되어 <strong>장기(D365)로 갈수록 영향력이 커집니다.</strong>
+                  </p>
+                  <div className="flex gap-2 mb-2">
+                    {[
+                      {v:'S',l:'S급',desc:'대박 조짐',mod:'+20%',c:'bg-yellow-100 border-yellow-400 text-yellow-800'},
+                      {v:'A',l:'A급',desc:'우수',mod:'+10%',c:'bg-green-100 border-green-400 text-green-800'},
+                      {v:'B',l:'B급',desc:'평범',mod:'±0%',c:'bg-blue-100 border-blue-400 text-blue-800'},
+                      {v:'C',l:'C급',desc:'미흡',mod:'-10%',c:'bg-orange-100 border-orange-400 text-orange-800'},
+                      {v:'D',l:'D급',desc:'부진',mod:'-20%',c:'bg-red-100 border-red-400 text-red-800'}
+                    ].map(({v,l,desc,mod,c}) => (
+                      <label key={v} className={`flex flex-col items-center px-3 py-2 rounded border cursor-pointer text-xs transition-colors ${(projectInfo.qualityScore || 'B') === v ? c + ' font-bold ring-2 ring-offset-1' : 'bg-white border-gray-300 hover:bg-gray-50'}`}>
+                        <input type="radio" name="qualityScore" value={v} checked={(projectInfo.qualityScore || 'B') === v} onChange={(e) => setProjectInfo(prev => ({ ...prev, qualityScore: e.target.value }))} className="sr-only" />
+                        <span className="text-base font-bold">{l}</span>
+                        <span className="text-[10px] text-gray-600">{desc}</span>
+                        <span className={`text-[10px] font-semibold ${v === 'S' || v === 'A' ? 'text-green-600' : v === 'C' || v === 'D' ? 'text-red-600' : 'text-gray-500'}`}>{mod}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="text-xs bg-white rounded p-2 border border-amber-200">
+                    <strong>예시:</strong> 시장 평균 D30 리텐션 10% → S급 선택 시 <strong>12%</strong>로 상향 계산
+                  </div>
+                </div>
+                {/* V7: BM Type */}
+                <div className="border border-indigo-200 rounded-lg p-3 bg-indigo-50/50">
+                  <label className="block text-sm font-semibold text-indigo-800 mb-2">💰 BM 모델 타입</label>
+                  <p className="text-xs text-indigo-700 mb-3">
+                    <strong>작동 원리:</strong> 숫자를 곱하는 게 아니라, <strong>비교할 PR/ARPPU 기준을 교체</strong>합니다.
+                    <br />이 선택이 <strong>매출 프로젝션의 현실성을 결정짓는 핵심 변수</strong>입니다.
+                  </p>
+                  <div className="grid grid-cols-5 gap-2 mb-2">
+                    {[
+                      {v:'Hardcore',l:'하드코어',d:'타르코프류',pr:'PR 2~3%',arppu:'ARPPU $80+'},
+                      {v:'Midcore',l:'미드코어',d:'기본',pr:'PR 5%',arppu:'ARPPU $40'},
+                      {v:'Casual',l:'캐주얼',d:'배그/포나류',pr:'PR 8~10%',arppu:'ARPPU $20'},
+                      {v:'F2P_Cosmetic',l:'F2P+꾸미기',d:'스킨 중심',pr:'PR 4%',arppu:'ARPPU $25'},
+                      {v:'Gacha',l:'가챠',d:'확률형',pr:'PR 7%',arppu:'ARPPU $70'}
+                    ].map(({v,l,d,pr,arppu}) => (
+                      <label key={v} className={`flex flex-col items-center px-2 py-2 rounded border cursor-pointer text-xs transition-colors ${(projectInfo.bmType || 'Midcore') === v ? 'bg-indigo-100 border-indigo-500 text-indigo-800 font-bold ring-2 ring-indigo-400 ring-offset-1' : 'bg-white border-gray-300 hover:bg-gray-50'}`}>
+                        <input type="radio" name="bmType" value={v} checked={(projectInfo.bmType || 'Midcore') === v} onChange={(e) => setProjectInfo(prev => ({ ...prev, bmType: e.target.value }))} className="sr-only" />
+                        <span className="font-bold">{l}</span>
+                        <span className="text-[10px] text-gray-500">{d}</span>
+                        <span className="text-[9px] text-indigo-600 mt-1">{pr}</span>
+                        <span className="text-[9px] text-green-600">{arppu}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="text-xs bg-white rounded p-2 border border-indigo-200">
+                    <strong>핵심:</strong> Hardcore = "DAU 적어도 매출 높음" / Casual = "DAU 많아야 매출 터짐"
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -492,14 +553,18 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                           const marketWeight = parseInt(e.target.value) / 100;
                           const internalWeight = 1 - marketWeight;
                           setBlendingWeight(internalWeight);
-                          // input.blending 업데이트
+                          // input.blending 업데이트 + V7: quality_score, bm_type, regions
                           setInput(prev => ({
                             ...prev,
                             blending: {
                               weight: internalWeight,
                               genre: projectInfo.genre || 'MMORPG',
-                              platforms: projectInfo.platforms || ['PC']
-                            }
+                              platforms: projectInfo.platforms || ['PC'],
+                              time_decay: true
+                            },
+                            quality_score: projectInfo.qualityScore || 'B',
+                            bm_type: projectInfo.bmType || 'Midcore',
+                            regions: projectInfo.regions || ['global']
                           }));
                         }}
                         className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-orange-500"
@@ -550,10 +615,10 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
         )}
       </div>
 
-      {/* 3. Retention */}
+      {/* 5. Retention (기존 3) */}
       <div className="border border-gray-200 rounded-lg overflow-hidden">
         <button onClick={() => setActiveSection(activeSection === 'retention' ? null : 'retention')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'retention' ? 'bg-emerald-50 border-b border-emerald-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
-          <div className="flex items-center gap-2"><TrendingUp className="w-5 h-5 text-emerald-600" /><span className="font-medium">3. Retention 설정</span></div>
+          <div className="flex items-center gap-2"><TrendingUp className="w-5 h-5 text-emerald-600" /><span className="font-medium">5. Retention 설정</span></div>
           {activeSection === 'retention' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
         </button>
         {activeSection === 'retention' && (
@@ -572,10 +637,10 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
         )}
       </div>
 
-      {/* 3. NRU */}
+      {/* 4. NRU (자동계산 - MKT 이후) */}
       <div className="border border-gray-200 rounded-lg overflow-hidden">
         <button onClick={() => setActiveSection(activeSection === 'nru' ? null : 'nru')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'nru' ? 'bg-blue-50 border-b border-blue-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
-          <div className="flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /><span className="font-medium">3. NRU 설정</span></div>
+          <div className="flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /><span className="font-medium">4. NRU 설정 (자동계산)</span></div>
           {activeSection === 'nru' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
         </button>
         {activeSection === 'nru' && (
@@ -610,10 +675,10 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
         )}
       </div>
 
-      {/* 4. Revenue */}
+      {/* 6. Revenue (보정) */}
       <div className="border border-gray-200 rounded-lg overflow-hidden">
         <button onClick={() => setActiveSection(activeSection === 'revenue' ? null : 'revenue')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'revenue' ? 'bg-amber-50 border-b border-amber-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
-          <div className="flex items-center gap-2"><DollarSign className="w-5 h-5 text-amber-600" /><span className="font-medium">4. Revenue 설정</span></div>
+          <div className="flex items-center gap-2"><DollarSign className="w-5 h-5 text-amber-600" /><span className="font-medium">6. Revenue 설정 (보정)</span></div>
           {activeSection === 'revenue' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
         </button>
         {activeSection === 'revenue' && (
@@ -651,12 +716,13 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
         )}
       </div>
 
-      {/* 6. 마케팅 & UA 통합 설정 */}
+      {/* 3. 마케팅 & UA 설정 (UA First) */}
       <div className="border border-orange-200 rounded-lg overflow-hidden">
         <button onClick={() => setActiveSection(activeSection === 'mkt-calc' ? null : 'mkt-calc')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'mkt-calc' ? 'bg-orange-50 border-b border-orange-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
           <div className="flex items-center gap-2">
             <DollarSign className="w-5 h-5 text-orange-600" />
-            <span className="font-medium">5. 마케팅 & UA 설정</span>
+            <span className="font-medium">3. 마케팅 & UA 설정</span>
+            <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">UA First</span>
           </div>
           {activeSection === 'mkt-calc' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
         </button>

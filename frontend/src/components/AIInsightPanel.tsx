@@ -1,25 +1,28 @@
-import { useState, useCallback } from 'react';
-import { Sparkles, RefreshCw, Brain, TrendingUp, DollarSign, AlertTriangle, Target, Shield } from 'lucide-react';
+import { useState, useCallback, useEffect } from 'react';
+import { Sparkles, RefreshCw, Brain, TrendingUp, DollarSign, AlertTriangle, Target, Shield, FileText, ChevronDown, ChevronUp } from 'lucide-react';
 import { getAIInsight } from '../utils/api';
 import type { ProjectionResult } from '../types';
 
 interface AIInsightPanelProps {
   results: ProjectionResult;
+  autoLoad?: boolean;  // V7: 자동 로드 옵션
 }
 
-type AnalysisType = 'general' | 'reliability' | 'retention' | 'revenue' | 'risk' | 'competitive';
+type AnalysisType = 'executive_report' | 'general' | 'reliability' | 'retention' | 'revenue' | 'risk' | 'competitive';
 
 // 캐시된 인사이트 저장
 type InsightCache = Partial<Record<AnalysisType, string>>;
 
-const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ results }) => {
+const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ results, autoLoad = true }) => {
   const [loading, setLoading] = useState(false);
   const [insightCache, setInsightCache] = useState<InsightCache>({});
-  const [selectedType, setSelectedType] = useState<AnalysisType>('general');
+  const [selectedType, setSelectedType] = useState<AnalysisType>('executive_report');
   const [error, setError] = useState<string | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
 
   const analysisTypes = [
-    { id: 'general' as AnalysisType, label: '종합 분석', icon: Brain, color: 'blue', description: '4명의 전문가(재무이사, 마케팅팀장, 데이터과학자, 퍼블리싱 전문가)가 종합 평가' },
+    { id: 'executive_report' as AnalysisType, label: '📋 경영진 보고서', icon: FileText, color: 'violet', description: 'Go/No-Go 권고, 산술 근거, 4명 전문가 종합 분석 (자동 생성)', main: true },
+    { id: 'general' as AnalysisType, label: '종합 분석', icon: Brain, color: 'blue', description: '4명의 전문가가 종합 평가' },
     { id: 'reliability' as AnalysisType, label: '신뢰도 평가', icon: Shield, color: 'indigo', description: '프로젝션 신뢰도 점수 및 전문가별 평가' },
     { id: 'retention' as AnalysisType, label: '리텐션 분석', icon: TrendingUp, color: 'emerald', description: 'DAU 패턴 및 리텐션 개선 액션 플랜' },
     { id: 'revenue' as AnalysisType, label: '매출 분석', icon: DollarSign, color: 'amber', description: '손익분기점, ARPU, 매출 극대화 전략' },
@@ -27,11 +30,8 @@ const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ results }) => {
     { id: 'competitive' as AnalysisType, label: '경쟁력 분석', icon: Target, color: 'purple', description: '시장 경쟁력 등급 및 강화 전략' },
   ];
 
-  const handleAnalyze = useCallback(async () => {
-    // 이미 캐시에 있으면 API 호출 안함
-    if (insightCache[selectedType]) {
-      return;
-    }
+  const fetchInsight = useCallback(async (type: AnalysisType) => {
+    if (insightCache[type]) return;
 
     setLoading(true);
     setError(null);
@@ -44,21 +44,34 @@ const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ results }) => {
         best: results.summary.best,
         normal: results.summary.normal,
         worst: results.summary.worst,
+        // V7: blending 정보 추가
+        blending: results.blending,
+        v7_settings: (results as any).v7_settings,
       };
       
-      const response = await getAIInsight(summaryData, selectedType);
+      const response = await getAIInsight(summaryData, type);
       
-      // 캐시에 저장
       setInsightCache(prev => ({
         ...prev,
-        [selectedType]: response.insight
+        [type]: response.insight
       }));
     } catch (err: any) {
       setError(err.response?.data?.detail || err.message || 'AI 분석 중 오류가 발생했습니다.');
     } finally {
       setLoading(false);
     }
-  }, [results, selectedType, insightCache]);
+  }, [results, insightCache]);
+
+  // V7: 자동 로드 - 컴포넌트 마운트 시 executive_report 자동 생성
+  useEffect(() => {
+    if (autoLoad && !insightCache['executive_report']) {
+      fetchInsight('executive_report');
+    }
+  }, [autoLoad, fetchInsight]);
+
+  const handleAnalyze = useCallback(async () => {
+    await fetchInsight(selectedType);
+  }, [fetchInsight, selectedType]);
 
   const handleTypeChange = (type: AnalysisType) => {
     setSelectedType(type);
@@ -67,6 +80,7 @@ const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ results }) => {
 
   const getTypeStyles = (type: AnalysisType, isSelected: boolean) => {
     const colorMap: Record<AnalysisType, { selected: string; default: string }> = {
+      executive_report: { selected: 'bg-violet-100 text-violet-700 border-violet-300', default: 'hover:bg-violet-50' },
       general: { selected: 'bg-blue-100 text-blue-700 border-blue-300', default: 'hover:bg-blue-50' },
       reliability: { selected: 'bg-indigo-100 text-indigo-700 border-indigo-300', default: 'hover:bg-indigo-50' },
       retention: { selected: 'bg-emerald-100 text-emerald-700 border-emerald-300', default: 'hover:bg-emerald-50' },
@@ -79,67 +93,74 @@ const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ results }) => {
 
   const selectedAnalysis = analysisTypes.find(t => t.id === selectedType);
   const currentInsight = insightCache[selectedType];
+  const executiveReport = insightCache['executive_report'];
 
   return (
-    <div className="border border-gray-300 rounded-lg overflow-hidden">
-      <div className="bg-gradient-to-r from-purple-600 to-blue-600 px-4 py-3">
-        <div className="flex items-center gap-2 text-white">
-          <Sparkles className="w-5 h-5" />
-          <span className="font-semibold">AI 인사이트 (Claude Sonnet 4)</span>
-          <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">Multi-Persona</span>
+    <div className="border-2 border-violet-300 rounded-xl overflow-hidden shadow-lg">
+      {/* V7: 경영진 보고서 헤더 */}
+      <div className="bg-gradient-to-r from-violet-600 via-purple-600 to-blue-600 px-4 py-4">
+        <div className="flex items-center justify-between text-white">
+          <div className="flex items-center gap-2">
+            <FileText className="w-6 h-6" />
+            <span className="font-bold text-lg">AI 종합 분석 보고서</span>
+            <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">V7 Executive Report</span>
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            <Sparkles className="w-4 h-4" />
+            <span>Claude Sonnet 4 · Multi-Persona</span>
+          </div>
         </div>
+        <p className="text-violet-200 text-sm mt-1">4명의 전문가 (UA, 데이터, 퍼블리싱, 재무)가 분석한 경영진 의사결정 지원 보고서</p>
       </div>
 
-      <div className="p-4 space-y-4">
-        {/* 분석 유형 선택 */}
-        <div>
-          <p className="text-sm text-gray-600 mb-2">분석 유형을 선택하세요:</p>
-          <div className="grid grid-cols-3 gap-2">
-            {analysisTypes.map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                onClick={() => handleTypeChange(id)}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm border transition-colors ${getTypeStyles(id, selectedType === id)}`}
-              >
-                <Icon className="w-4 h-4" />
-                <span className="font-medium">{label}</span>
-                {/* 캐시 있으면 체크 표시 */}
-                {insightCache[id] && <span className="ml-auto text-green-500">✓</span>}
-              </button>
-            ))}
+      <div className="p-4 space-y-4 bg-gradient-to-b from-violet-50 to-white">
+        {/* V7: 메인 경영진 보고서 (자동 로드) */}
+        {loading && selectedType === 'executive_report' && !executiveReport ? (
+          <div className="p-6 bg-white rounded-lg border-2 border-violet-200 text-center">
+            <RefreshCw className="w-8 h-8 animate-spin text-violet-600 mx-auto mb-2" />
+            <p className="text-violet-700 font-medium">AI 경영진 보고서 생성 중...</p>
+            <p className="text-sm text-gray-500">4명의 전문가가 분석하고 있습니다</p>
           </div>
-          
-          {/* 선택된 분석 유형 설명 */}
-          {selectedAnalysis && (
-            <p className="mt-2 text-xs text-gray-500 italic">
-              📝 {selectedAnalysis.description}
-            </p>
-          )}
-        </div>
+        ) : executiveReport ? (
+          <div className="p-5 bg-white rounded-lg border-2 border-violet-200 shadow-sm">
+            <div className="flex items-center gap-2 mb-4 pb-3 border-b border-violet-100">
+              <FileText className="w-5 h-5 text-violet-600" />
+              <span className="font-bold text-violet-800">📋 경영진 종합 보고서</span>
+              <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full ml-auto">✓ 자동 생성 완료</span>
+            </div>
+            <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+              {executiveReport}
+            </div>
+          </div>
+        ) : (
+          <div className="p-6 bg-white rounded-lg border-2 border-dashed border-violet-200 text-center">
+            <FileText className="w-8 h-8 text-violet-400 mx-auto mb-2" />
+            <p className="text-gray-600">AI 경영진 보고서를 생성하려면 아래 버튼을 클릭하세요</p>
+          </div>
+        )}
 
-        {/* 분석 버튼 */}
-        <button
-          onClick={handleAnalyze}
-          disabled={loading}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 transition-colors disabled:opacity-50 font-medium"
-        >
-          {loading ? (
-            <>
-              <RefreshCw className="w-4 h-4 animate-spin" />
-              AI 분석 중...
-            </>
-          ) : currentInsight ? (
-            <>
-              <RefreshCw className="w-4 h-4" />
-              다시 분석하기
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-4 h-4" />
-              {selectedType === 'reliability' ? '신뢰도 평가 생성' : 'AI 인사이트 생성'}
-            </>
-          )}
-        </button>
+        {/* 산술 근거 표시 */}
+        {results.blending && (
+          <div className="p-3 bg-blue-50 rounded-lg border border-blue-200 text-sm">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="font-semibold text-blue-800">📐 이 결과가 도출된 산술 근거</span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-blue-700">
+              <div className="bg-white rounded px-2 py-1">
+                <span className="text-gray-500">블렌딩:</span> 내부 {(results.blending.weight_internal * 100).toFixed(0)}%
+              </div>
+              <div className="bg-white rounded px-2 py-1">
+                <span className="text-gray-500">Time-Decay:</span> {results.blending.time_decay ? '활성' : '비활성'}
+              </div>
+              <div className="bg-white rounded px-2 py-1">
+                <span className="text-gray-500">품질등급:</span> {(results as any).v7_settings?.quality_score || 'B'}급
+              </div>
+              <div className="bg-white rounded px-2 py-1">
+                <span className="text-gray-500">BM타입:</span> {(results as any).v7_settings?.bm_type || 'Midcore'}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 에러 메시지 */}
         {error && (
@@ -148,36 +169,81 @@ const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ results }) => {
           </div>
         )}
 
-        {/* 인사이트 결과 - 캐시된 결과 표시 */}
-        {currentInsight && (
-          <div className={`p-4 rounded-lg border ${
-            selectedType === 'reliability' 
-              ? 'bg-indigo-50 border-indigo-200' 
-              : 'bg-gray-50 border-gray-200'
-          }`}>
-            <div className="flex items-center gap-2 mb-3">
-              {selectedAnalysis && <selectedAnalysis.icon className={`w-5 h-5 ${
-                selectedType === 'reliability' ? 'text-indigo-600' : 'text-purple-600'
-              }`} />}
-              <span className={`text-sm font-semibold ${
-                selectedType === 'reliability' ? 'text-indigo-700' : 'text-purple-700'
-              }`}>
-                {selectedAnalysis?.label}
-              </span>
-            </div>
-            <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-              {currentInsight}
-            </div>
-          </div>
-        )}
+        {/* 추가 분석 옵션 (접기/펼치기) */}
+        <div className="border border-gray-200 rounded-lg overflow-hidden">
+          <button
+            onClick={() => setShowDetails(!showDetails)}
+            className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+          >
+            <span className="font-medium text-gray-700">🔍 추가 상세 분석</span>
+            {showDetails ? <ChevronUp className="w-5 h-5 text-gray-500" /> : <ChevronDown className="w-5 h-5 text-gray-500" />}
+          </button>
+          
+          {showDetails && (
+            <div className="p-4 space-y-4 border-t">
+              {/* 분석 유형 선택 */}
+              <div className="grid grid-cols-3 gap-2">
+                {analysisTypes.filter(t => t.id !== 'executive_report').map(({ id, label, icon: Icon }) => (
+                  <button
+                    key={id}
+                    onClick={() => handleTypeChange(id)}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm border transition-colors ${getTypeStyles(id, selectedType === id)}`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span className="font-medium">{label}</span>
+                    {insightCache[id] && <span className="ml-auto text-green-500">✓</span>}
+                  </button>
+                ))}
+              </div>
+              
+              {selectedAnalysis && selectedType !== 'executive_report' && (
+                <p className="text-xs text-gray-500 italic">📝 {selectedAnalysis.description}</p>
+              )}
 
-        {/* 안내 문구 */}
-        <div className="flex items-start gap-2 text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
-          <span className="text-lg">💡</span>
-          <div>
-            <p>4명의 전문가(재무이사, 마케팅팀장, 데이터과학자, 퍼블리싱 전문가)가 각자의 관점에서 분석합니다.</p>
-            <p className="mt-1">생성된 인사이트는 유형 변경 시에도 유지됩니다. (✓ 표시)</p>
-          </div>
+              {/* 분석 버튼 */}
+              {selectedType !== 'executive_report' && (
+                <button
+                  onClick={handleAnalyze}
+                  disabled={loading}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 transition-colors disabled:opacity-50 font-medium"
+                >
+                  {loading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      AI 분석 중...
+                    </>
+                  ) : currentInsight ? (
+                    <>
+                      <RefreshCw className="w-4 h-4" />
+                      다시 분석하기
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      {selectedAnalysis?.label} 생성
+                    </>
+                  )}
+                </button>
+              )}
+
+              {/* 인사이트 결과 */}
+              {currentInsight && selectedType !== 'executive_report' && (
+                <div className={`p-4 rounded-lg border ${
+                  selectedType === 'reliability' 
+                    ? 'bg-indigo-50 border-indigo-200' 
+                    : 'bg-gray-50 border-gray-200'
+                }`}>
+                  <div className="flex items-center gap-2 mb-3">
+                    {selectedAnalysis && <selectedAnalysis.icon className="w-5 h-5 text-purple-600" />}
+                    <span className="text-sm font-semibold text-purple-700">{selectedAnalysis?.label}</span>
+                  </div>
+                  <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                    {currentInsight}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
