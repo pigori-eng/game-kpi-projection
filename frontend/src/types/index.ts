@@ -36,6 +36,8 @@ export interface BasicSettings {
   // CPI & UAC
   cpi?: number;
   uac?: number;
+  // V8: 개발비
+  dev_cost?: number;
   // HR Cost (직접/간접 분리)
   hr_direct_headcount?: number;
   hr_indirect_headcount?: number;

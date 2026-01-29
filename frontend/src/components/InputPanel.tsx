@@ -134,6 +134,55 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
   // 블렌딩 가중치 (내부 표본 vs 시장 벤치마크)
   const [blendingWeight, setBlendingWeight] = useState(0.7);
 
+  // V8 #4: 장르/BM Type별 보정값 자동 추천
+  const getRecommendedAdjustment = (genre: string, bmType: string): { best: number; worst: number } => {
+    // Hardcore/RPG (변동성 큼) → ±20%, Casual (안정적) → ±10%
+    const highVariance = ['MMORPG', 'Action RPG', 'Extraction Shooter', 'Strategy'];
+    const lowVariance = ['Casual', 'Sports'];
+    
+    let baseAdjustment = 0.15; // 기본 ±15%
+    
+    if (highVariance.includes(genre) || bmType === 'Hardcore' || bmType === 'Gacha') {
+      baseAdjustment = 0.20; // ±20%
+    } else if (lowVariance.includes(genre) || bmType === 'Casual') {
+      baseAdjustment = 0.10; // ±10%
+    }
+    
+    return { best: baseAdjustment, worst: -baseAdjustment };
+  };
+
+  // V8 #4: 장르/BM Type 변경 시 보정값 자동 적용
+  const handleProjectInfoChange = (field: string, value: string | string[]) => {
+    const newProjectInfo = { ...projectInfo, [field]: value };
+    setProjectInfo(newProjectInfo);
+    
+    // 장르 또는 BM Type 변경 시 보정값 자동 추천
+    if (field === 'genre' || field === 'bmType') {
+      const genre = field === 'genre' ? value as string : newProjectInfo.genre;
+      const bmType = field === 'bmType' ? value as string : newProjectInfo.bmType;
+      
+      if (genre && bmType) {
+        const recommended = getRecommendedAdjustment(genre, bmType);
+        setInput(prev => ({
+          ...prev,
+          retention: {
+            ...prev.retention,
+            // D1 Retention 보정은 유지하고 PR/ARPPU 보정에만 적용
+          },
+          nru: {
+            ...prev.nru,
+            adjustment: { best_vs_normal: recommended.best, worst_vs_normal: recommended.worst }
+          },
+          revenue: {
+            ...prev.revenue,
+            pr_adjustment: { best_vs_normal: recommended.best, worst_vs_normal: recommended.worst },
+            arppu_adjustment: { best_vs_normal: recommended.best, worst_vs_normal: recommended.worst }
+          }
+        }));
+      }
+    }
+  };
+
   useEffect(() => {
     const loadMetadata = async () => {
       try {
@@ -343,7 +392,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                   <div className="grid grid-cols-4 gap-2">
                     {['MMORPG', 'Action RPG', 'Battle Royale', 'Extraction Shooter', 'FPS/TPS', 'Strategy', 'Casual', 'Sports'].map(g => (
                       <label key={g} className={`flex items-center justify-center px-2 py-1.5 rounded border cursor-pointer text-xs transition-colors ${projectInfo.genre === g ? 'bg-purple-100 border-purple-400 text-purple-800 font-medium' : 'bg-gray-50 border-gray-300 hover:bg-gray-100'}`}>
-                        <input type="radio" name="genre" value={g} checked={projectInfo.genre === g} onChange={(e) => setProjectInfo(prev => ({ ...prev, genre: e.target.value }))} className="sr-only" />
+                        <input type="radio" name="genre" value={g} checked={projectInfo.genre === g} onChange={(e) => handleProjectInfoChange('genre', e.target.value)} className="sr-only" />
                         {g === 'Strategy' ? '전략/시뮬' : g === 'Casual' ? '캐주얼' : g === 'Sports' ? '스포츠' : g}
                       </label>
                     ))}
@@ -416,7 +465,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                       {v:'Gacha',l:'가챠',d:'확률형',pr:'PR 7%',arppu:'ARPPU $70'}
                     ].map(({v,l,d,pr,arppu}) => (
                       <label key={v} className={`flex flex-col items-center px-2 py-2 rounded border cursor-pointer text-xs transition-colors ${(projectInfo.bmType || 'Midcore') === v ? 'bg-indigo-100 border-indigo-500 text-indigo-800 font-bold ring-2 ring-indigo-400 ring-offset-1' : 'bg-white border-gray-300 hover:bg-gray-50'}`}>
-                        <input type="radio" name="bmType" value={v} checked={(projectInfo.bmType || 'Midcore') === v} onChange={(e) => setProjectInfo(prev => ({ ...prev, bmType: e.target.value }))} className="sr-only" />
+                        <input type="radio" name="bmType" value={v} checked={(projectInfo.bmType || 'Midcore') === v} onChange={(e) => handleProjectInfoChange('bmType', e.target.value)} className="sr-only" />
                         <span className="font-bold">{l}</span>
                         <span className="text-[10px] text-gray-500">{d}</span>
                         <span className="text-[9px] text-indigo-600 mt-1">{pr}</span>
@@ -778,11 +827,19 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                   </table>
                 </div>
                 <div className="border border-gray-300 rounded-lg overflow-hidden">
-                  <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">CPI & UAC</div>
+                  <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">
+                    {/* V8: Platform별 용어 변경 */}
+                    {(projectInfo.platforms || []).includes('Mobile') ? 'CPI & UAC' : 'CPA & UAC'}
+                  </div>
                   <table className="w-full text-sm table-fixed">
                     <tbody>
                       <tr>
-                        <td className="px-3 py-2 border-b bg-gray-50 w-2/5">CPI (Cost Per Install)</td>
+                        {/* V8: Mobile=CPI, PC/Console=CPA */}
+                        <td className="px-3 py-2 border-b bg-gray-50 w-2/5">
+                          {(projectInfo.platforms || []).includes('Mobile') 
+                            ? 'CPI (Cost Per Install)' 
+                            : 'CPA (Cost Per Acquisition)'}
+                        </td>
                         <td className="px-3 py-2 border-b bg-yellow-50">
                           <div className="flex items-center">
                             <input 
