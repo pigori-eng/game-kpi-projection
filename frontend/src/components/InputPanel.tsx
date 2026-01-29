@@ -163,12 +163,12 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
     return { best: baseAdjustment, worst: -baseAdjustment };
   };
 
-  // V8 #4: 장르/BM Type 변경 시 보정값 자동 적용
+  // V8 #4: 장르/BM Type 변경 시 보정값 자동 적용 + blending.genre 연동
   const handleProjectInfoChange = (field: string, value: string | string[]) => {
     const newProjectInfo = { ...projectInfo, [field]: value };
     setProjectInfo(newProjectInfo);
     
-    // 장르 또는 BM Type 변경 시 보정값 자동 추천
+    // 장르 또는 BM Type 변경 시 보정값 자동 추천 + blending에 반영
     if (field === 'genre' || field === 'bmType') {
       const genre = field === 'genre' ? value as string : newProjectInfo.genre;
       const bmType = field === 'bmType' ? value as string : newProjectInfo.bmType;
@@ -177,6 +177,15 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
         const recommended = getRecommendedAdjustment(genre, bmType);
         setInput(prev => ({
           ...prev,
+          // V8.5: blending에 장르 반영 (AI 보고서에서 사용)
+          blending: {
+            ...prev.blending,
+            weight: prev.blending?.weight || 0.7,
+            genre: genre,
+            platforms: prev.blending?.platforms || newProjectInfo.platforms || ['PC'],
+            time_decay: prev.blending?.time_decay ?? true
+          },
+          bm_type: bmType,
           retention: {
             ...prev.retention,
             // D1 Retention 보정은 유지하고 PR/ARPPU 보정에만 적용
@@ -192,6 +201,20 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
           }
         }));
       }
+    }
+    
+    // 플랫폼 변경 시 blending에 반영
+    if (field === 'platforms') {
+      setInput(prev => ({
+        ...prev,
+        blending: {
+          ...prev.blending,
+          weight: prev.blending?.weight || 0.7,
+          genre: prev.blending?.genre || newProjectInfo.genre || 'MMORPG',
+          platforms: value as string[],
+          time_decay: prev.blending?.time_decay ?? true
+        }
+      }));
     }
   };
 
@@ -215,6 +238,40 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
       revenue: { ...prev.revenue, selected_games_pr: selectedGames, selected_games_arppu: selectedGames },
     }));
   };
+
+  // V8.5: ua_budget/brand_budget 변경 시 NRU 자동 연동
+  useEffect(() => {
+    const ua = input.nru.ua_budget || 0;
+    const brand = input.nru.brand_budget || 0;
+    const cpa = input.nru.target_cpa || 2000;
+    
+    if (ua > 0 && cpa > 0) {
+      // CPA Saturation
+      const saturation = 1 + (ua / 500_000_000) * 0.05;
+      const effectiveCpa = cpa * saturation;
+      
+      // Organic Boost
+      const boost = 1 + Math.log(1 + (brand / Math.max(1, ua))) * 0.7;
+      const organicRatio = (input.nru.base_organic_ratio || 0.2) * boost;
+      
+      // 총 NRU 계산
+      const paidNru = Math.floor(ua / effectiveCpa);
+      const totalNru = Math.floor(paidNru * (1 + organicRatio));
+      
+      // d1_nru에 자동 반영
+      setInput(prev => ({
+        ...prev,
+        nru: {
+          ...prev.nru,
+          d1_nru: {
+            best: Math.floor(totalNru * 1.1),
+            normal: totalNru,
+            worst: Math.floor(totalNru * 0.9)
+          }
+        }
+      }));
+    }
+  }, [input.nru.ua_budget, input.nru.brand_budget, input.nru.target_cpa, input.nru.base_organic_ratio]);
 
   // Phase 3: 유사도 기반 게임 추천
   const calculateSimilarity = (gameName: string): { score: number; reason: string } => {
@@ -1011,7 +1068,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                     className="w-4 h-4 text-orange-600"
                   />
                   <label htmlFor="nru-auto-calc" className="text-sm font-medium text-orange-800">
-                    🔄 총 NRU 자동 계산 (4. NRU 설정에 반영)
+                    🔄 총 NRU 자동 계산 (5. NRU 설정에 반영)
                   </label>
                 </div>
                 <div className="border border-orange-300 rounded-lg overflow-hidden">
@@ -1108,10 +1165,10 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
         )}
       </div>
 
-      {/* 5. Retention 설정 */}
+      {/* 4. Retention 설정 */}
       <div className="border border-gray-200 rounded-lg overflow-hidden">
         <button onClick={() => setActiveSection(activeSection === 'retention' ? null : 'retention')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'retention' ? 'bg-emerald-50 border-b border-emerald-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
-          <div className="flex items-center gap-2"><TrendingUp className="w-5 h-5 text-emerald-600" /><span className="font-medium">5. Retention 설정</span></div>
+          <div className="flex items-center gap-2"><TrendingUp className="w-5 h-5 text-emerald-600" /><span className="font-medium">4. Retention 설정</span></div>
           {activeSection === 'retention' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
         </button>
         {activeSection === 'retention' && (
@@ -1155,10 +1212,10 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
         )}
       </div>
 
-      {/* 4. NRU (MKT에서 자동 계산됨) */}
+      {/* 5. NRU (MKT에서 자동 계산됨) */}
       <div className="border border-gray-200 rounded-lg overflow-hidden">
         <button onClick={() => setActiveSection(activeSection === 'nru' ? null : 'nru')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'nru' ? 'bg-blue-50 border-b border-blue-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
-          <div className="flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /><span className="font-medium">4. NRU 설정 (자동계산)</span></div>
+          <div className="flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /><span className="font-medium">5. NRU 설정 (자동계산)</span></div>
           {activeSection === 'nru' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
         </button>
         {activeSection === 'nru' && (
@@ -1175,7 +1232,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                 
                 <div className="mt-2 p-2 bg-white/50 rounded">
                   <p className="font-semibold text-amber-800">💡 V8.5 모드 vs 레거시 모드:</p>
-                  <p>• <strong>V8.5 모드 (권장):</strong> "3. 마케팅 설정"에서 UA/Brand 예산 입력 → 자동 계산</p>
+                  <p>• <strong>V8.5 모드 (권장):</strong> "3. 마케팅 설정"에서 UA/Brand 예산 입력 → 5. NRU에 자동 반영</p>
                   <p>• <strong>레거시 모드:</strong> 아래에서 총 NRU 직접 입력</p>
                   <p className="text-[10px] text-gray-600 mt-1">* UA 예산이 설정되면 V8.5 모드가 우선 적용됩니다</p>
                 </div>
@@ -1316,24 +1373,53 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
               </label>
             </div>
 
-            {/* 지역 선택 (계절성에 영향) */}
+            {/* 지역 선택 (계절성에 영향) - 다중선택 가능 */}
             <div className="border border-teal-300 rounded-lg p-3 bg-teal-50/50">
-              <label className="block text-sm font-semibold text-teal-800 mb-2">🌏 타겟 지역 선택</label>
-              <p className="text-xs text-teal-700 mb-2">선택한 지역에 따라 월별 계절성 팩터가 자동 조정됩니다.</p>
+              <label className="block text-sm font-semibold text-teal-800 mb-2">🌏 타겟 지역 선택 (다중 선택 가능)</label>
+              <p className="text-xs text-teal-700 mb-2">선택한 지역들의 계절성 팩터가 평균으로 적용됩니다. (예: 한국+북미 동시 론칭)</p>
               <div className="grid grid-cols-4 gap-2">
                 {[
                   {v:'korea', l:'🇰🇷 한국', d:'설날/추석 효과'},
                   {v:'japan', l:'🇯🇵 일본', d:'골든위크/오봉'},
                   {v:'na', l:'🇺🇸 북미', d:'추수감사절/크리스마스'},
                   {v:'global', l:'🌍 글로벌', d:'연말/여름'}
-                ].map(({v, l, d}) => (
-                  <label key={v} className={`flex flex-col items-center px-2 py-2 rounded border cursor-pointer text-xs transition-colors ${(input.regions?.[0] || 'global') === v ? 'bg-teal-100 border-teal-500 text-teal-800 font-bold ring-2 ring-teal-400' : 'bg-white border-gray-300 hover:bg-gray-50'}`}>
-                    <input type="radio" name="region" value={v} checked={(input.regions?.[0] || 'global') === v} onChange={(e) => setInput(prev => ({...prev, regions: [e.target.value]}))} className="sr-only" />
-                    <span className="font-bold">{l}</span>
-                    <span className="text-[10px] text-gray-500">{d}</span>
-                  </label>
-                ))}
+                ].map(({v, l, d}) => {
+                  const isSelected = (input.regions || ['global']).includes(v);
+                  return (
+                    <label key={v} className={`flex flex-col items-center px-2 py-2 rounded border cursor-pointer text-xs transition-colors ${isSelected ? 'bg-teal-100 border-teal-500 text-teal-800 font-bold ring-2 ring-teal-400' : 'bg-white border-gray-300 hover:bg-gray-50'}`}>
+                      <input 
+                        type="checkbox" 
+                        value={v} 
+                        checked={isSelected}
+                        onChange={(e) => {
+                          const currentRegions = input.regions || ['global'];
+                          let newRegions: string[];
+                          if (e.target.checked) {
+                            // 'global'이 선택되면 다른 지역 제거, 아니면 global 제거하고 추가
+                            if (v === 'global') {
+                              newRegions = ['global'];
+                            } else {
+                              newRegions = [...currentRegions.filter(r => r !== 'global'), v];
+                            }
+                          } else {
+                            newRegions = currentRegions.filter(r => r !== v);
+                            // 아무것도 선택 안되면 global로
+                            if (newRegions.length === 0) newRegions = ['global'];
+                          }
+                          setInput(prev => ({...prev, regions: newRegions}));
+                        }} 
+                        className="sr-only" 
+                      />
+                      <span className="font-bold">{l}</span>
+                      <span className="text-[10px] text-gray-500">{d}</span>
+                      {isSelected && <span className="text-[10px] text-teal-600 mt-1">✓</span>}
+                    </label>
+                  );
+                })}
               </div>
+              {(input.regions || ['global']).length > 1 && (
+                <p className="text-xs text-teal-600 mt-2">📍 선택된 지역: {(input.regions || ['global']).join(' + ')}</p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">

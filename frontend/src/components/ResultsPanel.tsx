@@ -416,6 +416,16 @@ const RetentionTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
   const tableData = results.results.best.full_data.retention.map((_, i) => ({ day: `D+${i + 1}`, best: (results.results.best.full_data.retention[i] * 100).toFixed(1), normal: (results.results.normal.full_data.retention[i] * 100).toFixed(1), worst: (results.results.worst.full_data.retention[i] * 100).toFixed(1) }));
   return (
     <div className="space-y-6">
+      {/* Retention 계산 방식 설명 */}
+      <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
+        <p className="text-sm font-semibold text-purple-800 mb-2">📊 Retention 계산 방식</p>
+        <div className="text-xs text-purple-700 space-y-1">
+          <p><strong>공식:</strong> Retention(day) = a × day<sup>b</sup> (Power Law 모델)</p>
+          <p><strong>계수 a:</strong> 표본 게임들의 D+1 Retention 평균값 기반 초기 계수</p>
+          <p><strong>계수 b:</strong> 리텐션 감소 기울기 (일반적으로 -0.3 ~ -0.7, 음수일수록 급격 감소)</p>
+          <p><strong>예시:</strong> D+30 Retention = 0.45 × 30<sup>-0.5</sup> ≈ 8.2%</p>
+        </div>
+      </div>
       <div className="border rounded-lg overflow-hidden">
         <div className="bg-gray-100 px-4 py-2 font-semibold">회귀분석 결과</div>
         <table className="w-full text-sm">
@@ -461,6 +471,16 @@ const NRUTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
   const tableData = results.results.best.full_data.nru.map((_, i) => ({ day: `D+${i + 1}`, best: results.results.best.full_data.nru[i], normal: results.results.normal.full_data.nru[i], worst: results.results.worst.full_data.nru[i] }));
   return (
     <div className="space-y-6">
+      {/* NRU 계산 방식 설명 */}
+      <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+        <p className="text-sm font-semibold text-blue-800 mb-2">📊 NRU 계산 방식</p>
+        <div className="text-xs text-blue-700 space-y-1">
+          <p><strong>Paid NRU:</strong> UA 예산 ÷ CPA (CPA Saturation 적용: 예산↑ → 효율↓)</p>
+          <p><strong>Organic Boost:</strong> 1 + ln(1 + Brand예산/UA예산) × 0.7 (브랜드 마케팅 → 자연 유입 증가)</p>
+          <p><strong>총 NRU:</strong> Paid NRU × (1 + Organic Ratio × Organic Boost)</p>
+          <p><strong>일별 배분:</strong> 런칭 30일간 역삼각형 분포 (D1 피크 → D30 감소)</p>
+        </div>
+      </div>
       <div className="border rounded-lg overflow-hidden">
         <div className="bg-gray-100 px-4 py-2 font-semibold">NRU 요약</div>
         <table className="w-full text-sm"><thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left border-b">시나리오</th><th className="px-4 py-2 text-right border-b">D1 NRU</th><th className="px-4 py-2 text-right border-b">총 NRU</th></tr></thead>
@@ -480,6 +500,16 @@ const RevenueTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
   const tableData = results.results.best.full_data.revenue.map((_, i) => ({ day: `D+${i + 1}`, best: Math.round(results.results.best.full_data.revenue[i]), normal: Math.round(results.results.normal.full_data.revenue[i]), worst: Math.round(results.results.worst.full_data.revenue[i]) }));
   return (
     <div className="space-y-6">
+      {/* Revenue 계산 방식 설명 */}
+      <div className="p-4 bg-amber-50 rounded-lg border border-amber-200">
+        <p className="text-sm font-semibold text-amber-800 mb-2">📊 Revenue 계산 방식</p>
+        <div className="text-xs text-amber-700 space-y-1">
+          <p><strong>공식:</strong> Daily Revenue = DAU × Payment Rate × ARPPU</p>
+          <p><strong>Payment Rate:</strong> 표본 게임 평균 × BM 타입 보정 (Hardcore 3% vs Casual 10%)</p>
+          <p><strong>ARPPU:</strong> 표본 게임 평균 × BM 타입 보정 (Hardcore $80 vs Casual $20)</p>
+          <p><strong>Net Revenue:</strong> Gross Revenue × (1 - 플랫폼 수수료 30% - VAT)</p>
+        </div>
+      </div>
       <div className="border rounded-lg overflow-hidden">
         <div className="bg-gray-100 px-4 py-2 font-semibold">Revenue 요약</div>
         <table className="w-full text-sm"><thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left border-b">시나리오</th><th className="px-4 py-2 text-right border-b">총 Gross</th><th className="px-4 py-2 text-right border-b">일평균</th></tr></thead>
@@ -499,6 +529,16 @@ const TotalTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
   const tableData = results.results.normal.full_data.dau.map((_, i) => ({ day: `D+${i + 1}`, dau_best: results.results.best.full_data.dau[i], dau_normal: results.results.normal.full_data.dau[i], dau_worst: results.results.worst.full_data.dau[i], revenue_best: Math.round(results.results.best.full_data.revenue[i]), revenue_normal: Math.round(results.results.normal.full_data.revenue[i]), revenue_worst: Math.round(results.results.worst.full_data.revenue[i]) }));
   return (
     <div className="space-y-6">
+      {/* Total KPI 계산 방식 설명 */}
+      <div className="p-4 bg-slate-100 rounded-lg border border-slate-300">
+        <p className="text-sm font-semibold text-slate-800 mb-2">📊 통합 KPI 계산 흐름</p>
+        <div className="text-xs text-slate-700 space-y-1">
+          <p><strong>1. NRU:</strong> UA 예산 ÷ CPA × Organic Boost → 런칭 30일간 일별 유입</p>
+          <p><strong>2. DAU:</strong> Σ(과거 NRU × 해당일 Retention) → 일별 활성 유저</p>
+          <p><strong>3. Revenue:</strong> DAU × Payment Rate × ARPPU → 일별 매출</p>
+          <p><strong>4. Total:</strong> Σ(일별 매출) × 365일 → 연간 Gross/Net Revenue</p>
+        </div>
+      </div>
       <div className="border rounded-lg overflow-hidden">
         <div className="bg-gray-100 px-4 py-2 font-semibold">통합 KPI 요약</div>
         <table className="w-full text-sm"><thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left border-b">지표</th><th className="px-4 py-2 text-right border-b bg-green-50">Best</th><th className="px-4 py-2 text-right border-b bg-blue-50">Normal</th><th className="px-4 py-2 text-right border-b bg-red-50">Worst</th></tr></thead>

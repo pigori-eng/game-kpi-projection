@@ -795,7 +795,7 @@ async def get_claude_insight(prompt: str) -> str:
                     "content-type": "application/json"
                 },
                 json={
-                    "model": "claude-sonnet-4-20250514",
+                    "model": "claude-opus-4-5-20251101",
                     "max_tokens": 1024,
                     "messages": [
                         {"role": "user", "content": prompt}
@@ -1341,7 +1341,7 @@ async def get_ai_status():
     """Check AI integration status"""
     return {
         "enabled": bool(CLAUDE_API_KEY),
-        "model": "claude-sonnet-4",
+        "model": "claude-opus-4-5",
         "available_types": ["general", "reliability", "retention", "revenue", "risk", "competitive"]
     }
 
