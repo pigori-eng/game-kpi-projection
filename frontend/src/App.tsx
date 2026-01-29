@@ -200,7 +200,7 @@ function App() {
               </div>
               <div>
                 <h1 className="text-xl font-bold text-gray-900">Game KPI Projection Tool</h1>
-                <p className="text-sm text-gray-500">게임 지표 프로젝션 분석 (회귀분석 기반)</p>
+                <p className="text-sm text-gray-500">게임 KPI지표 프로젝션 및 AI분석</p>
               </div>
             </div>
             <div className="flex items-center gap-2">

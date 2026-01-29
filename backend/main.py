@@ -37,15 +37,15 @@ def load_config():
 
 # Pydantic Models
 class RetentionInput(BaseModel):
-    selected_games: List[str]
-    target_d1_retention: Dict[str, float]
+    selected_games: List[str] = []
+    target_d1_retention: Dict[str, float] = {"best": 0.45, "normal": 0.40, "worst": 0.35}
 
 class NRUInput(BaseModel):
-    selected_games: List[str]
-    d1_nru: Dict[str, int]
-    paid_organic_ratio: float
-    nvr: float
-    adjustment: Dict[str, float]
+    selected_games: List[str] = []
+    d1_nru: Dict[str, int] = {"best": 0, "normal": 0, "worst": 0}
+    paid_organic_ratio: float = 0.5
+    nvr: float = 0.7
+    adjustment: Dict[str, float] = {"best_vs_normal": 0.1, "worst_vs_normal": -0.1}
     # V8.5: UA/Brand 예산 분리
     ua_budget: Optional[int] = 0              # 퍼포먼스 마케팅 예산 (직접 유입)
     brand_budget: Optional[int] = 0           # 브랜딩 예산 (Organic Boost)
@@ -58,10 +58,10 @@ class NRUInput(BaseModel):
     brand_time_lag_enabled: Optional[bool] = True     # 브랜딩 지연 효과 활성화
 
 class RevenueInput(BaseModel):
-    selected_games_pr: List[str]
-    selected_games_arppu: List[str]
-    pr_adjustment: Dict[str, float]
-    arppu_adjustment: Dict[str, float]
+    selected_games_pr: List[str] = []
+    selected_games_arppu: List[str] = []
+    pr_adjustment: Dict[str, float] = {"best_vs_normal": 0.05, "worst_vs_normal": -0.05}
+    arppu_adjustment: Dict[str, float] = {"best_vs_normal": 0.05, "worst_vs_normal": -0.05}
 
 class ProjectionInput(BaseModel):
     launch_date: str
@@ -1111,7 +1111,7 @@ async def calculate_projection(input_data: ProjectionInput):
             adj_ua = int(ua_budget * scenario_mult)
             adj_brand = int(brand_budget * scenario_mult)
             
-            sustaining_monthly = basic.get("sustaining_mkt_budget_monthly", 0) if basic else 0
+            sustaining_monthly = input_data.basic_settings.get("sustaining_mkt_budget_monthly", 0) if input_data.basic_settings else 0
             
             # V8.5+ 신규 파라미터
             pre_marketing_ratio = input_data.nru.pre_marketing_ratio or 0.0

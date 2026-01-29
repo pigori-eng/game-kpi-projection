@@ -318,7 +318,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
         <div className="flex items-start gap-3">
           <HelpCircle className="w-6 h-6 text-blue-600 flex-shrink-0 mt-0.5" />
           <div>
-            <h3 className="font-semibold text-blue-900 mb-2">📊 하이브리드 벤치마크 기반 KPI 프로젝션</h3>
+            <h3 className="font-semibold text-blue-900 mb-2">📊 회귀분석 및 벤치마크 기반 KPI프로젝션</h3>
             <div className="text-sm text-blue-800 space-y-1">
               <p><strong>1. 데이터 소스:</strong> 내부 표본 게임(15개) + 시장 벤치마크(SensorTower/Newzoo) 통합</p>
               <p><strong>2. Retention Curve:</strong> Power Law 회귀분석(a × day^b) + 장르/플랫폼별 벤치마크 블렌딩</p>
@@ -836,15 +836,15 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                         </td>
                       </tr>
                       <tr>
-                        <td className="px-3 py-2 border-b bg-gray-50">Sustaining (월)</td>
+                        <td className="px-3 py-2 border-b bg-gray-50">Target CPA/CPI</td>
                         <td className="px-3 py-2 border-b bg-yellow-50">
                           <div className="flex items-center">
                             <input 
                               type="text" 
-                              value={(input.basic_settings?.sustaining_mkt_budget_monthly || 0).toLocaleString()} 
+                              value={(input.nru.target_cpa || 2000).toLocaleString()} 
                               onChange={(e) => {
                                 const rawValue = e.target.value.replace(/,/g, '');
-                                setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, sustaining_mkt_budget_monthly: parseInt(rawValue) || 0 } }));
+                                setInput(prev => ({ ...prev, nru: { ...prev.nru, target_cpa: parseInt(rawValue) || 0 } }));
                               }}
                               className="flex-1 bg-transparent border-none p-0 text-right min-w-0" 
                             />
@@ -852,14 +852,62 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                           </div>
                         </td>
                       </tr>
+                      <tr>
+                        <td className="px-3 py-2 border-b bg-gray-50">기본 Organic 비율</td>
+                        <td className="px-3 py-2 border-b bg-yellow-50">
+                          <div className="flex items-center">
+                            <input 
+                              type="number" 
+                              step="1" 
+                              min="0"
+                              max="100"
+                              value={Math.round((input.nru.base_organic_ratio || 0.2) * 100)} 
+                              onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, base_organic_ratio: (parseFloat(e.target.value) || 0) / 100 } }))} 
+                              className="flex-1 bg-transparent border-none p-0 text-right min-w-0" 
+                            />
+                            <span className="ml-1 flex-shrink-0">%</span>
+                          </div>
+                        </td>
+                      </tr>
                       <tr className="bg-orange-50">
-                        <td className="px-3 py-2 font-medium text-orange-800">총 MKT 예산</td>
+                        <td className="px-3 py-2 font-medium text-orange-800">런칭 MKT 예산</td>
                         <td className="px-3 py-2 text-right font-bold text-orange-700">
-                          {((input.nru.ua_budget || 0) + (input.nru.brand_budget || 0) + ((input.basic_settings?.sustaining_mkt_budget_monthly || 0) * 12)).toLocaleString()}원
+                          {((input.nru.ua_budget || 0) + (input.nru.brand_budget || 0)).toLocaleString()}원
                         </td>
                       </tr>
                     </tbody>
                   </table>
+                </div>
+
+                {/* Sustaining 마케팅 (별도 섹션) */}
+                <div className="border border-teal-300 rounded-lg overflow-hidden">
+                  <div className="bg-teal-100 px-3 py-2 border-b font-medium text-sm text-teal-800 flex items-center gap-2">
+                    <span>📊 Sustaining 마케팅 (런칭 후)</span>
+                    <span className="text-xs bg-teal-200 text-teal-700 px-2 py-0.5 rounded-full">매출 대비 %</span>
+                  </div>
+                  <div className="p-3 bg-teal-50/30">
+                    <p className="text-xs text-teal-700 mb-3">
+                      <strong>작동 원리:</strong> 런칭 이후 매월 발생하는 매출(Gross Revenue)의 일정 비율을 유지 마케팅 비용으로 산정합니다.
+                      <br />일반적으로 <strong>매출의 5~10%</strong>를 Sustaining 마케팅에 투입합니다.
+                    </p>
+                    <div className="flex items-center gap-3">
+                      <label className="text-sm text-teal-800 font-medium">매출 대비 비율:</label>
+                      <div className="flex items-center border border-teal-300 rounded px-2 py-1 bg-white">
+                        <input 
+                          type="number" 
+                          step="1" 
+                          min="0"
+                          max="30"
+                          value={Math.round((input.basic_settings?.sustaining_mkt_ratio || 0.07) * 100)} 
+                          onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, sustaining_mkt_ratio: (parseFloat(e.target.value) || 0) / 100 } }))} 
+                          className="w-16 bg-transparent border-none p-0 text-right" 
+                        />
+                        <span className="ml-1 text-sm">%</span>
+                      </div>
+                      <span className="text-xs text-gray-500">(권장: 5~10%)</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">* Sustaining 비용은 ROAS 계산 시 자동 반영됩니다.</p>
+                  </div>
                 </div>
                 
                 {/* Organic Boost 표시 */}
@@ -885,9 +933,11 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                   <div className="p-2 bg-indigo-50/50 border-b border-indigo-200">
                     <div className="text-xs space-y-1">
                       <p className="font-semibold text-indigo-800">💡 저수지(Reservoir) 모델:</p>
-                      <p className="text-indigo-700">사전 마케팅 → 위시리스트 축적 → D1에 80% 폭발 유입</p>
+                      <p className="text-indigo-700">사전 마케팅 → 위시리스트 축적 → <strong>D1에 80% 폭발 유입 (D1 집중도)</strong></p>
+                      <p className="text-[10px] text-indigo-600">* 나머지 20%는 D2~D7에 분산 유입</p>
                       <div className="mt-1 p-1.5 bg-white/70 rounded text-[10px]">
-                        <p><strong>📉 CPA 포화:</strong> 예산 5억당 CPA +5% 상승 (Effective CPA = Target × (1 + Budget/5억 × 0.05))</p>
+                        <p><strong>📉 CPA 포화 (수확 체감 법칙 적용):</strong> 예산이 커질수록 CPA 상승률이 점진적으로 둔화</p>
+                        <p className="text-gray-500 ml-3">로그 함수 적용: 5억→+5%, 10억→+8%, 50억→+15% (비선형 증가)</p>
                         <p><strong>⏳ 브랜딩 지연:</strong> Bell Curve로 D15에 피크, D1~D60에 걸쳐 효과 분포</p>
                       </div>
                     </div>
@@ -973,141 +1023,17 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                             ).toLocaleString()}명
                           </span>
                         </div>
-                        <p className="text-xs text-indigo-500 mt-1">사전예약자의 80%가 D1에 집중 유입</p>
+                        <p className="text-xs text-indigo-500 mt-1">
+                          <strong>공식:</strong> 위시리스트 유저 × 전환율 × <strong>0.8 (D1 집중도)</strong>
+                        </p>
+                        <p className="text-[10px] text-gray-500">* 전환 유저 중 80%는 D1, 나머지 20%는 D2~D7 분산 유입</p>
                       </div>
                     )}
                   </div>
                 </div>
-
-                {/* 기존 런칭 MKT (레거시 호환) */}
-                <div className="border border-gray-300 rounded-lg overflow-hidden opacity-60">
-                  <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm text-gray-500">
-                    📦 레거시 설정 (UA/Brand 미분리 시 사용)
-                  </div>
-                  <table className="w-full text-sm table-fixed">
-                    <tbody>
-                      <tr>
-                        <td className="px-3 py-2 border-b bg-gray-50 w-2/5">런칭 MKT 예산</td>
-                        <td className="px-3 py-2 border-b bg-yellow-50">
-                          <div className="flex items-center">
-                            <input 
-                              type="text" 
-                              value={(input.basic_settings?.launch_mkt_budget || 0).toLocaleString()} 
-                              onChange={(e) => {
-                                const rawValue = e.target.value.replace(/,/g, '');
-                                handleMktBudgetChange(parseInt(rawValue) || 0);
-                              }}
-                              className="flex-1 bg-transparent border-none p-0 text-right min-w-0" 
-                            />
-                            <span className="ml-1 flex-shrink-0">원</span>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="px-3 py-2 bg-gray-50">Sustaining %</td>
-                        <td className="px-3 py-2 bg-yellow-50">
-                          <div className="flex items-center">
-                            <input 
-                              type="number" 
-                              step="1" 
-                              value={Math.round((input.basic_settings?.sustaining_mkt_ratio || 0.07) * 100)} 
-                              onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, sustaining_mkt_ratio: (parseFloat(e.target.value) || 0) / 100 } }))} 
-                              className="flex-1 bg-transparent border-none p-0 text-right min-w-0" 
-                            />
-                            <span className="ml-1 flex-shrink-0">%</span>
-                          </div>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-                <div className="border border-gray-300 rounded-lg overflow-hidden">
-                  <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">
-                    {(projectInfo.platforms || []).includes('Mobile') ? 'CPI & UAC' : 'CPA & UAC'}
-                  </div>
-                  <table className="w-full text-sm table-fixed">
-                    <tbody>
-                      <tr>
-                        <td className="px-3 py-2 border-b bg-gray-50 w-2/5">
-                          {(projectInfo.platforms || []).includes('Mobile') 
-                            ? 'CPI (Cost Per Install)' 
-                            : 'CPA (Cost Per Acquisition)'}
-                        </td>
-                        <td className="px-3 py-2 border-b bg-yellow-50">
-                          <div className="flex items-center">
-                            <input 
-                              type="text" 
-                              value={(input.basic_settings?.cpi || 2660).toLocaleString()} 
-                              onChange={(e) => {
-                                const rawValue = e.target.value.replace(/,/g, '');
-                                setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, cpi: parseInt(rawValue) || 0 } }));
-                              }}
-                              className="flex-1 bg-transparent border-none p-0 text-right min-w-0" 
-                            />
-                            <span className="ml-1 flex-shrink-0">원</span>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="px-3 py-2 bg-gray-50">UAC (User Acq. Cost)</td>
-                        <td className="px-3 py-2 bg-yellow-50">
-                          <div className="flex items-center">
-                            <input 
-                              type="text" 
-                              value={(input.basic_settings?.uac || 3800).toLocaleString()} 
-                              onChange={(e) => {
-                                const rawValue = e.target.value.replace(/,/g, '');
-                                setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, uac: parseInt(rawValue) || 0 } }));
-                              }}
-                              className="flex-1 bg-transparent border-none p-0 text-right min-w-0" 
-                            />
-                            <span className="ml-1 flex-shrink-0">원</span>
-                          </div>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-                <div className="border border-gray-300 rounded-lg overflow-hidden">
-                  <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">UA 전환 설정</div>
-                  <table className="w-full text-sm table-fixed">
-                    <tbody>
-                      <tr>
-                        <td className="px-3 py-2 border-b bg-gray-50 w-2/5">Paid/Organic 비율</td>
-                        <td className="px-3 py-2 border-b bg-yellow-50">
-                          <div className="flex items-center">
-                            <input 
-                              type="number" 
-                              step="1" 
-                              value={Math.round(input.nru.paid_organic_ratio * 100)} 
-                              onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, paid_organic_ratio: (parseFloat(e.target.value) || 0) / 100 } }))} 
-                              className="flex-1 bg-transparent border-none p-0 text-right min-w-0" 
-                            />
-                            <span className="ml-1 flex-shrink-0">%</span>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="px-3 py-2 bg-gray-50">NVR (전환율)</td>
-                        <td className="px-3 py-2 bg-yellow-50">
-                          <div className="flex items-center">
-                            <input 
-                              type="number" 
-                              step="1" 
-                              value={Math.round(input.nru.nvr * 100)} 
-                              onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, nvr: (parseFloat(e.target.value) || 0) / 100 } }))} 
-                              className="flex-1 bg-transparent border-none p-0 text-right min-w-0" 
-                            />
-                            <span className="ml-1 flex-shrink-0">%</span>
-                          </div>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
               </div>
 
-              {/* 오른쪽: D1 NRU 자동 계산 */}
+              {/* 오른쪽: NRU 자동 계산 */}
               <div className="space-y-4">
                 <div className="flex items-center gap-3 p-3 bg-orange-50 rounded-lg border border-orange-200">
                   <input 
@@ -1124,50 +1050,96 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                     className="w-4 h-4 text-orange-600"
                   />
                   <label htmlFor="nru-auto-calc" className="text-sm font-medium text-orange-800">
-                    총 NRU 자동 계산 (4. NRU 설정에 반영)
+                    🔄 총 NRU 자동 계산 (5. NRU 설정에 반영)
                   </label>
                 </div>
                 <div className="border border-orange-300 rounded-lg overflow-hidden">
-                  <div className="bg-orange-100 px-3 py-2 border-b font-medium text-sm text-orange-800">자동 계산 결과</div>
+                  <div className="bg-orange-100 px-3 py-2 border-b font-medium text-sm text-orange-800">📊 자동 계산 결과 (V8.5+ 공식)</div>
+                  <div className="p-3 bg-orange-50/30 space-y-2">
+                    <div className="text-xs text-gray-600">
+                      <p><strong>계산 공식:</strong></p>
+                      <p className="font-mono text-[10px] mt-1">Paid NRU = UA Budget ÷ Effective CPA</p>
+                      <p className="font-mono text-[10px]">Organic NRU = Paid NRU × Organic Ratio × Organic Boost</p>
+                    </div>
+                  </div>
                   <table className="w-full text-sm table-fixed">
                     <tbody>
                       <tr>
-                        <td className="px-3 py-2 border-b bg-gray-50 w-2/5">Paid Install</td>
-                        <td className="px-3 py-2 border-b bg-blue-50 text-right whitespace-nowrap">
-                          {Math.floor((input.basic_settings?.launch_mkt_budget || 0) / (input.basic_settings?.cpi || 2660)).toLocaleString()}명
+                        <td className="px-3 py-2 border-b bg-gray-50 w-2/5">Paid NRU</td>
+                        <td className="px-3 py-2 border-b bg-blue-50 text-right font-semibold text-blue-700">
+                          {Math.floor((input.nru.ua_budget || 0) / (input.nru.target_cpa || 2000)).toLocaleString()}명
                         </td>
                       </tr>
                       <tr>
-                        <td className="px-3 py-2 border-b bg-gray-50">Total Install</td>
-                        <td className="px-3 py-2 border-b bg-blue-50 text-right whitespace-nowrap">
+                        <td className="px-3 py-2 border-b bg-gray-50">Organic Boost</td>
+                        <td className="px-3 py-2 border-b bg-purple-50 text-right font-semibold text-purple-700">
+                          {(1 + Math.log(1 + ((input.nru.brand_budget || 0) / Math.max(1, input.nru.ua_budget || 1))) * 0.7).toFixed(2)}x
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="px-3 py-2 border-b bg-gray-50">Organic NRU</td>
+                        <td className="px-3 py-2 border-b bg-green-50 text-right font-semibold text-green-700">
                           {(() => {
-                            const paid = Math.floor((input.basic_settings?.launch_mkt_budget || 0) / (input.basic_settings?.cpi || 2660));
-                            const paidRatio = input.nru.paid_organic_ratio || 0.5;
-                            const organic = Math.floor(paid * ((1 - paidRatio) / paidRatio));
+                            const paid = Math.floor((input.nru.ua_budget || 0) / (input.nru.target_cpa || 2000));
+                            const boost = 1 + Math.log(1 + ((input.nru.brand_budget || 0) / Math.max(1, input.nru.ua_budget || 1))) * 0.7;
+                            return Math.floor(paid * (input.nru.base_organic_ratio || 0.2) * boost).toLocaleString();
+                          })()}명
+                        </td>
+                      </tr>
+                      <tr className="bg-orange-100">
+                        <td className="px-3 py-2 font-medium text-orange-800">총 NRU (Normal)</td>
+                        <td className="px-3 py-2 text-right font-bold text-orange-700">
+                          {(() => {
+                            const paid = Math.floor((input.nru.ua_budget || 0) / (input.nru.target_cpa || 2000));
+                            const boost = 1 + Math.log(1 + ((input.nru.brand_budget || 0) / Math.max(1, input.nru.ua_budget || 1))) * 0.7;
+                            const organic = Math.floor(paid * (input.nru.base_organic_ratio || 0.2) * boost);
                             return (paid + organic).toLocaleString();
                           })()}명
                         </td>
                       </tr>
-                      <tr className="bg-green-50">
-                        <td className="px-3 py-2 border-b bg-green-100 font-medium">총 NRU (Best)</td>
-                        <td className="px-3 py-2 border-b text-right font-medium text-green-700">{calculateNRUFromMKT().best.toLocaleString()}명</td>
-                      </tr>
-                      <tr className="bg-blue-50">
-                        <td className="px-3 py-2 border-b bg-blue-100 font-medium">총 NRU (Normal)</td>
-                        <td className="px-3 py-2 border-b text-right font-medium text-blue-700">{calculateNRUFromMKT().normal.toLocaleString()}명</td>
-                      </tr>
-                      <tr className="bg-red-50">
-                        <td className="px-3 py-2 bg-red-100 font-medium">총 NRU (Worst)</td>
-                        <td className="px-3 py-2 text-right font-medium text-red-700">{calculateNRUFromMKT().worst.toLocaleString()}명</td>
-                      </tr>
                     </tbody>
                   </table>
                 </div>
-                <div className="p-3 bg-gray-50 rounded-lg border text-xs text-gray-600">
-                  <p><strong>계산식:</strong></p>
-                  <p>총 NRU = (MKT예산 ÷ CPI) × (1 + Organic배수) × NVR</p>
-                  <p className="mt-1 text-blue-600"><strong>💡 V8.3:</strong> 이 총량이 30일 런칭 기간에 분산 배분됩니다 (D1 최고점, 점진 감소)</p>
-                  <p className="mt-1"><strong>예시:</strong> 50억 ÷ 2,660원 × 2(Paid50%) × 70% = 약 263만명 (30일간 분산)</p>
+                {/* 시나리오별 NRU 계산 결과 */}
+                <div className="border border-gray-300 rounded-lg overflow-hidden">
+                  <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm text-gray-700">📈 시나리오별 총 NRU</div>
+                  <table className="w-full text-sm table-fixed">
+                    <tbody>
+                      <tr className="bg-green-50">
+                        <td className="px-3 py-2 border-b bg-green-100 font-medium w-2/5">Best (×1.1)</td>
+                        <td className="px-3 py-2 border-b text-right font-medium text-green-700">
+                          {(() => {
+                            const paid = Math.floor((input.nru.ua_budget || 0) / (input.nru.target_cpa || 2000));
+                            const boost = 1 + Math.log(1 + ((input.nru.brand_budget || 0) / Math.max(1, input.nru.ua_budget || 1))) * 0.7;
+                            const organic = Math.floor(paid * (input.nru.base_organic_ratio || 0.2) * boost);
+                            return Math.floor((paid + organic) * 1.1).toLocaleString();
+                          })()}명
+                        </td>
+                      </tr>
+                      <tr className="bg-blue-50">
+                        <td className="px-3 py-2 border-b bg-blue-100 font-medium">Normal (×1.0)</td>
+                        <td className="px-3 py-2 border-b text-right font-medium text-blue-700">
+                          {(() => {
+                            const paid = Math.floor((input.nru.ua_budget || 0) / (input.nru.target_cpa || 2000));
+                            const boost = 1 + Math.log(1 + ((input.nru.brand_budget || 0) / Math.max(1, input.nru.ua_budget || 1))) * 0.7;
+                            const organic = Math.floor(paid * (input.nru.base_organic_ratio || 0.2) * boost);
+                            return (paid + organic).toLocaleString();
+                          })()}명
+                        </td>
+                      </tr>
+                      <tr className="bg-red-50">
+                        <td className="px-3 py-2 bg-red-100 font-medium">Worst (×0.9)</td>
+                        <td className="px-3 py-2 text-right font-medium text-red-700">
+                          {(() => {
+                            const paid = Math.floor((input.nru.ua_budget || 0) / (input.nru.target_cpa || 2000));
+                            const boost = 1 + Math.log(1 + ((input.nru.brand_budget || 0) / Math.max(1, input.nru.ua_budget || 1))) * 0.7;
+                            const organic = Math.floor(paid * (input.nru.base_organic_ratio || 0.2) * boost);
+                            return Math.floor((paid + organic) * 0.9).toLocaleString();
+                          })()}명
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
