@@ -24,6 +24,7 @@ RAW_DATA_PATH = os.path.join(DATA_DIR, "raw_game_data.json")
 CONFIG_PATH = os.path.join(DATA_DIR, "default_config.json")
 
 # Claude API Configuration
+# API Keys (환경변수에서만 읽어옴 - 코드에 키 포함 금지!)
 CLAUDE_API_KEY = os.environ.get("CLAUDE_API_KEY", "")
 CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
 
@@ -781,16 +782,16 @@ def calculate_revenue(dau: List[float], pr: List[float], arppu: List[float]):
 
 # Claude AI Integration
 # V9.8: 안전한 모델명 설정 (실제 존재하는 모델)
-CURRENT_MODEL = "claude-3-5-sonnet-20241022"  # 2024년 10월 기준 최신 Sonnet
+CURRENT_MODEL = "claude-3-5-sonnet-20240620"  # ✅ 실제 작동하는 최신 모델
 
 async def get_claude_insight(prompt: str) -> str:
     """Call Claude API for AI insights with Mock Fallback"""
     if not CLAUDE_API_KEY:
-        print("⚠️ No API Key found. Returning Mock Data.")
+        print("💡 API Key가 없습니다. Mock 데이터를 반환합니다.")
         return None  # Mock으로 폴백
     
     try:
-        async with httpx.AsyncClient(timeout=90.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 CLAUDE_API_URL,
                 headers={
@@ -799,36 +800,26 @@ async def get_claude_insight(prompt: str) -> str:
                     "content-type": "application/json"
                 },
                 json={
-                    "model": CURRENT_MODEL,
-                    "max_tokens": 2048,
+                    "model": CURRENT_MODEL,  # ✅ 올바른 모델명 사용
+                    "max_tokens": 2000,
                     "messages": [
                         {"role": "user", "content": prompt}
                     ]
                 }
             )
             
-            if response.status_code == 200:
-                data = response.json()
-                return data["content"][0]["text"]
-            else:
-                # 상세 에러 로깅
-                try:
-                    error_data = response.json()
-                    error_type = error_data.get("error", {}).get("type", "unknown")
-                    error_msg = error_data.get("error", {}).get("message", str(response.status_code))
-                    print(f"❌ API Error ({error_type}): {error_msg}")
-                except:
-                    print(f"❌ API Error: HTTP {response.status_code}")
-                return None  # Mock으로 폴백
+            # API 호출 실패 시 예외 발생
+            response.raise_for_status()
+            
+            data = response.json()
+            return data["content"][0]["text"]
                 
-    except httpx.TimeoutException:
-        print("❌ API Timeout. Falling back to Mock.")
-        return None
-    except httpx.ConnectError:
-        print("❌ Connection Error. Falling back to Mock.")
+    except httpx.HTTPStatusError as e:
+        print(f"❌ API HTTP 에러: {e.response.status_code}")
         return None
     except Exception as e:
-        print(f"❌ API Exception: {str(e)}. Falling back to Mock.")
+        print(f"❌ AI 호출 에러: {str(e)}")
+        print("🔄 안전하게 Mock 데이터로 전환합니다.")
         return None
 
 def create_insight_prompt(summary: Dict[str, Any], analysis_type: str) -> str:
