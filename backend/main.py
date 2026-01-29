@@ -399,14 +399,19 @@ def calculate_nru_pattern(selected_games: List[str], raw_data: dict):
     
     return daily_ratios
 
-def generate_nru_series(d1_nru: int, daily_ratios: List[float], days: int = 365, 
+def generate_nru_series(total_nru: int, daily_ratios: List[float], days: int = 365, 
                          launch_period: int = 30, sustaining_ratio: float = 0.1):
     """
     NRU 시리즈 생성 - 런칭 마케팅은 D1~D30에 집중
     
+    🔥 V8.3 수정: Area Normalization 적용
+    - total_nru: 런칭 기간 동안의 "총 모객 수" (예산/CPI로 계산된 값)
+    - 이 총량을 30일 패턴의 면적(Area)으로 나누어 D1 높이(Scale)를 산출
+    - 결과: 예산 범위 내에서 유저가 분산 유입됨
+    
     Args:
-        d1_nru: D1 NRU (가장 높은 날)
-        daily_ratios: 일별 감소 비율
+        total_nru: 런칭 기간 총 모객 수 (🔥 기존 d1_nru → total_nru로 해석 변경)
+        daily_ratios: 일별 감소 비율 (현재 미사용, 확장용)
         days: 프로젝션 기간
         launch_period: 런칭 마케팅 집중 기간 (기본 30일)
         sustaining_ratio: 런칭 후 유지 NRU 비율 (기본 10%)
@@ -416,17 +421,30 @@ def generate_nru_series(d1_nru: int, daily_ratios: List[float], days: int = 365,
     """
     nru_series = []
     
-    # Phase 1: 런칭 기간 (D1~D30) - 점진적 감소
-    # D1이 최고점, D30까지 약 30% 수준으로 감소
+    # 🔥 핵심 수정: Area Normalization
+    # Step 1: 런칭 기간 NRU 패턴 생성 (Power Law Decay: 1/t^0.8)
+    nru_decay_pattern = []
+    for t in range(1, launch_period + 1):
+        decay_value = 1.0 / (t ** 0.8)  # D1=1.0, D2=0.57, D3=0.44, ...
+        nru_decay_pattern.append(decay_value)
+    
+    # Step 2: 패턴의 면적(Area) 계산 - 총량 보존의 법칙!
+    pattern_area = sum(nru_decay_pattern)
+    
+    # Step 3: D1 Scale Factor = 총 유저 수 / 패턴 면적
+    # 이렇게 하면 런칭 기간 NRU의 합 = total_nru가 됨
+    d1_scale = total_nru / pattern_area if pattern_area > 0 else 0
+    
+    # Phase 1: 런칭 기간 (D1~D30) - 정규화된 패턴 적용
     for day in range(min(launch_period, days)):
-        # 런칭 기간 동안 지수 감쇠: D1=100%, D7=70%, D14=50%, D30=30%
-        decay = np.exp(-0.04 * day)  # 감쇠율 조정
-        daily_nru = int(d1_nru * decay)
-        nru_series.append(max(daily_nru, 100))
+        # 정규화된 NRU = Scale × 패턴값
+        daily_nru = int(d1_scale * nru_decay_pattern[day])
+        nru_series.append(max(daily_nru, 10))  # 최소값 10으로 설정
     
     # Phase 2: 런칭 후 유지 기간 (D31~D365)
-    # 오가닉 + Sustaining 마케팅으로 D1의 10% 수준 유지
-    sustaining_nru = int(d1_nru * sustaining_ratio)
+    # D30의 NRU를 기준으로 sustaining_ratio만큼 유지
+    d30_nru = nru_series[-1] if nru_series else 100
+    sustaining_nru = int(d30_nru * sustaining_ratio * 10)  # D30의 ~100% 수준에서 시작
     
     for day in range(launch_period, days):
         # 유지 기간에도 서서히 감소 (월 5% 감소)

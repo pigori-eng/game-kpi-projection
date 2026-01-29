@@ -259,6 +259,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
   const recommendedGames = getRecommendedGames();
 
   // Phase 2: MKT → NRU 자동 계산
+  // 🔥 V8.3: 이 값은 "런칭 기간 총 모객 수"이며, 백엔드에서 30일간 분산 배분됨
   const calculateNRUFromMKT = () => {
     const budget = input.basic_settings?.launch_mkt_budget || 0;
     const cpi = input.basic_settings?.cpi || 2660;
@@ -267,15 +268,16 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
 
     if (budget <= 0 || cpi <= 0) return { best: 0, normal: 0, worst: 0 };
 
+    // 총 모객 수 계산 (런칭 기간 30일 동안 배분될 예정)
     const paidInstall = Math.floor(budget / cpi);
     const organicInstall = Math.floor(paidInstall * ((1 - paidRatio) / paidRatio));
     const totalInstall = paidInstall + organicInstall;
-    const d1Nru = Math.floor(totalInstall * nvr);
+    const totalNru = Math.floor(totalInstall * nvr);  // 런칭 기간 총 NRU
 
     return {
-      best: Math.floor(d1Nru * 1.1),    // +10%
-      normal: d1Nru,
-      worst: Math.floor(d1Nru * 0.9),   // -10%
+      best: Math.floor(totalNru * 1.1),    // +10%
+      normal: totalNru,
+      worst: Math.floor(totalNru * 0.9),   // -10%
     };
   };
 
@@ -704,7 +706,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                 <li><strong>CPI:</strong> 1건당 설치 비용 (한국 모바일 RPG 평균 2,500~3,500원)</li>
                 <li><strong>UAC:</strong> 유저 1명 획득 비용 (CPI보다 높음, 전환율 고려)</li>
                 <li><strong>Sustaining MKT:</strong> 런칭 후 지속 마케팅 비용 (매출의 5~10%)</li>
-                <li><strong>D1 NRU 자동 계산:</strong> MKT 예산 ÷ CPI × Organic 배수 × NVR</li>
+                <li><strong>총 NRU 자동 계산:</strong> MKT 예산 ÷ CPI × Organic 배수 × NVR → 30일간 분산 배분</li>
               </ul>
             </GuideBox>
 
@@ -853,7 +855,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                     className="w-4 h-4 text-orange-600"
                   />
                   <label htmlFor="nru-auto-calc" className="text-sm font-medium text-orange-800">
-                    D1 NRU 자동 계산 (4. NRU 설정에 반영)
+                    총 NRU 자동 계산 (4. NRU 설정에 반영)
                   </label>
                 </div>
                 <div className="border border-orange-300 rounded-lg overflow-hidden">
@@ -878,15 +880,15 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                         </td>
                       </tr>
                       <tr className="bg-green-50">
-                        <td className="px-3 py-2 border-b bg-green-100 font-medium">D1 NRU (Best)</td>
+                        <td className="px-3 py-2 border-b bg-green-100 font-medium">총 NRU (Best)</td>
                         <td className="px-3 py-2 border-b text-right font-medium text-green-700">{calculateNRUFromMKT().best.toLocaleString()}명</td>
                       </tr>
                       <tr className="bg-blue-50">
-                        <td className="px-3 py-2 border-b bg-blue-100 font-medium">D1 NRU (Normal)</td>
+                        <td className="px-3 py-2 border-b bg-blue-100 font-medium">총 NRU (Normal)</td>
                         <td className="px-3 py-2 border-b text-right font-medium text-blue-700">{calculateNRUFromMKT().normal.toLocaleString()}명</td>
                       </tr>
                       <tr className="bg-red-50">
-                        <td className="px-3 py-2 bg-red-100 font-medium">D1 NRU (Worst)</td>
+                        <td className="px-3 py-2 bg-red-100 font-medium">총 NRU (Worst)</td>
                         <td className="px-3 py-2 text-right font-medium text-red-700">{calculateNRUFromMKT().worst.toLocaleString()}명</td>
                       </tr>
                     </tbody>
@@ -894,8 +896,9 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                 </div>
                 <div className="p-3 bg-gray-50 rounded-lg border text-xs text-gray-600">
                   <p><strong>계산식:</strong></p>
-                  <p>D1 NRU = (MKT예산 ÷ CPI) × (1 + Organic배수) × NVR</p>
-                  <p className="mt-1"><strong>예시:</strong> 50억 ÷ 2,660원 × 2(Paid50%) × 70% = 약 263만명</p>
+                  <p>총 NRU = (MKT예산 ÷ CPI) × (1 + Organic배수) × NVR</p>
+                  <p className="mt-1 text-blue-600"><strong>💡 V8.3:</strong> 이 총량이 30일 런칭 기간에 분산 배분됩니다 (D1 최고점, 점진 감소)</p>
+                  <p className="mt-1"><strong>예시:</strong> 50억 ÷ 2,660원 × 2(Paid50%) × 70% = 약 263만명 (30일간 분산)</p>
                 </div>
               </div>
             </div>
@@ -913,14 +916,14 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
           <div className="p-4 space-y-4">
             <GuideBox title="NRU 입력 가이드">
               <ul className="list-disc list-inside space-y-1 text-xs">
-                <li><strong>D1 NRU:</strong> 첫 날 예상 신규 유저 수 (Best/Normal/Worst 시나리오별)</li>
-                <li><strong>자동 계산:</strong> "5. 마케팅 & UA 설정"에서 MKT 예산 기반 자동 계산 가능</li>
-                <li><strong>보정값:</strong> 일별 NRU 감소율에 대한 시나리오별 보정</li>
+                <li><strong>총 NRU:</strong> 런칭 기간(30일) 동안의 총 예상 신규 유저 수</li>
+                <li><strong>V8.3 정규화:</strong> 입력된 총량이 30일간 분산 배분됩니다 (D1 최고점, Power Law 감소)</li>
+                <li><strong>자동 계산:</strong> "3. 마케팅 & UA 설정"에서 MKT 예산 기반 자동 계산 가능</li>
               </ul>
             </GuideBox>
             <div className="p-3 bg-gray-50 rounded-lg border"><p className="text-sm text-gray-600"><strong>적용된 표본 게임:</strong> {selectedSampleGames.join(', ') || '(선택 필요)'}</p></div>
             <div>
-              <h4 className="font-medium text-gray-700 mb-2">D1 NRU (첫 날 신규 유저)</h4>
+              <h4 className="font-medium text-gray-700 mb-2">런칭 기간 총 NRU (30일간 분산 배분)</h4>
               <div className="grid grid-cols-3 gap-4">
                 <div className="p-3 bg-green-50 rounded-lg border border-green-200"><label className="block text-xs font-medium text-green-700 mb-1">Best</label><input type="text" value={(input.nru.d1_nru.best || 0).toLocaleString()} onChange={(e) => { const v = parseInt(e.target.value.replace(/,/g, '')) || 0; setInput(prev => ({ ...prev, nru: { ...prev.nru, d1_nru: { ...prev.nru.d1_nru, best: v } } })); }} className="w-full px-2 py-1 border border-green-300 rounded text-right" /></div>
                 <div className="p-3 bg-blue-50 rounded-lg border border-blue-200"><label className="block text-xs font-medium text-blue-700 mb-1">Normal</label><input type="text" value={(input.nru.d1_nru.normal || 0).toLocaleString()} onChange={(e) => { const v = parseInt(e.target.value.replace(/,/g, '')) || 0; setInput(prev => ({ ...prev, nru: { ...prev.nru, d1_nru: { ...prev.nru.d1_nru, normal: v } } })); }} className="w-full px-2 py-1 border border-blue-300 rounded text-right" /></div>
