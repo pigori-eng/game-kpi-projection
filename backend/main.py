@@ -780,13 +780,17 @@ def calculate_revenue(dau: List[float], pr: List[float], arppu: List[float]):
     return revenue
 
 # Claude AI Integration
+# V9.8: 안전한 모델명 설정 (실제 존재하는 모델)
+CURRENT_MODEL = "claude-3-5-sonnet-20241022"  # 2024년 10월 기준 최신 Sonnet
+
 async def get_claude_insight(prompt: str) -> str:
-    """Call Claude API for AI insights"""
+    """Call Claude API for AI insights with Mock Fallback"""
     if not CLAUDE_API_KEY:
-        return "AI 인사이트를 사용하려면 CLAUDE_API_KEY 환경변수를 설정해주세요."
+        print("⚠️ No API Key found. Returning Mock Data.")
+        return None  # Mock으로 폴백
     
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=90.0) as client:
             response = await client.post(
                 CLAUDE_API_URL,
                 headers={
@@ -795,23 +799,37 @@ async def get_claude_insight(prompt: str) -> str:
                     "content-type": "application/json"
                 },
                 json={
-                    "model": "claude-sonnet-4-20250514",
-                    "max_tokens": 1024,
+                    "model": CURRENT_MODEL,
+                    "max_tokens": 2048,
                     "messages": [
                         {"role": "user", "content": prompt}
                     ]
-                },
-                timeout=60.0
+                }
             )
             
             if response.status_code == 200:
                 data = response.json()
                 return data["content"][0]["text"]
             else:
-                error_detail = response.json().get("error", {}).get("message", response.status_code)
-                return f"AI 분석 오류: {error_detail}"
+                # 상세 에러 로깅
+                try:
+                    error_data = response.json()
+                    error_type = error_data.get("error", {}).get("type", "unknown")
+                    error_msg = error_data.get("error", {}).get("message", str(response.status_code))
+                    print(f"❌ API Error ({error_type}): {error_msg}")
+                except:
+                    print(f"❌ API Error: HTTP {response.status_code}")
+                return None  # Mock으로 폴백
+                
+    except httpx.TimeoutException:
+        print("❌ API Timeout. Falling back to Mock.")
+        return None
+    except httpx.ConnectError:
+        print("❌ Connection Error. Falling back to Mock.")
+        return None
     except Exception as e:
-        return f"AI 연결 실패: {str(e)}"
+        print(f"❌ API Exception: {str(e)}. Falling back to Mock.")
+        return None
 
 def create_insight_prompt(summary: Dict[str, Any], analysis_type: str) -> str:
     """Create prompt for Claude based on analysis type with Multi-Persona approach"""
@@ -1356,18 +1374,61 @@ async def calculate_projection(input_data: ProjectionInput):
         "results": results
     }
 
+# V9.8: Mock AI Report Generator (Fallback용)
+def generate_mock_ai_report(summary: Dict[str, Any], analysis_type: str) -> str:
+    """API 실패 시 사용할 Mock 보고서 생성"""
+    genre = summary.get('blending', {}).get('genre', 'N/A')
+    platforms = ', '.join(summary.get('blending', {}).get('platforms', ['PC']))
+    normal_revenue = summary.get('normal', {}).get('gross_revenue', 0)
+    bep_day = summary.get('bep_day', -1)
+    
+    bep_status = f"D+{bep_day}에 BEP 달성 예상" if bep_day > 0 else "1년 내 BEP 미달성 위험"
+    
+    if analysis_type == "executive_report":
+        return f"""[종합 분석 요약]
+{genre} 장르의 {platforms} 플랫폼 프로젝트입니다. 
+Normal 시나리오 기준 총 매출 {normal_revenue:,.0f}원이 예상됩니다.
+{bep_status}입니다.
+
+[핵심 지표 평가]
+1. 매출 전망: Normal 시나리오 기준 적정 수준
+2. 리텐션: 장르 평균 대비 검토 필요
+3. 마케팅 효율: CPA/CPI 최적화 여지 존재
+
+[리스크 분석]
+1. 시장 경쟁: 동일 장르 출시작 모니터링 필요
+2. 유저 확보: 런칭 초기 집중 마케팅 권장
+3. 수익화: BM 모델 최적화 검토
+
+[전략 제언]
+1. 런칭 전 사전 마케팅으로 위시리스트 확보
+2. D1 리텐션 확보를 위한 온보딩 최적화
+3. 라이브 서비스 준비로 장기 운영 대비
+
+* 이 보고서는 AI 연결 실패로 인한 기본 분석입니다."""
+    else:
+        return f"[{analysis_type}] {genre} 프로젝트 분석 결과입니다. 상세 AI 분석을 위해 API 연결을 확인해주세요."
+
 # AI Insight Endpoint
 @app.post("/api/ai/insight")
-async def get_ai_insight(request: AIInsightRequest):
-    """Get AI-powered insights for projection results"""
+async def get_ai_insight_endpoint(request: AIInsightRequest):
+    """Get AI-powered insights for projection results with Mock Fallback"""
     prompt = create_insight_prompt(request.projection_summary, request.analysis_type)
     insight = await get_claude_insight(prompt)
+    
+    # V9.8: Mock Fallback
+    if insight is None:
+        print("⚠️ AI API failed. Using Mock Report.")
+        insight = generate_mock_ai_report(request.projection_summary, request.analysis_type)
+        ai_model = "mock-fallback"
+    else:
+        ai_model = CURRENT_MODEL
     
     return {
         "status": "success",
         "analysis_type": request.analysis_type,
         "insight": insight,
-        "ai_model": "gemini-1.5-flash"
+        "ai_model": ai_model
     }
 
 @app.get("/api/ai/status")
@@ -1375,7 +1436,7 @@ async def get_ai_status():
     """Check AI integration status"""
     return {
         "enabled": bool(CLAUDE_API_KEY),
-        "model": "claude-sonnet-4",
+        "model": CURRENT_MODEL,
         "available_types": ["general", "reliability", "retention", "revenue", "risk", "competitive"]
     }
 

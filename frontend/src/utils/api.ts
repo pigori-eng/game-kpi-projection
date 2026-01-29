@@ -5,7 +5,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 60000,
+  timeout: 120000,  // V9.7: AI 응답 대기 시간 증가 (2분)
   headers: {
     'Content-Type': 'application/json',
   },

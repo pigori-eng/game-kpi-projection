@@ -368,29 +368,34 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
   // 참고: ua_budget, brand_budget, target_cpa, base_organic_ratio, pre_marketing_ratio
   // 모든 필드 변경 시 즉시 NRU 재계산
   const handleMarketingChange = (field: string, value: number) => {
-    // 1. NRU 즉시 재계산 (현재 값 + 새 값)
-    const currentNru = { ...input.nru, [field]: value };
-    const nruResult = calculateEstimatedNRU({
-      ua_budget: currentNru.ua_budget,
-      brand_budget: currentNru.brand_budget,
-      target_cpa: currentNru.target_cpa,
-      base_organic_ratio: currentNru.base_organic_ratio,
-      pre_marketing_ratio: currentNru.pre_marketing_ratio,
+    setInput(prev => {
+      // 1. 업데이트된 NRU 설정 구성
+      const updatedNru = { ...prev.nru, [field]: value };
+      
+      // 2. NRU 즉시 재계산 (setInput 내부에서!)
+      const nruResult = calculateEstimatedNRU({
+        ua_budget: updatedNru.ua_budget,
+        brand_budget: updatedNru.brand_budget,
+        target_cpa: updatedNru.target_cpa,
+        base_organic_ratio: updatedNru.base_organic_ratio,
+        pre_marketing_ratio: updatedNru.pre_marketing_ratio,
+      });
+      
+      console.log('NRU 계산:', { field, value, nruResult }); // 디버그용
+      
+      // 3. 상태 업데이트
+      return {
+        ...prev,
+        nru: {
+          ...updatedNru,
+          d1_nru: nruResult.total > 0 ? {
+            best: Math.floor(nruResult.total * 1.1),
+            normal: nruResult.total,
+            worst: Math.floor(nruResult.total * 0.9)
+          } : prev.nru.d1_nru,
+        }
+      };
     });
-    
-    // 2. setInput 호출 (타입 안전)
-    setInput(prev => ({
-      ...prev,
-      nru: {
-        ...prev.nru,
-        [field]: value,
-        d1_nru: nruResult.total > 0 ? {
-          best: Math.floor(nruResult.total * 1.1),
-          normal: nruResult.total,
-          worst: Math.floor(nruResult.total * 0.9)
-        } : prev.nru.d1_nru,
-      }
-    }));
   };
 
   // V9.7: 개별 핸들러들은 통합 핸들러를 호출 (하위 호환성)

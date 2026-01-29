@@ -107,7 +107,7 @@ const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ results, autoLoad = tru
           </div>
           <div className="flex items-center gap-2 text-sm">
             <Sparkles className="w-4 h-4" />
-            <span>Claude Sonnet 4 · Multi-Persona</span>
+            <span>Claude 3.5 Sonnet · Multi-Persona</span>
           </div>
         </div>
         <p className="text-violet-200 text-sm mt-1">4명의 전문가 (UA마케터, 퍼블리싱, 데이터 사이언스, 라이브 서비스)가 분석한 의사결정 지원 보고서</p>
