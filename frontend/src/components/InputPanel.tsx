@@ -146,76 +146,199 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
   // 블렌딩 가중치 (내부 표본 vs 시장 벤치마크)
   const [blendingWeight, setBlendingWeight] = useState(0.7);
 
-  // V8 #4: 장르/BM Type별 보정값 자동 추천
-  const getRecommendedAdjustment = (genre: string, bmType: string): { best: number; worst: number } => {
-    // Hardcore/RPG (변동성 큼) → ±20%, Casual (안정적) → ±10%
-    const highVariance = ['MMORPG', 'Action RPG', 'Extraction Shooter', 'Strategy'];
-    const lowVariance = ['Casual', 'Sports'];
-    
-    let baseAdjustment = 0.15; // 기본 ±15%
-    
-    if (highVariance.includes(genre) || bmType === 'Hardcore' || bmType === 'Gacha') {
-      baseAdjustment = 0.20; // ±20%
-    } else if (lowVariance.includes(genre) || bmType === 'Casual') {
-      baseAdjustment = 0.10; // ±10%
-    }
-    
-    return { best: baseAdjustment, worst: -baseAdjustment };
+  // ============================================
+  // V9.6: 현실적 CPA Matrix (장르 × 플랫폼)
+  // ============================================
+  
+  // 장르별 기본 프리셋 (현실적인 Mobile Base CPA 적용)
+  const GENRE_PRESETS: Record<string, { 
+    d1: { best: number; normal: number; worst: number }; 
+    bm: string; 
+    baseCpa: number;  // Mobile 기준 Base CPA
+    organicRatio: number;
+    pkg: number;      // 패키지 가격 (B2P)
+  }> = {
+    'MMORPG': { d1: { best: 0.45, normal: 0.35, worst: 0.25 }, bm: 'Hardcore', baseCpa: 5000, organicRatio: 0.20, pkg: 0 },
+    'Action RPG': { d1: { best: 0.42, normal: 0.32, worst: 0.22 }, bm: 'Hardcore', baseCpa: 4500, organicRatio: 0.22, pkg: 0 },
+    'Extraction Shooter': { d1: { best: 0.35, normal: 0.28, worst: 0.20 }, bm: 'Hardcore', baseCpa: 4000, organicRatio: 0.30, pkg: 45000 },
+    'FPS': { d1: { best: 0.40, normal: 0.30, worst: 0.20 }, bm: 'Midcore', baseCpa: 3000, organicRatio: 0.25, pkg: 0 },
+    'Battle Royale': { d1: { best: 0.38, normal: 0.28, worst: 0.18 }, bm: 'Midcore', baseCpa: 2500, organicRatio: 0.28, pkg: 0 },
+    'Strategy': { d1: { best: 0.38, normal: 0.30, worst: 0.22 }, bm: 'Midcore', baseCpa: 6500, organicRatio: 0.15, pkg: 0 },  // SLG는 CPA 가장 비쌈
+    'Casual': { d1: { best: 0.55, normal: 0.45, worst: 0.35 }, bm: 'Casual', baseCpa: 1200, organicRatio: 0.40, pkg: 0 },    // 박리다매
+    'Sports': { d1: { best: 0.45, normal: 0.38, worst: 0.30 }, bm: 'Midcore', baseCpa: 2000, organicRatio: 0.25, pkg: 0 },
+    'Puzzle': { d1: { best: 0.50, normal: 0.40, worst: 0.30 }, bm: 'Casual', baseCpa: 1000, organicRatio: 0.45, pkg: 0 },
+    'Racing': { d1: { best: 0.40, normal: 0.32, worst: 0.24 }, bm: 'Midcore', baseCpa: 2500, organicRatio: 0.22, pkg: 0 },
   };
 
-  // V8 #4: 장르/BM Type 변경 시 보정값 자동 적용 + blending.genre 연동
+  // 플랫폼별 CPA 배율 및 레이블
+  const PLATFORM_PRESETS: Record<string, { 
+    cpaMult: number; 
+    pkgMult: number;
+    costMetric: string;
+    organicMult: number;  // Organic 비율 승수
+  }> = {
+    'Mobile': { cpaMult: 1.0, pkgMult: 0, costMetric: 'CPI', organicMult: 1.0 },
+    'PC': { cpaMult: 3.0, pkgMult: 1, costMetric: 'CPA', organicMult: 1.3 },       // Steam은 모바일의 약 3배, Organic 높음
+    'Console': { cpaMult: 4.0, pkgMult: 1, costMetric: 'CPA', organicMult: 1.2 },  // 콘솔은 약 4배
+    'Cross-platform': { cpaMult: 2.0, pkgMult: 0.5, costMetric: 'CPA', organicMult: 1.15 },
+  };
+
+  // BM Type별 보정값 편차
+  const BM_VARIANCE: Record<string, number> = {
+    'Hardcore': 0.20,
+    'Gacha': 0.20,
+    'Midcore': 0.15,
+    'Casual': 0.10,
+    'F2P_Cosmetic': 0.12,
+  };
+
+  // ============================================
+  // V9.6: NRU 중앙 계산 함수 (모든 핸들러에서 공유)
+  // ============================================
+  const calculateEstimatedNRU = (mkt: {
+    ua_budget?: number;
+    brand_budget?: number;
+    target_cpa?: number;
+    base_organic_ratio?: number;
+    pre_marketing_ratio?: number;
+  }) => {
+    const budget = Number(mkt.ua_budget) || 0;
+    const brand = Number(mkt.brand_budget) || 0;
+    const cpa = Math.max(1, Number(mkt.target_cpa) || 2000);
+    const orgBase = Number(mkt.base_organic_ratio) || 0.2;
+    const preRatio = Number(mkt.pre_marketing_ratio) || 0;
+    
+    if (budget <= 0) return { total: 0, paid: 0, organic: 0, preMarketing: 0 };
+    
+    // 1. CPA Saturation (예산 5억당 효율 감소)
+    const scale = (budget + brand) / 500_000_000;
+    const saturation = scale > 1 ? (1 + Math.log(scale) * 0.1) : 1.0;
+    const effCpa = cpa * saturation;
+    
+    // 2. Organic Boost (브랜딩 비율에 따른 증폭)
+    const brandRatio = brand / Math.max(1, budget);
+    const boostFactor = 1.0 + (brandRatio > 0 ? Math.log(1 + brandRatio) * 0.7 : 0);
+    const finalOrganic = orgBase * boostFactor;
+    
+    // 3. Total NRU 계산
+    const paidUsers = Math.floor(budget / effCpa);
+    const organicUsers = Math.floor(paidUsers * finalOrganic);
+    const totalUsers = paidUsers + organicUsers;
+    
+    // 4. 사전 마케팅 분 (런칭 전 D-30~D-1 유입)
+    const preMarketingUsers = Math.floor(budget * preRatio / effCpa);
+    
+    return { 
+      total: totalUsers, 
+      paid: paidUsers, 
+      organic: organicUsers,
+      preMarketing: preMarketingUsers,
+      effCpa: Math.round(effCpa),
+      boostFactor: boostFactor.toFixed(2)
+    };
+  };
+
+  // ============================================
+  // V9.6: 통합 권장값 계산 함수
+  // ============================================
+  const getRecommendedValues = (genre: string, bmType: string, platforms: string[]) => {
+    const gp = GENRE_PRESETS[genre] || GENRE_PRESETS['MMORPG'];
+    const primaryPlatform = platforms[0] || 'PC';
+    const pp = PLATFORM_PRESETS[primaryPlatform] || PLATFORM_PRESETS['PC'];
+    const variance = BM_VARIANCE[bmType || gp.bm] || 0.15;
+    
+    // V9.6: 장르 × 플랫폼 매트릭스로 CPA 계산
+    const targetCpa = Math.round(gp.baseCpa * pp.cpaMult);
+    const organicRatio = Math.min(gp.organicRatio * pp.organicMult, 0.6);  // 최대 60%
+    const pkgPrice = Math.round(gp.pkg * pp.pkgMult);
+    
+    return {
+      d1Retention: gp.d1,
+      targetCpa,
+      organicRatio,
+      pkgPrice,
+      adjustment: { best: variance, worst: -variance },
+      recommendedBm: gp.bm,
+      costMetric: pp.costMetric,
+    };
+  };
+
+  // ============================================
+  // V9.6: 장르/플랫폼 변경 핸들러 (Preset + NRU 즉시 재계산)
+  // ============================================
   const handleProjectInfoChange = (field: string, value: string | string[]) => {
     const newProjectInfo = { ...projectInfo, [field]: value };
     setProjectInfo(newProjectInfo);
     
-    // 장르 또는 BM Type 변경 시 보정값 자동 추천 + blending에 반영
-    if (field === 'genre' || field === 'bmType') {
+    // 장르, BM Type, 플랫폼 변경 시 전체 권장값 자동 적용
+    if (field === 'genre' || field === 'bmType' || field === 'platforms') {
       const genre = field === 'genre' ? value as string : newProjectInfo.genre;
       const bmType = field === 'bmType' ? value as string : newProjectInfo.bmType;
+      const platforms = field === 'platforms' ? value as string[] : newProjectInfo.platforms;
       
-      if (genre && bmType) {
-        const recommended = getRecommendedAdjustment(genre, bmType);
+      if (genre) {
+        const recommended = getRecommendedValues(genre, bmType || 'Midcore', platforms);
+        
+        // V9.6: 새로운 CPA/Organic으로 NRU 재계산
+        const newMkt = {
+          ua_budget: input.nru.ua_budget || 0,
+          brand_budget: input.nru.brand_budget || 0,
+          target_cpa: recommended.targetCpa,
+          base_organic_ratio: recommended.organicRatio,
+          pre_marketing_ratio: input.nru.pre_marketing_ratio || 0,
+        };
+        const nruPreview = calculateEstimatedNRU(newMkt);
+        
         setInput(prev => ({
           ...prev,
-          // V8.5: blending에 장르 반영 (AI 보고서에서 사용)
           blending: {
             ...prev.blending,
             weight: prev.blending?.weight || 0.7,
             genre: genre,
-            platforms: prev.blending?.platforms || newProjectInfo.platforms || ['PC'],
+            platforms: platforms || ['PC'],
             time_decay: prev.blending?.time_decay ?? true
           },
-          bm_type: bmType,
+          bm_type: bmType || recommended.recommendedBm,
           retention: {
             ...prev.retention,
-            // D1 Retention 보정은 유지하고 PR/ARPPU 보정에만 적용
+            target_d1_retention: recommended.d1Retention,
           },
           nru: {
             ...prev.nru,
-            adjustment: { best_vs_normal: recommended.best, worst_vs_normal: recommended.worst }
+            target_cpa: recommended.targetCpa,
+            base_organic_ratio: recommended.organicRatio,
+            adjustment: { best_vs_normal: recommended.adjustment.best, worst_vs_normal: recommended.adjustment.worst },
+            // V9.6: NRU 즉시 반영
+            d1_nru: nruPreview.total > 0 ? {
+              best: Math.floor(nruPreview.total * 1.1),
+              normal: nruPreview.total,
+              worst: Math.floor(nruPreview.total * 0.9)
+            } : prev.nru.d1_nru
           },
           revenue: {
             ...prev.revenue,
-            pr_adjustment: { best_vs_normal: recommended.best, worst_vs_normal: recommended.worst },
-            arppu_adjustment: { best_vs_normal: recommended.best, worst_vs_normal: recommended.worst }
+            pr_adjustment: { best_vs_normal: recommended.adjustment.best, worst_vs_normal: recommended.adjustment.worst },
+            arppu_adjustment: { best_vs_normal: recommended.adjustment.best, worst_vs_normal: recommended.adjustment.worst }
           }
         }));
       }
     }
-    
-    // 플랫폼 변경 시 blending에 반영
-    if (field === 'platforms') {
-      setInput(prev => ({
-        ...prev,
-        blending: {
-          ...prev.blending,
-          weight: prev.blending?.weight || 0.7,
-          genre: prev.blending?.genre || newProjectInfo.genre || 'MMORPG',
-          platforms: value as string[],
-          time_decay: prev.blending?.time_decay ?? true
-        }
-      }));
-    }
+  };
+  
+  // V9.6: 플랫폼별 비용 지표 용어 (CPI vs CPA)
+  const getCostMetricLabel = (): string => {
+    const platforms = projectInfo.platforms || ['PC'];
+    const primaryPlatform = platforms[0] || 'PC';
+    return PLATFORM_PRESETS[primaryPlatform]?.costMetric || 'CPA';
+  };
+  
+  // V9.6: 현재 권장값 미리보기 (UI 표시용)
+  const getCurrentRecommendation = () => {
+    return getRecommendedValues(
+      projectInfo.genre || 'MMORPG',
+      projectInfo.bmType || 'Midcore',
+      projectInfo.platforms || ['PC']
+    );
   };
 
   useEffect(() => {
@@ -239,39 +362,43 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
     }));
   };
 
-  // V8.5: ua_budget/brand_budget 변경 시 NRU 자동 연동
-  useEffect(() => {
-    const ua = input.nru.ua_budget || 0;
-    const brand = input.nru.brand_budget || 0;
-    const cpa = input.nru.target_cpa || 2000;
+  // ============================================
+  // V9.7: 통합 마케팅 핸들러 (즉시 NRU 동기화)
+  // ============================================
+  // 참고: ua_budget, brand_budget, target_cpa, base_organic_ratio, pre_marketing_ratio
+  // 모든 필드 변경 시 즉시 NRU 재계산
+  const handleMarketingChange = (field: string, value: number) => {
+    // 1. NRU 즉시 재계산 (현재 값 + 새 값)
+    const currentNru = { ...input.nru, [field]: value };
+    const nruResult = calculateEstimatedNRU({
+      ua_budget: currentNru.ua_budget,
+      brand_budget: currentNru.brand_budget,
+      target_cpa: currentNru.target_cpa,
+      base_organic_ratio: currentNru.base_organic_ratio,
+      pre_marketing_ratio: currentNru.pre_marketing_ratio,
+    });
     
-    if (ua > 0 && cpa > 0) {
-      // CPA Saturation
-      const saturation = 1 + (ua / 500_000_000) * 0.05;
-      const effectiveCpa = cpa * saturation;
-      
-      // Organic Boost
-      const boost = 1 + Math.log(1 + (brand / Math.max(1, ua))) * 0.7;
-      const organicRatio = (input.nru.base_organic_ratio || 0.2) * boost;
-      
-      // 총 NRU 계산
-      const paidNru = Math.floor(ua / effectiveCpa);
-      const totalNru = Math.floor(paidNru * (1 + organicRatio));
-      
-      // d1_nru에 자동 반영
-      setInput(prev => ({
-        ...prev,
-        nru: {
-          ...prev.nru,
-          d1_nru: {
-            best: Math.floor(totalNru * 1.1),
-            normal: totalNru,
-            worst: Math.floor(totalNru * 0.9)
-          }
-        }
-      }));
-    }
-  }, [input.nru.ua_budget, input.nru.brand_budget, input.nru.target_cpa, input.nru.base_organic_ratio]);
+    // 2. setInput 호출 (타입 안전)
+    setInput(prev => ({
+      ...prev,
+      nru: {
+        ...prev.nru,
+        [field]: value,
+        d1_nru: nruResult.total > 0 ? {
+          best: Math.floor(nruResult.total * 1.1),
+          normal: nruResult.total,
+          worst: Math.floor(nruResult.total * 0.9)
+        } : prev.nru.d1_nru,
+      }
+    }));
+  };
+
+  // V9.7: 개별 핸들러들은 통합 핸들러를 호출 (하위 호환성)
+  const handleUABudgetChange = (value: number) => handleMarketingChange('ua_budget', value);
+  const handleBrandBudgetChange = (value: number) => handleMarketingChange('brand_budget', value);
+  const handleCPAChange = (value: number) => handleMarketingChange('target_cpa', value);
+  const handleOrganicRatioChange = (value: number) => handleMarketingChange('base_organic_ratio', value);
+  const handlePreMarketingChange = (value: number) => handleMarketingChange('pre_marketing_ratio', value);
 
   // Phase 3: 유사도 기반 게임 추천
   const calculateSimilarity = (gameName: string): { score: number; reason: string } => {
@@ -486,6 +613,39 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                     ))}
                   </div>
                 </div>
+                
+                {/* V9.7: AI 권장 설정 미리보기 박스 */}
+                {projectInfo.genre && (projectInfo.platforms?.length || 0) > 0 && (
+                  <div className="p-3 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200">
+                    <p className="text-xs font-bold text-blue-800 mb-2 flex items-center gap-1">
+                      🤖 AI 권장 설정 (자동 적용됨)
+                    </p>
+                    <div className="grid grid-cols-3 gap-3 text-xs">
+                      <div className="bg-white rounded p-2 border border-blue-100">
+                        <span className="text-gray-500">D1 Retention</span>
+                        <p className="font-bold text-blue-700">
+                          {((GENRE_PRESETS[projectInfo.genre]?.d1?.normal || 0.35) * 100).toFixed(0)}%
+                        </p>
+                      </div>
+                      <div className="bg-white rounded p-2 border border-green-100">
+                        <span className="text-gray-500">권장 {getCostMetricLabel()}</span>
+                        <p className="font-bold text-green-700">
+                          {getCurrentRecommendation().targetCpa.toLocaleString()}원
+                        </p>
+                      </div>
+                      <div className="bg-white rounded p-2 border border-purple-100">
+                        <span className="text-gray-500">Organic Ratio</span>
+                        <p className="font-bold text-purple-700">
+                          {(getCurrentRecommendation().organicRatio * 100).toFixed(0)}%
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-gray-500 mt-2">
+                      * {projectInfo.genre} + {projectInfo.platforms?.join('/')} 조합 기준 Matrix 적용
+                    </p>
+                  </div>
+                )}
+                
                 {/* 플랫폼 다중선택 */}
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-2">💻 플랫폼 (다중 선택 가능)</label>
@@ -823,7 +983,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                               value={(input.nru.ua_budget || 0).toLocaleString()} 
                               onChange={(e) => {
                                 const rawValue = e.target.value.replace(/,/g, '');
-                                setInput(prev => ({ ...prev, nru: { ...prev.nru, ua_budget: parseInt(rawValue) || 0 } }));
+                                handleUABudgetChange(parseInt(rawValue) || 0);
                               }}
                               className="flex-1 bg-transparent border-none p-0 text-right min-w-0 font-semibold text-green-700" 
                             />
@@ -845,7 +1005,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                               value={(input.nru.brand_budget || 0).toLocaleString()} 
                               onChange={(e) => {
                                 const rawValue = e.target.value.replace(/,/g, '');
-                                setInput(prev => ({ ...prev, nru: { ...prev.nru, brand_budget: parseInt(rawValue) || 0 } }));
+                                handleBrandBudgetChange(parseInt(rawValue) || 0);
                               }}
                               className="flex-1 bg-transparent border-none p-0 text-right min-w-0 font-semibold text-purple-700" 
                             />
@@ -854,7 +1014,12 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                         </td>
                       </tr>
                       <tr>
-                        <td className="px-3 py-2 border-b bg-gray-50">Target CPA/CPI</td>
+                        <td className="px-3 py-2 border-b bg-gray-50">
+                          Target {(projectInfo.platforms?.[0] === 'Mobile') ? 'CPI' : 'CPA'}
+                          <span className="text-xs text-gray-400 ml-1">
+                            ({(projectInfo.platforms?.[0] === 'Mobile') ? '설치당 비용' : '전환당 비용'})
+                          </span>
+                        </td>
                         <td className="px-3 py-2 border-b bg-yellow-50">
                           <div className="flex items-center">
                             <input 
@@ -862,7 +1027,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                               value={(input.nru.target_cpa || 2000).toLocaleString()} 
                               onChange={(e) => {
                                 const rawValue = e.target.value.replace(/,/g, '');
-                                setInput(prev => ({ ...prev, nru: { ...prev.nru, target_cpa: parseInt(rawValue) || 0 } }));
+                                handleCPAChange(parseInt(rawValue) || 0);
                               }}
                               className="flex-1 bg-transparent border-none p-0 text-right min-w-0" 
                             />
@@ -880,7 +1045,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                               min="0"
                               max="100"
                               value={Math.round((input.nru.base_organic_ratio || 0.2) * 100)} 
-                              onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, base_organic_ratio: (parseFloat(e.target.value) || 0) / 100 } }))} 
+                              onChange={(e) => handleOrganicRatioChange((parseFloat(e.target.value) || 0) / 100)} 
                               className="flex-1 bg-transparent border-none p-0 text-right min-w-0" 
                             />
                             <span className="ml-1 flex-shrink-0">%</span>
@@ -1238,6 +1403,37 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                 </div>
               </div>
             </GuideBox>
+            
+            {/* V9.7: 마케팅 연동 NRU 미리보기 (자동계산) */}
+            {(input.nru.ua_budget || 0) > 0 && (
+              <div className="p-4 bg-gradient-to-r from-blue-100 to-purple-100 rounded-lg border border-blue-300">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-bold text-blue-800">🔗 마케팅 예산 기반 자동계산</span>
+                  <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded">V9.7 실시간 동기화</span>
+                </div>
+                <div className="text-3xl font-bold text-blue-700">
+                  {(input.nru.d1_nru?.normal || 0).toLocaleString()} 명
+                </div>
+                <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                  <div className="bg-white/70 rounded p-2">
+                    <span className="text-gray-600">Best</span>
+                    <p className="font-semibold text-green-700">{(input.nru.d1_nru?.best || 0).toLocaleString()}</p>
+                  </div>
+                  <div className="bg-white/70 rounded p-2">
+                    <span className="text-gray-600">Normal</span>
+                    <p className="font-semibold text-blue-700">{(input.nru.d1_nru?.normal || 0).toLocaleString()}</p>
+                  </div>
+                  <div className="bg-white/70 rounded p-2">
+                    <span className="text-gray-600">Worst</span>
+                    <p className="font-semibold text-red-700">{(input.nru.d1_nru?.worst || 0).toLocaleString()}</p>
+                  </div>
+                </div>
+                <p className="text-xs text-blue-600 mt-2">
+                  * Section 3 마케팅 설정 변경 시 즉시 반영됩니다
+                </p>
+              </div>
+            )}
+            
             <div className="p-3 bg-gray-50 rounded-lg border"><p className="text-sm text-gray-600"><strong>적용된 표본 게임:</strong> {selectedSampleGames.join(', ') || '(선택 필요)'}</p></div>
             <div>
               <h4 className="font-medium text-gray-700 mb-2">런칭 기간 총 NRU (30일간 분산 배분)</h4>

@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Download, FileSpreadsheet, RefreshCw } from 'lucide-react';
+import { Download, FileSpreadsheet, RefreshCw, AlertTriangle } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, AreaChart, Area, ComposedChart, Bar
@@ -203,10 +203,10 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
       </section>
 
       {/* Section 3: Financial Analysis (BEP 차트 + ROAS) */}
-      {basicSettings?.launch_mkt_budget && basicSettings.launch_mkt_budget > 0 && (
+      {((basicSettings?.launch_mkt_budget && basicSettings.launch_mkt_budget > 0) || (basicSettings?.dev_cost && basicSettings.dev_cost > 0)) && (
         <section className="bg-white rounded-xl border border-orange-200 overflow-hidden">
           <div className="bg-orange-100 px-6 py-4 border-b border-orange-200">
-            <h2 className="text-xl font-bold text-orange-800">💰 Section 3: Financial Analysis</h2>
+            <h2 className="text-xl font-bold text-orange-800">💰 Section 3: Financial Analysis (BEP)</h2>
           </div>
           <div className="p-6 space-y-6">
             {/* 계산 방식 설명 박스 */}
@@ -232,6 +232,44 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
               </div>
             </div>
             
+            {/* V9.2: ROI / BEP / 순수익 요약 카드 */}
+            <div className="grid grid-cols-3 gap-4">
+              {/* ROI Card */}
+              <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="text-sm text-gray-500 mb-1">예상 ROI (Normal)</div>
+                <div className={`text-2xl font-bold ${(() => {
+                  const totalCost = (basicSettings?.launch_mkt_budget || 0) + (basicSettings?.dev_cost || 0);
+                  const roi = totalCost > 0 ? ((summary.normal.gross_revenue - totalCost) / totalCost) * 100 : 0;
+                  return roi >= 0 ? 'text-green-600' : 'text-red-500';
+                })()}`}>
+                  {(() => {
+                    const totalCost = (basicSettings?.launch_mkt_budget || 0) + (basicSettings?.dev_cost || 0);
+                    const roi = totalCost > 0 ? ((summary.normal.gross_revenue - totalCost) / totalCost) * 100 : 0;
+                    return roi.toFixed(1);
+                  })()}%
+                </div>
+              </div>
+              {/* BEP Day Card */}
+              <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="text-sm text-gray-500 mb-1">손익분기점 (BEP)</div>
+                <div className={`text-2xl font-bold ${bepDay > 0 ? 'text-blue-600' : 'text-red-500'}`}>
+                  {bepDay > 0 ? `D+${bepDay}` : "미달성"}
+                </div>
+                {bepDay <= 0 && <div className="text-xs text-red-400">(Year 1 내)</div>}
+              </div>
+              {/* Profit Card */}
+              <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="text-sm text-gray-500 mb-1">예상 순수익 (Normal)</div>
+                <div className={`text-xl font-bold ${(() => {
+                  const totalCost = (basicSettings?.launch_mkt_budget || 0) + (basicSettings?.dev_cost || 0);
+                  const profit = summary.normal.gross_revenue - totalCost;
+                  return profit >= 0 ? 'text-gray-800' : 'text-red-500';
+                })()}`}>
+                  {formatCurrency(summary.normal.gross_revenue - ((basicSettings?.launch_mkt_budget || 0) + (basicSettings?.dev_cost || 0)))}
+                </div>
+              </div>
+            </div>
+            
             {/* V8 #3: BEP 시각화 차트 */}
             <div>
               <h3 className="font-semibold text-gray-700 mb-3">BEP Analysis Chart (Normal 시나리오)</h3>
@@ -251,11 +289,28 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
                   </LineChart>
                 </ResponsiveContainer>
               </div>
-              {bepDay > 0 && (
+              {bepDay > 0 ? (
                 <div className="mt-3 p-3 bg-violet-50 rounded-lg border border-violet-200 text-center">
                   <span className="text-violet-800 font-semibold">🎯 손익분기점 도달 예상: </span>
                   <span className="text-violet-900 font-bold text-lg">D+{bepDay}</span>
                   <span className="text-violet-600 text-sm ml-2">({Math.round(bepDay / 30)}개월차)</span>
+                  <p className="text-xs text-violet-500 mt-1">안정적인 현금 흐름이 기대됩니다.</p>
+                </div>
+              ) : (
+                <div className="mt-3 p-4 bg-red-50 rounded-lg border border-red-300 flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-red-800 font-bold text-sm mb-2">⚠️ BEP 달성 실패 경고 (Year 1 내 미도달)</p>
+                    <p className="text-red-700 text-xs mb-2">현재 구조로는 1년 내 투자 회수가 어렵습니다. 다음 전략을 검토하세요:</p>
+                    <ul className="text-xs text-red-600 space-y-1 mb-3">
+                      <li>• <strong>CPA/CPI 절감:</strong> 타겟팅 최적화 또는 오가닉 비중 확대</li>
+                      <li>• <strong>LTV 개선:</strong> D30 리텐션을 5%p 올리거나 ARPPU를 15% 상향</li>
+                      <li>• <strong>BM 재검토:</strong> 패키지 가격 또는 인게임 결제 모델 조정</li>
+                    </ul>
+                    <p className="text-xs text-red-500 italic border-t border-red-200 pt-2">
+                      💡 <strong>AI 종합 분석 보고서</strong>의 [리스크 분석 및 BEP 달성 전략] 섹션에서 상세 제언을 확인하세요.
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
