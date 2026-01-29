@@ -686,86 +686,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
         )}
       </div>
 
-      {/* 4. NRU (자동계산 - MKT 이후) */}
-      <div className="border border-gray-200 rounded-lg overflow-hidden">
-        <button onClick={() => setActiveSection(activeSection === 'nru' ? null : 'nru')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'nru' ? 'bg-blue-50 border-b border-blue-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
-          <div className="flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /><span className="font-medium">4. NRU 설정 (자동계산)</span></div>
-          {activeSection === 'nru' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-        </button>
-        {activeSection === 'nru' && (
-          <div className="p-4 space-y-4">
-            <GuideBox title="NRU 입력 가이드">
-              <ul className="list-disc list-inside space-y-1 text-xs">
-                <li><strong>D1 NRU:</strong> 첫 날 예상 신규 유저 수 (Best/Normal/Worst 시나리오별)</li>
-                <li><strong>자동 계산:</strong> "5. 마케팅 & UA 설정"에서 MKT 예산 기반 자동 계산 가능</li>
-                <li><strong>보정값:</strong> 일별 NRU 감소율에 대한 시나리오별 보정</li>
-              </ul>
-            </GuideBox>
-            <div className="p-3 bg-gray-50 rounded-lg border"><p className="text-sm text-gray-600"><strong>적용된 표본 게임:</strong> {selectedSampleGames.join(', ') || '(선택 필요)'}</p></div>
-            <div>
-              <h4 className="font-medium text-gray-700 mb-2">D1 NRU (첫 날 신규 유저)</h4>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="p-3 bg-green-50 rounded-lg border border-green-200"><label className="block text-xs font-medium text-green-700 mb-1">Best</label><input type="number" value={input.nru.d1_nru.best} onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, d1_nru: { ...prev.nru.d1_nru, best: parseInt(e.target.value) || 0 } } }))} className="w-full px-2 py-1 border border-green-300 rounded text-right" /></div>
-                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200"><label className="block text-xs font-medium text-blue-700 mb-1">Normal</label><input type="number" value={input.nru.d1_nru.normal} onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, d1_nru: { ...prev.nru.d1_nru, normal: parseInt(e.target.value) || 0 } } }))} className="w-full px-2 py-1 border border-blue-300 rounded text-right" /></div>
-                <div className="p-3 bg-red-50 rounded-lg border border-red-200"><label className="block text-xs font-medium text-red-700 mb-1">Worst</label><input type="number" value={input.nru.d1_nru.worst} onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, d1_nru: { ...prev.nru.d1_nru, worst: parseInt(e.target.value) || 0 } } }))} className="w-full px-2 py-1 border border-red-300 rounded text-right" /></div>
-              </div>
-            </div>
-            <div className="border border-gray-300 rounded-lg overflow-hidden">
-              <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">노말 대비 보정 수치 (%)</div>
-              <table className="w-full text-sm">
-                <tbody>
-                  <tr><td className="px-3 py-2 border-b bg-gray-50 w-1/3">Best (+보정)</td><td className="px-3 py-2 border-b bg-green-50"><div className="flex items-center"><input type="number" step="1" value={Math.round((input.nru.adjustment?.best_vs_normal || -0.10) * 100)} onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, adjustment: { ...prev.nru.adjustment, best_vs_normal: (parseFloat(e.target.value) || 0) / 100 } } }))} className="w-full bg-transparent border-none p-0 text-right" /><span className="ml-1">%</span></div></td></tr>
-                  <tr><td className="px-3 py-2 bg-gray-50">Worst (-보정)</td><td className="px-3 py-2 bg-red-50"><div className="flex items-center"><input type="number" step="1" value={Math.round((input.nru.adjustment?.worst_vs_normal || 0.10) * 100)} onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, adjustment: { ...prev.nru.adjustment, worst_vs_normal: (parseFloat(e.target.value) || 0) / 100 } } }))} className="w-full bg-transparent border-none p-0 text-right" /><span className="ml-1">%</span></div></td></tr>
-                </tbody>
-              </table>
-              <div className="px-3 py-2 text-xs text-gray-500">* Best -10% = Normal보다 감소율 10% 완화 / Worst +10% = Normal보다 감소율 10% 증가</div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* 6. Revenue (보정) */}
-      <div className="border border-gray-200 rounded-lg overflow-hidden">
-        <button onClick={() => setActiveSection(activeSection === 'revenue' ? null : 'revenue')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'revenue' ? 'bg-amber-50 border-b border-amber-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
-          <div className="flex items-center gap-2"><DollarSign className="w-5 h-5 text-amber-600" /><span className="font-medium">6. Revenue 설정 (보정)</span></div>
-          {activeSection === 'revenue' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-        </button>
-        {activeSection === 'revenue' && (
-          <div className="p-4 space-y-4">
-            <GuideBox title="Revenue 입력 가이드">
-              <ul className="list-disc list-inside space-y-1 text-xs">
-                <li><strong>Revenue 계산식:</strong> DAU × P.Rate(결제율) × ARPPU(결제자 평균 결제금액)</li>
-                <li><strong>P.Rate 보정:</strong> Best/Worst 시나리오별 결제율 조정 (예: Best +5%, Worst -5%)</li>
-                <li><strong>ARPPU 보정:</strong> Best/Worst 시나리오별 ARPPU 조정</li>
-              </ul>
-            </GuideBox>
-            <div className="p-3 bg-gray-50 rounded-lg border"><p className="text-sm text-gray-600"><strong>적용된 표본 게임:</strong> {selectedSampleGames.join(', ') || '(선택 필요)'}</p></div>
-            <div className="grid grid-cols-2 gap-6">
-              <div className="border border-gray-300 rounded-lg overflow-hidden">
-                <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">P.Rate (결제율) 보정 (%)</div>
-                <table className="w-full text-sm">
-                  <tbody>
-                    <tr><td className="px-3 py-2 border-b bg-gray-50 w-1/2">Best 보정</td><td className="px-3 py-2 border-b bg-green-50"><div className="flex items-center"><input type="number" step="1" value={Math.round((input.revenue.pr_adjustment.best_vs_normal || 0) * 100)} onChange={(e) => setInput(prev => ({ ...prev, revenue: { ...prev.revenue, pr_adjustment: { ...prev.revenue.pr_adjustment, best_vs_normal: (parseFloat(e.target.value) || 0) / 100 } } }))} className="w-full bg-transparent border-none p-0 text-right" /><span className="ml-1">%</span></div></td></tr>
-                    <tr><td className="px-3 py-2 bg-gray-50">Worst 보정</td><td className="px-3 py-2 bg-red-50"><div className="flex items-center"><input type="number" step="1" value={Math.round((input.revenue.pr_adjustment.worst_vs_normal || 0) * 100)} onChange={(e) => setInput(prev => ({ ...prev, revenue: { ...prev.revenue, pr_adjustment: { ...prev.revenue.pr_adjustment, worst_vs_normal: (parseFloat(e.target.value) || 0) / 100 } } }))} className="w-full bg-transparent border-none p-0 text-right" /><span className="ml-1">%</span></div></td></tr>
-                  </tbody>
-                </table>
-              </div>
-              <div className="border border-gray-300 rounded-lg overflow-hidden">
-                <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">ARPPU 보정 (%)</div>
-                <table className="w-full text-sm">
-                  <tbody>
-                    <tr><td className="px-3 py-2 border-b bg-gray-50 w-1/2">Best 보정</td><td className="px-3 py-2 border-b bg-green-50"><div className="flex items-center"><input type="number" step="1" value={Math.round((input.revenue.arppu_adjustment.best_vs_normal || 0) * 100)} onChange={(e) => setInput(prev => ({ ...prev, revenue: { ...prev.revenue, arppu_adjustment: { ...prev.revenue.arppu_adjustment, best_vs_normal: (parseFloat(e.target.value) || 0) / 100 } } }))} className="w-full bg-transparent border-none p-0 text-right" /><span className="ml-1">%</span></div></td></tr>
-                    <tr><td className="px-3 py-2 bg-gray-50">Worst 보정</td><td className="px-3 py-2 bg-red-50"><div className="flex items-center"><input type="number" step="1" value={Math.round((input.revenue.arppu_adjustment.worst_vs_normal || 0) * 100)} onChange={(e) => setInput(prev => ({ ...prev, revenue: { ...prev.revenue, arppu_adjustment: { ...prev.revenue.arppu_adjustment, worst_vs_normal: (parseFloat(e.target.value) || 0) / 100 } } }))} className="w-full bg-transparent border-none p-0 text-right" /><span className="ml-1">%</span></div></td></tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            <div className="text-xs text-gray-500">* 예: Best 보정 5 = Normal 대비 +5% / Worst 보정 -5 = Normal 대비 -5%</div>
-          </div>
-        )}
-      </div>
-
-      {/* 3. 마케팅 & UA 설정 (UA First) */}
+      {/* 3. 마케팅 & UA 설정 (UA First - NRU 계산의 선행 조건) */}
       <div className="border border-orange-200 rounded-lg overflow-hidden">
         <button onClick={() => setActiveSection(activeSection === 'mkt-calc' ? null : 'mkt-calc')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'mkt-calc' ? 'bg-orange-50 border-b border-orange-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
           <div className="flex items-center gap-2">
@@ -799,9 +720,12 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                         <td className="px-3 py-2 border-b bg-yellow-50">
                           <div className="flex items-center">
                             <input 
-                              type="number" 
-                              value={input.basic_settings?.launch_mkt_budget || 0} 
-                              onChange={(e) => handleMktBudgetChange(parseInt(e.target.value) || 0)}
+                              type="text" 
+                              value={(input.basic_settings?.launch_mkt_budget || 0).toLocaleString()} 
+                              onChange={(e) => {
+                                const rawValue = e.target.value.replace(/,/g, '');
+                                handleMktBudgetChange(parseInt(rawValue) || 0);
+                              }}
                               className="flex-1 bg-transparent border-none p-0 text-right min-w-0" 
                             />
                             <span className="ml-1 flex-shrink-0">원</span>
@@ -828,13 +752,11 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                 </div>
                 <div className="border border-gray-300 rounded-lg overflow-hidden">
                   <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">
-                    {/* V8: Platform별 용어 변경 */}
                     {(projectInfo.platforms || []).includes('Mobile') ? 'CPI & UAC' : 'CPA & UAC'}
                   </div>
                   <table className="w-full text-sm table-fixed">
                     <tbody>
                       <tr>
-                        {/* V8: Mobile=CPI, PC/Console=CPA */}
                         <td className="px-3 py-2 border-b bg-gray-50 w-2/5">
                           {(projectInfo.platforms || []).includes('Mobile') 
                             ? 'CPI (Cost Per Install)' 
@@ -843,9 +765,12 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                         <td className="px-3 py-2 border-b bg-yellow-50">
                           <div className="flex items-center">
                             <input 
-                              type="number" 
-                              value={input.basic_settings?.cpi || 2660} 
-                              onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, cpi: parseInt(e.target.value) || 0 } }))} 
+                              type="text" 
+                              value={(input.basic_settings?.cpi || 2660).toLocaleString()} 
+                              onChange={(e) => {
+                                const rawValue = e.target.value.replace(/,/g, '');
+                                setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, cpi: parseInt(rawValue) || 0 } }));
+                              }}
                               className="flex-1 bg-transparent border-none p-0 text-right min-w-0" 
                             />
                             <span className="ml-1 flex-shrink-0">원</span>
@@ -857,9 +782,12 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                         <td className="px-3 py-2 bg-yellow-50">
                           <div className="flex items-center">
                             <input 
-                              type="number" 
-                              value={input.basic_settings?.uac || 3800} 
-                              onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, uac: parseInt(e.target.value) || 0 } }))} 
+                              type="text" 
+                              value={(input.basic_settings?.uac || 3800).toLocaleString()} 
+                              onChange={(e) => {
+                                const rawValue = e.target.value.replace(/,/g, '');
+                                setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, uac: parseInt(rawValue) || 0 } }));
+                              }}
                               className="flex-1 bg-transparent border-none p-0 text-right min-w-0" 
                             />
                             <span className="ml-1 flex-shrink-0">원</span>
@@ -974,6 +902,86 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
           </div>
         )}
       </div>
+
+      {/* 4. NRU (MKT에서 자동 계산됨) */}
+      <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <button onClick={() => setActiveSection(activeSection === 'nru' ? null : 'nru')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'nru' ? 'bg-blue-50 border-b border-blue-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
+          <div className="flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /><span className="font-medium">4. NRU 설정 (자동계산)</span></div>
+          {activeSection === 'nru' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+        </button>
+        {activeSection === 'nru' && (
+          <div className="p-4 space-y-4">
+            <GuideBox title="NRU 입력 가이드">
+              <ul className="list-disc list-inside space-y-1 text-xs">
+                <li><strong>D1 NRU:</strong> 첫 날 예상 신규 유저 수 (Best/Normal/Worst 시나리오별)</li>
+                <li><strong>자동 계산:</strong> "5. 마케팅 & UA 설정"에서 MKT 예산 기반 자동 계산 가능</li>
+                <li><strong>보정값:</strong> 일별 NRU 감소율에 대한 시나리오별 보정</li>
+              </ul>
+            </GuideBox>
+            <div className="p-3 bg-gray-50 rounded-lg border"><p className="text-sm text-gray-600"><strong>적용된 표본 게임:</strong> {selectedSampleGames.join(', ') || '(선택 필요)'}</p></div>
+            <div>
+              <h4 className="font-medium text-gray-700 mb-2">D1 NRU (첫 날 신규 유저)</h4>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="p-3 bg-green-50 rounded-lg border border-green-200"><label className="block text-xs font-medium text-green-700 mb-1">Best</label><input type="text" value={(input.nru.d1_nru.best || 0).toLocaleString()} onChange={(e) => { const v = parseInt(e.target.value.replace(/,/g, '')) || 0; setInput(prev => ({ ...prev, nru: { ...prev.nru, d1_nru: { ...prev.nru.d1_nru, best: v } } })); }} className="w-full px-2 py-1 border border-green-300 rounded text-right" /></div>
+                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200"><label className="block text-xs font-medium text-blue-700 mb-1">Normal</label><input type="text" value={(input.nru.d1_nru.normal || 0).toLocaleString()} onChange={(e) => { const v = parseInt(e.target.value.replace(/,/g, '')) || 0; setInput(prev => ({ ...prev, nru: { ...prev.nru, d1_nru: { ...prev.nru.d1_nru, normal: v } } })); }} className="w-full px-2 py-1 border border-blue-300 rounded text-right" /></div>
+                <div className="p-3 bg-red-50 rounded-lg border border-red-200"><label className="block text-xs font-medium text-red-700 mb-1">Worst</label><input type="text" value={(input.nru.d1_nru.worst || 0).toLocaleString()} onChange={(e) => { const v = parseInt(e.target.value.replace(/,/g, '')) || 0; setInput(prev => ({ ...prev, nru: { ...prev.nru, d1_nru: { ...prev.nru.d1_nru, worst: v } } })); }} className="w-full px-2 py-1 border border-red-300 rounded text-right" /></div>
+              </div>
+            </div>
+            <div className="border border-gray-300 rounded-lg overflow-hidden">
+              <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">노말 대비 보정 수치 (%)</div>
+              <table className="w-full text-sm">
+                <tbody>
+                  <tr><td className="px-3 py-2 border-b bg-gray-50 w-1/3">Best (+보정)</td><td className="px-3 py-2 border-b bg-green-50"><div className="flex items-center"><input type="number" step="1" value={Math.round((input.nru.adjustment?.best_vs_normal || -0.10) * 100)} onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, adjustment: { ...prev.nru.adjustment, best_vs_normal: (parseFloat(e.target.value) || 0) / 100 } } }))} className="w-full bg-transparent border-none p-0 text-right" /><span className="ml-1">%</span></div></td></tr>
+                  <tr><td className="px-3 py-2 bg-gray-50">Worst (-보정)</td><td className="px-3 py-2 bg-red-50"><div className="flex items-center"><input type="number" step="1" value={Math.round((input.nru.adjustment?.worst_vs_normal || 0.10) * 100)} onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, adjustment: { ...prev.nru.adjustment, worst_vs_normal: (parseFloat(e.target.value) || 0) / 100 } } }))} className="w-full bg-transparent border-none p-0 text-right" /><span className="ml-1">%</span></div></td></tr>
+                </tbody>
+              </table>
+              <div className="px-3 py-2 text-xs text-gray-500">* Best -10% = Normal보다 감소율 10% 완화 / Worst +10% = Normal보다 감소율 10% 증가</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 6. Revenue (보정) */}
+      <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <button onClick={() => setActiveSection(activeSection === 'revenue' ? null : 'revenue')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'revenue' ? 'bg-amber-50 border-b border-amber-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
+          <div className="flex items-center gap-2"><DollarSign className="w-5 h-5 text-amber-600" /><span className="font-medium">6. Revenue 설정 (보정)</span></div>
+          {activeSection === 'revenue' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+        </button>
+        {activeSection === 'revenue' && (
+          <div className="p-4 space-y-4">
+            <GuideBox title="Revenue 입력 가이드">
+              <ul className="list-disc list-inside space-y-1 text-xs">
+                <li><strong>Revenue 계산식:</strong> DAU × P.Rate(결제율) × ARPPU(결제자 평균 결제금액)</li>
+                <li><strong>P.Rate 보정:</strong> Best/Worst 시나리오별 결제율 조정 (예: Best +5%, Worst -5%)</li>
+                <li><strong>ARPPU 보정:</strong> Best/Worst 시나리오별 ARPPU 조정</li>
+              </ul>
+            </GuideBox>
+            <div className="p-3 bg-gray-50 rounded-lg border"><p className="text-sm text-gray-600"><strong>적용된 표본 게임:</strong> {selectedSampleGames.join(', ') || '(선택 필요)'}</p></div>
+            <div className="grid grid-cols-2 gap-6">
+              <div className="border border-gray-300 rounded-lg overflow-hidden">
+                <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">P.Rate (결제율) 보정 (%)</div>
+                <table className="w-full text-sm">
+                  <tbody>
+                    <tr><td className="px-3 py-2 border-b bg-gray-50 w-1/2">Best 보정</td><td className="px-3 py-2 border-b bg-green-50"><div className="flex items-center"><input type="number" step="1" value={Math.round((input.revenue.pr_adjustment.best_vs_normal || 0) * 100)} onChange={(e) => setInput(prev => ({ ...prev, revenue: { ...prev.revenue, pr_adjustment: { ...prev.revenue.pr_adjustment, best_vs_normal: (parseFloat(e.target.value) || 0) / 100 } } }))} className="w-full bg-transparent border-none p-0 text-right" /><span className="ml-1">%</span></div></td></tr>
+                    <tr><td className="px-3 py-2 bg-gray-50">Worst 보정</td><td className="px-3 py-2 bg-red-50"><div className="flex items-center"><input type="number" step="1" value={Math.round((input.revenue.pr_adjustment.worst_vs_normal || 0) * 100)} onChange={(e) => setInput(prev => ({ ...prev, revenue: { ...prev.revenue, pr_adjustment: { ...prev.revenue.pr_adjustment, worst_vs_normal: (parseFloat(e.target.value) || 0) / 100 } } }))} className="w-full bg-transparent border-none p-0 text-right" /><span className="ml-1">%</span></div></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div className="border border-gray-300 rounded-lg overflow-hidden">
+                <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">ARPPU 보정 (%)</div>
+                <table className="w-full text-sm">
+                  <tbody>
+                    <tr><td className="px-3 py-2 border-b bg-gray-50 w-1/2">Best 보정</td><td className="px-3 py-2 border-b bg-green-50"><div className="flex items-center"><input type="number" step="1" value={Math.round((input.revenue.arppu_adjustment.best_vs_normal || 0) * 100)} onChange={(e) => setInput(prev => ({ ...prev, revenue: { ...prev.revenue, arppu_adjustment: { ...prev.revenue.arppu_adjustment, best_vs_normal: (parseFloat(e.target.value) || 0) / 100 } } }))} className="w-full bg-transparent border-none p-0 text-right" /><span className="ml-1">%</span></div></td></tr>
+                    <tr><td className="px-3 py-2 bg-gray-50">Worst 보정</td><td className="px-3 py-2 bg-red-50"><div className="flex items-center"><input type="number" step="1" value={Math.round((input.revenue.arppu_adjustment.worst_vs_normal || 0) * 100)} onChange={(e) => setInput(prev => ({ ...prev, revenue: { ...prev.revenue, arppu_adjustment: { ...prev.revenue.arppu_adjustment, worst_vs_normal: (parseFloat(e.target.value) || 0) / 100 } } }))} className="w-full bg-transparent border-none p-0 text-right" /><span className="ml-1">%</span></div></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div className="text-xs text-gray-500">* 예: Best 보정 5 = Normal 대비 +5% / Worst 보정 -5 = Normal 대비 -5%</div>
+          </div>
+        )}
+      </div>
+
 
       {/* 6. 계절성 팩터 */}
       <div className="border border-teal-200 rounded-lg overflow-hidden">
