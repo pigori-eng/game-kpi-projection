@@ -46,6 +46,16 @@ class NRUInput(BaseModel):
     paid_organic_ratio: float
     nvr: float
     adjustment: Dict[str, float]
+    # V8.5: UA/Brand 예산 분리
+    ua_budget: Optional[int] = 0              # 퍼포먼스 마케팅 예산 (직접 유입)
+    brand_budget: Optional[int] = 0           # 브랜딩 예산 (Organic Boost)
+    target_cpa: Optional[int] = 2000          # CPI/CPA (ua_budget에만 적용)
+    base_organic_ratio: Optional[float] = 0.2 # 기본 자연 유입 비율
+    # V8.5+: Pre-Launch & CPA Saturation
+    pre_marketing_ratio: Optional[float] = 0.0    # 사전 마케팅 비중 (0~1, 예: 0.3 = 30%)
+    wishlist_conversion_rate: Optional[float] = 0.15  # 위시리스트/사전예약 → 실제 유입 전환율 (PC: 10~20%)
+    cpa_saturation_enabled: Optional[bool] = True     # CPA 상승 계수 활성화
+    brand_time_lag_enabled: Optional[bool] = True     # 브랜딩 지연 효과 활성화
 
 class RevenueInput(BaseModel):
     selected_games_pr: List[str]
@@ -84,31 +94,78 @@ SEASONALITY_BY_REGION = {
 def calculate_seasonality(regions: List[str], launch_date: str, days: int = 365) -> List[float]:
     """
     지역별 계절성 팩터 계산
-    다중 지역 선택 시 평균 적용
+    - 월간 기본 계절성
+    - 주간 변동성 (주말 +15~20%)
+    - 특별 이벤트 스파이크 (명절, 대형 업데이트 등)
     """
     from datetime import datetime, timedelta
+    import random
     
     try:
         start_date = datetime.strptime(launch_date, "%Y-%m-%d")
     except:
         start_date = datetime(2026, 11, 12)  # 기본값
     
+    # 시드 고정 (재현성)
+    random.seed(42)
+    
+    # 특별 이벤트 날짜 (월-일 기준)
+    SPECIAL_EVENTS = {
+        "korea": [(1, 1), (2, 1), (2, 2), (5, 5), (9, 15), (9, 16), (9, 17), (12, 25), (12, 31)],  # 설날, 추석, 크리스마스 등
+        "japan": [(1, 1), (5, 3), (5, 4), (5, 5), (8, 15), (12, 25), (12, 31)],  # 신정, 골든위크, 오본 등
+        "global": [(1, 1), (11, 24), (11, 25), (12, 24), (12, 25), (12, 31)],  # 블랙프라이데이, 크리스마스 등
+        "na": [(1, 1), (7, 4), (11, 24), (11, 25), (12, 24), (12, 25), (12, 31)],
+        "eu": [(1, 1), (12, 24), (12, 25), (12, 31)],
+        "china": [(1, 1), (2, 1), (2, 2), (10, 1), (10, 2), (10, 3)],  # 춘절, 국경절
+        "sea": [(1, 1), (4, 13), (4, 14), (11, 1), (12, 25), (12, 31)],  # 송끄란 등
+        "sa": [(1, 1), (2, 13), (2, 14), (12, 25), (12, 31)],  # 카니발 등
+    }
+    
     factors = []
     for day in range(days):
         current_date = start_date + timedelta(days=day)
         month = current_date.month
+        weekday = current_date.weekday()  # 0=월, 6=일
+        month_day = (current_date.month, current_date.day)
         
-        # 선택된 지역들의 계절성 평균
+        # 1. 월간 기본 계절성
         region_factors = []
         for region in regions:
             region_key = region.lower()
             if region_key in SEASONALITY_BY_REGION:
                 region_factors.append(SEASONALITY_BY_REGION[region_key].get(month, 1.0))
         
-        if region_factors:
-            factors.append(np.mean(region_factors))
-        else:
-            factors.append(1.0)
+        base_factor = np.mean(region_factors) if region_factors else 1.0
+        
+        # 2. 주간 변동성 (금~일 +15~20%, 월~화 -5~10%)
+        if weekday == 4:  # 금요일
+            weekly_factor = 1.12 + random.uniform(0, 0.05)
+        elif weekday == 5:  # 토요일
+            weekly_factor = 1.18 + random.uniform(0, 0.07)
+        elif weekday == 6:  # 일요일
+            weekly_factor = 1.15 + random.uniform(0, 0.05)
+        elif weekday in [0, 1]:  # 월/화
+            weekly_factor = 0.92 + random.uniform(0, 0.05)
+        else:  # 수/목
+            weekly_factor = 1.0 + random.uniform(-0.02, 0.02)
+        
+        # 3. 특별 이벤트 스파이크 (+30~60%)
+        event_factor = 1.0
+        for region in regions:
+            region_key = region.lower()
+            if region_key in SPECIAL_EVENTS:
+                if month_day in SPECIAL_EVENTS[region_key]:
+                    event_factor = max(event_factor, 1.35 + random.uniform(0, 0.25))
+        
+        # 4. 대형 업데이트 시뮬레이션 (30일마다 +20~35%)
+        if day > 30 and (day % 30 < 3 or day % 30 > 27):
+            event_factor = max(event_factor, 1.20 + random.uniform(0, 0.15))
+        
+        # 5. 약간의 랜덤 노이즈 (±3%)
+        noise = 1.0 + random.uniform(-0.03, 0.03)
+        
+        final_factor = base_factor * weekly_factor * event_factor * noise
+        factors.append(final_factor)
     
     return factors
 
@@ -454,6 +511,188 @@ def generate_nru_series(total_nru: int, daily_ratios: List[float], days: int = 3
         nru_series.append(max(daily_nru, 10))
     
     return nru_series[:days]
+
+
+# ============================================
+# V8.5: UA/Brand 분리 NRU 계산 (Organic Boost)
+# ============================================
+def calculate_organic_boost(brand_budget: int, ua_budget: int) -> float:
+    """
+    브랜딩 예산에 따른 Organic Ratio 증폭 계수 계산
+    
+    로직:
+    - brand_budget이 ua_budget의 0%일 때: 1.0배 (증폭 없음)
+    - brand_budget이 ua_budget의 50%일 때: 1.5배
+    - brand_budget이 ua_budget의 100%일 때: 2.0배
+    - brand_budget이 ua_budget의 200%일 때: 2.5배 (수확체감)
+    
+    Logarithmic 함수를 사용해 수확체감 효과 적용
+    """
+    if ua_budget <= 0:
+        return 1.0
+    
+    ratio = brand_budget / ua_budget
+    # Logarithmic boost: 1 + ln(1 + ratio) * 0.7
+    # ratio=0.5 → 1.28배, ratio=1.0 → 1.49배, ratio=2.0 → 1.77배
+    boost = 1.0 + np.log(1 + ratio) * 0.7
+    return min(boost, 3.0)  # 최대 3배로 캡
+
+
+def generate_nru_series_v85(
+    ua_budget: int,
+    brand_budget: int, 
+    target_cpa: int,
+    base_organic_ratio: float,
+    days: int = 365,
+    launch_period: int = 30,
+    sustaining_budget_monthly: int = 0,
+    # V8.5+ 신규 파라미터
+    pre_marketing_ratio: float = 0.0,        # 사전 마케팅 비중
+    wishlist_conversion_rate: float = 0.15,  # 위시리스트 전환율
+    cpa_saturation_enabled: bool = True,     # CPA 포화 효과
+    brand_time_lag_enabled: bool = True      # 브랜딩 지연 효과
+) -> tuple:
+    """
+    V8.5+ NRU 시리즈 생성 - UA/Brand 분리 + Pre-Launch + CPA Saturation
+    
+    🔥 핵심 로직:
+    1. CPA Saturation: 예산 규모에 따라 CPA 상승 (시장 포화 효과)
+    2. Pre-Launch Reservoir: 사전예약/위시리스트 유저를 D1에 폭발적 유입
+    3. Brand Time-Lag: 브랜딩 효과가 서서히 나타나고 잔존
+    
+    Args:
+        ua_budget: 퍼포먼스 마케팅 예산 (직접 유입)
+        brand_budget: 브랜딩 예산 (Organic Boost)
+        target_cpa: CPI/CPA 단가
+        base_organic_ratio: 기본 자연 유입 비율
+        days: 프로젝션 기간
+        launch_period: 런칭 마케팅 집중 기간
+        sustaining_budget_monthly: 월간 유지 마케팅 예산
+        pre_marketing_ratio: 사전 마케팅 비중 (0~1)
+        wishlist_conversion_rate: 위시리스트/사전예약 전환율
+        cpa_saturation_enabled: CPA 상승 계수 활성화
+        brand_time_lag_enabled: 브랜딩 지연 효과 활성화
+    
+    Returns:
+        (nru_series, paid_nru_total, organic_nru_total, organic_boost, meta_info)
+    """
+    import math
+    
+    # ============================================
+    # 1. CPA Saturation Effect (시장 포화)
+    # ============================================
+    # 예산이 클수록 효율 좋은 유저가 고갈되어 CPA 상승
+    # 공식: Effective CPA = Target CPA × (1 + (Budget / 5억) × 0.05)
+    if cpa_saturation_enabled and ua_budget > 0:
+        saturation_factor = 1 + (ua_budget / 500_000_000) * 0.05
+        effective_cpa = int(target_cpa * saturation_factor)
+    else:
+        saturation_factor = 1.0
+        effective_cpa = target_cpa
+    
+    # ============================================
+    # 2. UA/Brand 예산 분리 및 NRU 계산
+    # ============================================
+    # 2-1. Pre-Launch 예산과 Post-Launch 예산 분리
+    pre_launch_ua = int(ua_budget * pre_marketing_ratio)
+    post_launch_ua = ua_budget - pre_launch_ua
+    
+    # 2-2. Paid NRU 계산 (Effective CPA 적용)
+    pre_launch_paid_nru = pre_launch_ua // effective_cpa if effective_cpa > 0 else 0
+    post_launch_paid_nru = post_launch_ua // effective_cpa if effective_cpa > 0 else 0
+    
+    # 2-3. Organic Boost Factor 계산 (Brand Budget 기반)
+    organic_boost = calculate_organic_boost(brand_budget, ua_budget)
+    
+    # 2-4. Organic NRU 계산
+    total_paid_nru = pre_launch_paid_nru + post_launch_paid_nru
+    effective_organic_ratio = base_organic_ratio * organic_boost
+    organic_nru_total = int(total_paid_nru * effective_organic_ratio)
+    
+    # ============================================
+    # 3. Pre-Launch Reservoir (사전예약/위시리스트)
+    # ============================================
+    # 사전 마케팅으로 모은 유저 = "저수지"에 담아뒀다가 D1에 터뜨림
+    # 위시리스트 전환율 적용 (PC: 10~20%, Mobile: 15~25%)
+    wishlist_users = int(pre_launch_paid_nru / wishlist_conversion_rate) if wishlist_conversion_rate > 0 else 0
+    d1_burst_users = int(wishlist_users * wishlist_conversion_rate)  # 실제 D1 유입
+    
+    # D1~D3 버스트 분배: D1=80%, D2=10%, D3=10%
+    burst_distribution = [0.80, 0.10, 0.10]
+    
+    # ============================================
+    # 4. Brand Time-Lag Effect (브랜딩 지연 효과)
+    # ============================================
+    # 브랜딩 효과는 Bell Curve로 서서히 나타나고 잔존
+    # D-30 ~ D+60 구간에 정규분포로 분산
+    brand_effect_curve = []
+    if brand_time_lag_enabled and brand_budget > 0:
+        # 정규분포 (평균=15, 표준편차=20) → D1~D60 구간에 효과 분포
+        for day in range(days):
+            # Bell curve centered at D15 with spread of 20 days
+            effect = math.exp(-0.5 * ((day - 15) / 20) ** 2)
+            brand_effect_curve.append(effect)
+        # 정규화
+        total_effect = sum(brand_effect_curve)
+        brand_effect_curve = [e / total_effect for e in brand_effect_curve] if total_effect > 0 else [0] * days
+    else:
+        # Time-Lag 비활성화 시 즉시 효과
+        brand_effect_curve = [1.0 / 30 if i < 30 else 0 for i in range(days)]
+    
+    # ============================================
+    # 5. NRU 시리즈 생성 (통합)
+    # ============================================
+    nru_series = [0] * days
+    
+    # 5-1. Pre-Launch Burst (D1~D3 폭발)
+    for i, ratio in enumerate(burst_distribution):
+        if i < days:
+            nru_series[i] += int(d1_burst_users * ratio)
+    
+    # 5-2. Post-Launch UA (런칭 후 퍼포먼스 마케팅)
+    # Area Normalization으로 30일간 분배
+    nru_decay_pattern = [1.0 / (t ** 0.8) for t in range(1, launch_period + 1)]
+    pattern_area = sum(nru_decay_pattern)
+    d1_scale = post_launch_paid_nru / pattern_area if pattern_area > 0 else 0
+    
+    for day in range(min(launch_period, days)):
+        daily_nru = int(d1_scale * nru_decay_pattern[day])
+        nru_series[day] += max(daily_nru, 0)
+    
+    # 5-3. Organic NRU (Brand Time-Lag 적용)
+    for day in range(days):
+        organic_daily = int(organic_nru_total * brand_effect_curve[day])
+        nru_series[day] += organic_daily
+    
+    # 5-4. Sustaining 기간 (D31~D365)
+    d30_nru = nru_series[29] if len(nru_series) > 29 else 100
+    sustaining_daily_nru = (sustaining_budget_monthly // 30) // effective_cpa if effective_cpa > 0 else 0
+    sustaining_daily_nru += int(d30_nru * 0.2)  # D30의 20% 수준 유지
+    
+    for day in range(launch_period, days):
+        months_after_launch = (day - launch_period) / 30
+        decay = np.exp(-0.03 * months_after_launch)  # 월 3% 감소
+        daily_nru = int(sustaining_daily_nru * decay)
+        nru_series[day] += max(daily_nru, 10)
+    
+    # 최소값 보장
+    nru_series = [max(nru, 10) for nru in nru_series]
+    
+    # ============================================
+    # 6. 메타 정보 반환
+    # ============================================
+    meta_info = {
+        "effective_cpa": effective_cpa,
+        "cpa_saturation_factor": round(saturation_factor, 3),
+        "pre_launch_users": pre_launch_paid_nru,
+        "wishlist_users": wishlist_users,
+        "d1_burst_users": d1_burst_users,
+        "post_launch_paid_nru": post_launch_paid_nru,
+        "organic_boost_factor": round(organic_boost, 2),
+        "brand_time_lag_peak_day": 15 if brand_time_lag_enabled else 1
+    }
+    
+    return nru_series[:days], total_paid_nru, organic_nru_total, organic_boost, meta_info
 
 def calculate_pr_pattern(selected_games: List[str], raw_data: dict):
     pr_games = raw_data['games']['payment_rate']
@@ -859,7 +1098,51 @@ async def calculate_projection(input_data: ProjectionInput):
                   input_data.nru.adjustment.get("worst_vs_normal", 0) if scenario == "worst" else 0
         adjusted_d1_nru = int(d1_nru * (1 + nru_adj))
         
-        nru_series = generate_nru_series(adjusted_d1_nru, [], days)
+        # V8.5: UA/Brand 분리 지원
+        ua_budget = input_data.nru.ua_budget or 0
+        brand_budget = input_data.nru.brand_budget or 0
+        target_cpa = input_data.nru.target_cpa or 2000
+        base_organic_ratio = input_data.nru.base_organic_ratio or 0.2
+        
+        # UA/Brand 예산이 설정되어 있으면 V8.5 로직 사용
+        if ua_budget > 0:
+            # 시나리오별 예산 조정
+            scenario_mult = 1.1 if scenario == "best" else (0.9 if scenario == "worst" else 1.0)
+            adj_ua = int(ua_budget * scenario_mult)
+            adj_brand = int(brand_budget * scenario_mult)
+            
+            sustaining_monthly = basic.get("sustaining_mkt_budget_monthly", 0) if basic else 0
+            
+            # V8.5+ 신규 파라미터
+            pre_marketing_ratio = input_data.nru.pre_marketing_ratio or 0.0
+            wishlist_conversion_rate = input_data.nru.wishlist_conversion_rate or 0.15
+            cpa_saturation_enabled = input_data.nru.cpa_saturation_enabled if input_data.nru.cpa_saturation_enabled is not None else True
+            brand_time_lag_enabled = input_data.nru.brand_time_lag_enabled if input_data.nru.brand_time_lag_enabled is not None else True
+            
+            nru_series, paid_nru, organic_nru, organic_boost, nru_meta = generate_nru_series_v85(
+                adj_ua, adj_brand, target_cpa, base_organic_ratio, days, 30, sustaining_monthly,
+                pre_marketing_ratio, wishlist_conversion_rate, cpa_saturation_enabled, brand_time_lag_enabled
+            )
+            
+            # 시나리오별 메타 정보 저장
+            if scenario == "normal":
+                v85_nru_meta = {
+                    "paid_nru": paid_nru,
+                    "organic_nru": organic_nru,
+                    "organic_boost_factor": round(organic_boost, 2),
+                    "total_nru": paid_nru + organic_nru,
+                    # V8.5+ 추가 메타
+                    "effective_cpa": nru_meta["effective_cpa"],
+                    "cpa_saturation_factor": nru_meta["cpa_saturation_factor"],
+                    "pre_launch_users": nru_meta["pre_launch_users"],
+                    "wishlist_users": nru_meta["wishlist_users"],
+                    "d1_burst_users": nru_meta["d1_burst_users"],
+                    "brand_time_lag_peak_day": nru_meta["brand_time_lag_peak_day"]
+                }
+        else:
+            # 기존 로직 (d1_nru 직접 입력)
+            nru_series = generate_nru_series(adjusted_d1_nru, [], days)
+            v85_nru_meta = None
         
         # V7: 계절성 적용 (NRU에 반영)
         nru_series = [int(nru * sf) for nru, sf in zip(nru_series, seasonality_factors)]
@@ -937,8 +1220,17 @@ async def calculate_projection(input_data: ProjectionInput):
     
     # Calculate summary
     summary = {}
+    
+    # V8.5: 마케팅 예산 총합 계산
+    ua_budget = input_data.nru.ua_budget or 0
+    brand_budget = input_data.nru.brand_budget or 0
+    basic = input_data.basic_settings or load_config()["basic_settings"]
+    sustaining_monthly = basic.get("sustaining_mkt_budget_monthly", 0)
+    total_sustaining = sustaining_monthly * 12  # 연간 유지 예산
+    
+    total_marketing_budget = ua_budget + brand_budget + total_sustaining
+    
     for scenario in ["best", "normal", "worst"]:
-        basic = input_data.basic_settings or load_config()["basic_settings"]
         gross = results[scenario]["revenue"]["total_gross"]
         
         market_fee = basic.get("market_fee_ratio", 0.3)
@@ -947,14 +1239,55 @@ async def calculate_projection(input_data: ProjectionInput):
         
         net = gross * (1 - market_fee - vat - infra)
         
+        # V8.5: ROAS 계산 분리
+        # Paid ROAS: 퍼포먼스 마케팅(UA) 효율 (마케터용)
+        paid_roas = (gross / ua_budget * 100) if ua_budget > 0 else 0
+        
+        # Blended ROAS: 전체 마케팅 효율 (경영진 보고용)
+        blended_roas = (gross / total_marketing_budget * 100) if total_marketing_budget > 0 else 0
+        
+        # LTV, CAC 계산
+        total_nru = results[scenario]["nru"]["total"]
+        ltv = gross / total_nru if total_nru > 0 else 0
+        cac_paid = ua_budget / total_nru if total_nru > 0 else 0  # UA 기준 CAC
+        cac_blended = total_marketing_budget / total_nru if total_nru > 0 else 0  # 전체 기준 CAC
+        
         summary[scenario] = {
             "gross_revenue": gross,
             "net_revenue": net,
-            "total_nru": results[scenario]["nru"]["total"],
+            "total_nru": total_nru,
             "peak_dau": results[scenario]["dau"]["peak"],
             "average_dau": results[scenario]["dau"]["average"],
-            "average_daily_revenue": results[scenario]["revenue"]["average_daily"]
+            "average_daily_revenue": results[scenario]["revenue"]["average_daily"],
+            # V8.5: ROAS 분리
+            "paid_roas": round(paid_roas, 1),      # UA 효율 (마케터용)
+            "blended_roas": round(blended_roas, 1), # 전체 효율 (경영진용)
+            "ltv": round(ltv, 0),
+            "cac_paid": round(cac_paid, 0),
+            "cac_blended": round(cac_blended, 0)
         }
+    
+    # V8.5: 마케팅 예산 분석 정보
+    v85_marketing_analysis = {
+        "ua_budget": ua_budget,
+        "brand_budget": brand_budget,
+        "sustaining_budget_annual": total_sustaining,
+        "total_marketing_budget": total_marketing_budget,
+        "organic_boost_factor": round(calculate_organic_boost(brand_budget, ua_budget), 2) if ua_budget > 0 else 1.0,
+        "budget_breakdown": {
+            "ua_ratio": round(ua_budget / total_marketing_budget * 100, 1) if total_marketing_budget > 0 else 0,
+            "brand_ratio": round(brand_budget / total_marketing_budget * 100, 1) if total_marketing_budget > 0 else 0,
+            "sustaining_ratio": round(total_sustaining / total_marketing_budget * 100, 1) if total_marketing_budget > 0 else 0
+        },
+        # V8.5+ 신규 메타 정보
+        "pre_launch_settings": {
+            "pre_marketing_ratio": input_data.nru.pre_marketing_ratio or 0.0,
+            "wishlist_conversion_rate": input_data.nru.wishlist_conversion_rate or 0.15,
+            "cpa_saturation_enabled": input_data.nru.cpa_saturation_enabled if input_data.nru.cpa_saturation_enabled is not None else True,
+            "brand_time_lag_enabled": input_data.nru.brand_time_lag_enabled if input_data.nru.brand_time_lag_enabled is not None else True
+        },
+        "nru_analysis": v85_nru_meta if 'v85_nru_meta' in dir() and v85_nru_meta else None
+    }
     
     return {
         "status": "success",
@@ -983,6 +1316,7 @@ async def calculate_projection(input_data: ProjectionInput):
             "regions": regions,
             "seasonality_applied": True
         },
+        "v85_marketing": v85_marketing_analysis,  # V8.5: 마케팅 분석 추가
         "summary": summary,
         "results": results
     }

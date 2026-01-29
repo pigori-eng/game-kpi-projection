@@ -14,13 +14,25 @@ interface GameMetadata {
   genre: string;
 }
 
-const GameTooltip: React.FC<{ metadata: GameMetadata; visible: boolean }> = ({ metadata, visible }) => {
+const GameTooltip: React.FC<{ metadata: GameMetadata; visible: boolean; showBelow?: boolean }> = ({ metadata, visible, showBelow = false }) => {
   if (!visible) return null;
+  // showBelow=true면 아래로, false면 위로 표시
+  if (showBelow) {
+    return (
+      <div className="absolute z-50 top-full left-1/2 transform -translate-x-1/2 mt-2 w-44 bg-gray-900 text-white text-xs rounded-lg shadow-xl p-2.5 pointer-events-none">
+        <div className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-1/2 rotate-45 w-2 h-2 bg-gray-900"></div>
+        <div className="space-y-1">
+          <div className="font-medium text-sm text-blue-300">{metadata.genre}</div>
+          <div className="text-gray-400">출시일: <span className="text-gray-200">{metadata.release_date}</span></div>
+        </div>
+      </div>
+    );
+  }
   return (
-    <div className="absolute z-50 bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-40 bg-gray-900 text-white text-xs rounded-lg shadow-xl p-2.5 pointer-events-none">
+    <div className="absolute z-50 bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-44 bg-gray-900 text-white text-xs rounded-lg shadow-xl p-2.5 pointer-events-none">
       <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2 rotate-45 w-2 h-2 bg-gray-900"></div>
       <div className="space-y-1">
-        <div className="font-medium text-sm">{metadata.genre}</div>
+        <div className="font-medium text-sm text-blue-300">{metadata.genre}</div>
         <div className="text-gray-400">출시일: <span className="text-gray-200">{metadata.release_date}</span></div>
       </div>
     </div>
@@ -59,7 +71,7 @@ const GameGridSelector: React.FC<{
                 <span className="truncate flex-1">{game}</span>
                 {gameMeta && <Info className={`w-3.5 h-3.5 flex-shrink-0 ${hoveredGame === game ? 'text-blue-500' : 'text-gray-400'}`} />}
               </button>
-              {gameMeta && <GameTooltip metadata={gameMeta} visible={hoveredGame === game} />}
+              {gameMeta && <GameTooltip metadata={gameMeta} visible={hoveredGame === game} showBelow={idx < 4} />}
             </div>
           );
         })}
@@ -381,6 +393,23 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
         </button>
         {activeSection === 'sample' && (
           <div className="p-4 space-y-4">
+            <GuideBox title="프로젝트 정보 & 표본 추천 가이드">
+              <div className="space-y-2 text-xs">
+                <p><strong>🎯 작동 원리:</strong> 선택한 장르/플랫폼/BM타입에 맞는 벤치마크 데이터와 표본 게임을 자동 매칭합니다.</p>
+                <div className="mt-2 p-2 bg-white/50 rounded">
+                  <p className="font-semibold text-amber-800">📊 벤치마크 블렌딩 공식:</p>
+                  <p className="font-mono text-[10px] mt-1">최종값 = (내부 표본 × 가중치) + (시장 벤치마크 × (1-가중치))</p>
+                  <p className="mt-1">• 가중치 100%: 내부 데이터만 사용 (데이터 충분할 때)</p>
+                  <p>• 가중치 70%: 내부 70% + 벤치마크 30% (일반적 권장)</p>
+                  <p>• 가중치 0%: 벤치마크만 사용 (내부 데이터 없을 때)</p>
+                </div>
+                <div className="mt-2 p-2 bg-white/50 rounded">
+                  <p className="font-semibold text-amber-800">⭐ 품질 등급 배수:</p>
+                  <p>S급(×1.2) → A급(×1.1) → B급(×1.0) → C급(×0.85) → D급(×0.7)</p>
+                  <p className="text-[10px] text-gray-600 mt-1">* 벤치마크 PR/ARPPU에만 적용됩니다 (내부 데이터는 원본 유지)</p>
+                </div>
+              </div>
+            </GuideBox>
             {/* 프로젝트 정보 입력 */}
             <div className="border border-gray-300 rounded-lg overflow-hidden">
               <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm flex items-center gap-2">
@@ -674,6 +703,31 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
         </button>
         {activeSection === 'retention' && (
           <div className="p-4 space-y-4">
+            <GuideBox title="Retention 설정 가이드">
+              <div className="space-y-2 text-xs">
+                <p><strong>🎯 작동 원리:</strong> 입력한 D+1 Retention을 기준으로 Power Law 곡선을 생성하여 D365까지 리텐션을 추정합니다.</p>
+                
+                <div className="mt-2 p-2 bg-white/50 rounded">
+                  <p className="font-semibold text-amber-800">📊 Retention Curve 공식:</p>
+                  <p className="font-mono text-[10px] mt-1">Retention(day) = a × day^b</p>
+                  <p className="mt-1">• <strong>a (초기 계수):</strong> 표본 게임들의 D+1 Retention 평균값 기반</p>
+                  <p>• <strong>b (감쇠 계수):</strong> 표본 게임들의 리텐션 감소 기울기 (일반적으로 -0.5 ~ -1.0)</p>
+                </div>
+                
+                <div className="mt-2 p-2 bg-white/50 rounded">
+                  <p className="font-semibold text-amber-800">💡 장르별 D+1 권장값:</p>
+                  <p>• <strong>MMORPG:</strong> Best 45~50%, Normal 35~40%, Worst 25~30%</p>
+                  <p>• <strong>캐주얼:</strong> Best 50~55%, Normal 40~45%, Worst 30~35%</p>
+                  <p>• <strong>FPS/Battle Royale:</strong> Best 40~45%, Normal 30~35%, Worst 20~25%</p>
+                </div>
+                
+                <div className="mt-2 p-2 bg-white/50 rounded">
+                  <p className="font-semibold text-amber-800">⚙️ 블렌딩 적용:</p>
+                  <p>• 내부 표본 커브와 시장 벤치마크 커브를 Time-Decay 방식으로 블렌딩</p>
+                  <p>• 초반(D1~D30): 내부 데이터 비중↑ / 후반(D90+): 벤치마크 비중↑</p>
+                </div>
+              </div>
+            </GuideBox>
             <div className="p-3 bg-gray-50 rounded-lg border"><p className="text-sm text-gray-600"><strong>적용된 표본 게임:</strong> {selectedSampleGames.length > 0 ? selectedSampleGames.join(', ') : '(2. 표본 게임 선택에서 선택해주세요)'}</p></div>
             <div>
               <h4 className="font-medium text-gray-700 mb-2">예상 D+1 Retention 입력 (%)</h4>
@@ -700,21 +754,236 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
         </button>
         {activeSection === 'mkt-calc' && (
           <div className="p-4 space-y-4">
-            <GuideBox title="마케팅 & UA 설정 가이드">
-              <ul className="list-disc list-inside space-y-1 text-xs">
-                <li><strong>런칭 MKT 예산:</strong> 런칭 시 집행할 마케팅 예산 (LTV/ROAS 계산에 사용)</li>
-                <li><strong>CPI:</strong> 1건당 설치 비용 (한국 모바일 RPG 평균 2,500~3,500원)</li>
-                <li><strong>UAC:</strong> 유저 1명 획득 비용 (CPI보다 높음, 전환율 고려)</li>
-                <li><strong>Sustaining MKT:</strong> 런칭 후 지속 마케팅 비용 (매출의 5~10%)</li>
-                <li><strong>총 NRU 자동 계산:</strong> MKT 예산 ÷ CPI × Organic 배수 × NVR → 30일간 분산 배분</li>
-              </ul>
+            <GuideBox title="마케팅 & UA 설정 가이드 (V8.5+)">
+              <div className="space-y-2 text-xs">
+                <p><strong>🎯 핵심 개념:</strong> 마케팅 예산을 UA(직접 유입)와 Brand(인지도)로 분리하여 현실적인 ROAS를 계산합니다.</p>
+                
+                <div className="mt-2 p-2 bg-white/50 rounded">
+                  <p className="font-semibold text-amber-800">📊 NRU 계산 공식:</p>
+                  <p className="font-mono text-[10px] mt-1">Paid NRU = UA Budget ÷ Effective CPA</p>
+                  <p className="font-mono text-[10px]">Organic NRU = Paid NRU × Organic Ratio × Organic Boost</p>
+                  <p className="font-mono text-[10px]">Total NRU = Paid NRU + Organic NRU</p>
+                </div>
+                
+                <div className="mt-2 p-2 bg-white/50 rounded">
+                  <p className="font-semibold text-amber-800">💰 ROAS 이원화:</p>
+                  <p>• <strong>Paid ROAS</strong> = 총매출 ÷ UA 예산 (마케터용 KPI)</p>
+                  <p>• <strong>Blended ROAS</strong> = 총매출 ÷ 전체 MKT 예산 (경영진용 KPI)</p>
+                  <p className="text-[10px] text-gray-600 mt-1">* PC/Console은 Attribution이 불가하므로 Blended ROAS가 더 중요!</p>
+                </div>
+                
+                <div className="mt-2 p-2 bg-white/50 rounded">
+                  <p className="font-semibold text-amber-800">📈 Organic Boost 공식:</p>
+                  <p className="font-mono text-[10px]">Boost = 1 + ln(1 + Brand/UA) × 0.7</p>
+                  <p className="mt-1">• Brand=UA의 50% → 1.28배 | 100% → 1.49배 | 200% → 1.77배</p>
+                </div>
+              </div>
             </GuideBox>
 
             <div className="grid grid-cols-2 gap-4">
               {/* 왼쪽: MKT 예산 & 비용 설정 */}
               <div className="space-y-4">
-                <div className="border border-gray-300 rounded-lg overflow-hidden">
-                  <div className="bg-orange-100 px-3 py-2 border-b font-medium text-sm text-orange-800">MKT 예산</div>
+                {/* V8.5: UA/Brand 분리 */}
+                <div className="border border-orange-300 rounded-lg overflow-hidden">
+                  <div className="bg-orange-100 px-3 py-2 border-b font-medium text-sm text-orange-800 flex items-center gap-2">
+                    <span>🎯 V8.5 마케팅 예산 (UA/Brand 분리)</span>
+                    <span className="text-xs bg-orange-200 text-orange-700 px-2 py-0.5 rounded-full">NEW</span>
+                  </div>
+                  <table className="w-full text-sm table-fixed">
+                    <tbody>
+                      <tr>
+                        <td className="px-3 py-2 border-b bg-green-50 w-2/5">
+                          <div className="flex items-center gap-1">
+                            <span className="text-green-700">UA 예산 (Performance)</span>
+                            <span className="text-xs text-green-500">직접모객</span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 border-b bg-green-50">
+                          <div className="flex items-center">
+                            <input 
+                              type="text" 
+                              value={(input.nru.ua_budget || 0).toLocaleString()} 
+                              onChange={(e) => {
+                                const rawValue = e.target.value.replace(/,/g, '');
+                                setInput(prev => ({ ...prev, nru: { ...prev.nru, ua_budget: parseInt(rawValue) || 0 } }));
+                              }}
+                              className="flex-1 bg-transparent border-none p-0 text-right min-w-0 font-semibold text-green-700" 
+                            />
+                            <span className="ml-1 flex-shrink-0">원</span>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="px-3 py-2 border-b bg-purple-50 w-2/5">
+                          <div className="flex items-center gap-1">
+                            <span className="text-purple-700">Brand 예산</span>
+                            <span className="text-xs text-purple-500">Organic↑</span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 border-b bg-purple-50">
+                          <div className="flex items-center">
+                            <input 
+                              type="text" 
+                              value={(input.nru.brand_budget || 0).toLocaleString()} 
+                              onChange={(e) => {
+                                const rawValue = e.target.value.replace(/,/g, '');
+                                setInput(prev => ({ ...prev, nru: { ...prev.nru, brand_budget: parseInt(rawValue) || 0 } }));
+                              }}
+                              className="flex-1 bg-transparent border-none p-0 text-right min-w-0 font-semibold text-purple-700" 
+                            />
+                            <span className="ml-1 flex-shrink-0">원</span>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="px-3 py-2 border-b bg-gray-50">Sustaining (월)</td>
+                        <td className="px-3 py-2 border-b bg-yellow-50">
+                          <div className="flex items-center">
+                            <input 
+                              type="text" 
+                              value={(input.basic_settings?.sustaining_mkt_budget_monthly || 0).toLocaleString()} 
+                              onChange={(e) => {
+                                const rawValue = e.target.value.replace(/,/g, '');
+                                setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, sustaining_mkt_budget_monthly: parseInt(rawValue) || 0 } }));
+                              }}
+                              className="flex-1 bg-transparent border-none p-0 text-right min-w-0" 
+                            />
+                            <span className="ml-1 flex-shrink-0">원</span>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr className="bg-orange-50">
+                        <td className="px-3 py-2 font-medium text-orange-800">총 MKT 예산</td>
+                        <td className="px-3 py-2 text-right font-bold text-orange-700">
+                          {((input.nru.ua_budget || 0) + (input.nru.brand_budget || 0) + ((input.basic_settings?.sustaining_mkt_budget_monthly || 0) * 12)).toLocaleString()}원
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                
+                {/* Organic Boost 표시 */}
+                {(input.nru.ua_budget || 0) > 0 && (
+                  <div className="p-3 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border border-purple-200">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-purple-700">📈 Organic Boost Factor:</span>
+                      <span className="font-bold text-purple-800 text-lg">
+                        {(1 + Math.log(1 + ((input.nru.brand_budget || 0) / (input.nru.ua_budget || 1))) * 0.7).toFixed(2)}x
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Brand 예산이 클수록 자연 유입이 증폭됩니다</p>
+                  </div>
+                )}
+
+                {/* V8.5+ Pre-Launch & Advanced Settings */}
+                <div className="border border-indigo-300 rounded-lg overflow-hidden">
+                  <div className="bg-indigo-100 px-3 py-2 border-b font-medium text-sm text-indigo-800 flex items-center gap-2">
+                    <span>🚀 Pre-Launch & 고급 설정</span>
+                    <span className="text-xs bg-indigo-200 text-indigo-700 px-2 py-0.5 rounded-full">V8.5+</span>
+                  </div>
+                  {/* Pre-Launch 가이드 */}
+                  <div className="p-2 bg-indigo-50/50 border-b border-indigo-200">
+                    <div className="text-xs space-y-1">
+                      <p className="font-semibold text-indigo-800">💡 저수지(Reservoir) 모델:</p>
+                      <p className="text-indigo-700">사전 마케팅 → 위시리스트 축적 → D1에 80% 폭발 유입</p>
+                      <div className="mt-1 p-1.5 bg-white/70 rounded text-[10px]">
+                        <p><strong>📉 CPA 포화:</strong> 예산 5억당 CPA +5% 상승 (Effective CPA = Target × (1 + Budget/5억 × 0.05))</p>
+                        <p><strong>⏳ 브랜딩 지연:</strong> Bell Curve로 D15에 피크, D1~D60에 걸쳐 효과 분포</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-3 space-y-3">
+                    {/* 사전 마케팅 비중 */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          📋 사전 마케팅 비중
+                          <span className="text-gray-400 ml-1">(위시리스트/사전예약)</span>
+                        </label>
+                        <div className="flex items-center border border-gray-300 rounded px-2 py-1 bg-yellow-50">
+                          <input 
+                            type="number" 
+                            step="5" 
+                            min="0"
+                            max="100"
+                            value={Math.round((input.nru.pre_marketing_ratio || 0) * 100)} 
+                            onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, pre_marketing_ratio: (parseFloat(e.target.value) || 0) / 100 } }))} 
+                            className="flex-1 bg-transparent border-none p-0 text-right min-w-0" 
+                          />
+                          <span className="ml-1 text-sm">%</span>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-1">PC/대작: 30~50%, 모바일: 10~20%</p>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          🎯 위시리스트 전환율
+                          <span className="text-gray-400 ml-1">(Conversion)</span>
+                        </label>
+                        <div className="flex items-center border border-gray-300 rounded px-2 py-1 bg-yellow-50">
+                          <input 
+                            type="number" 
+                            step="1" 
+                            min="1"
+                            max="50"
+                            value={Math.round((input.nru.wishlist_conversion_rate || 0.15) * 100)} 
+                            onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, wishlist_conversion_rate: (parseFloat(e.target.value) || 0) / 100 } }))} 
+                            className="flex-1 bg-transparent border-none p-0 text-right min-w-0" 
+                          />
+                          <span className="ml-1 text-sm">%</span>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-1">Steam: 10~20%, Mobile: 15~25%</p>
+                      </div>
+                    </div>
+                    
+                    {/* 고급 토글 */}
+                    <div className="flex items-center gap-4 pt-2 border-t border-gray-200">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          checked={input.nru.cpa_saturation_enabled !== false}
+                          onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, cpa_saturation_enabled: e.target.checked } }))} 
+                          className="w-4 h-4 text-indigo-600"
+                        />
+                        <span className="text-xs text-gray-600">📉 CPA 포화 효과</span>
+                        <span className="text-xs text-gray-400">(예산↑ → CPA↑)</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          checked={input.nru.brand_time_lag_enabled !== false}
+                          onChange={(e) => setInput(prev => ({ ...prev, nru: { ...prev.nru, brand_time_lag_enabled: e.target.checked } }))} 
+                          className="w-4 h-4 text-indigo-600"
+                        />
+                        <span className="text-xs text-gray-600">⏳ 브랜딩 지연 효과</span>
+                        <span className="text-xs text-gray-400">(서서히 발현)</span>
+                      </label>
+                    </div>
+                    
+                    {/* D1 Burst 예상치 표시 */}
+                    {(input.nru.pre_marketing_ratio || 0) > 0 && (input.nru.ua_budget || 0) > 0 && (
+                      <div className="p-2 bg-indigo-50 rounded border border-indigo-200">
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-indigo-700">💥 예상 D1 폭발 유입:</span>
+                          <span className="font-bold text-indigo-800">
+                            {Math.round(
+                              ((input.nru.ua_budget || 0) * (input.nru.pre_marketing_ratio || 0) / (input.nru.target_cpa || 2000)) 
+                              / (input.nru.wishlist_conversion_rate || 0.15) 
+                              * (input.nru.wishlist_conversion_rate || 0.15) 
+                              * 0.8
+                            ).toLocaleString()}명
+                          </span>
+                        </div>
+                        <p className="text-xs text-indigo-500 mt-1">사전예약자의 80%가 D1에 집중 유입</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 기존 런칭 MKT (레거시 호환) */}
+                <div className="border border-gray-300 rounded-lg overflow-hidden opacity-60">
+                  <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm text-gray-500">
+                    📦 레거시 설정 (UA/Brand 미분리 시 사용)
+                  </div>
                   <table className="w-full text-sm table-fixed">
                     <tbody>
                       <tr>
@@ -735,7 +1004,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                         </td>
                       </tr>
                       <tr>
-                        <td className="px-3 py-2 bg-gray-50">Sustaining MKT</td>
+                        <td className="px-3 py-2 bg-gray-50">Sustaining %</td>
                         <td className="px-3 py-2 bg-yellow-50">
                           <div className="flex items-center">
                             <input 
@@ -914,12 +1183,23 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
         </button>
         {activeSection === 'nru' && (
           <div className="p-4 space-y-4">
-            <GuideBox title="NRU 입력 가이드">
-              <ul className="list-disc list-inside space-y-1 text-xs">
-                <li><strong>총 NRU:</strong> 런칭 기간(30일) 동안의 총 예상 신규 유저 수</li>
-                <li><strong>V8.3 정규화:</strong> 입력된 총량이 30일간 분산 배분됩니다 (D1 최고점, Power Law 감소)</li>
-                <li><strong>자동 계산:</strong> "3. 마케팅 & UA 설정"에서 MKT 예산 기반 자동 계산 가능</li>
-              </ul>
+            <GuideBox title="NRU 설정 가이드">
+              <div className="space-y-2 text-xs">
+                <p><strong>🎯 작동 원리:</strong> 입력한 총 NRU가 30일 런칭 기간에 분산 배분됩니다 (D1 최고점 → Power Law 감소).</p>
+                
+                <div className="mt-2 p-2 bg-white/50 rounded">
+                  <p className="font-semibold text-amber-800">📊 NRU 분배 공식 (Area Normalization):</p>
+                  <p className="font-mono text-[10px] mt-1">Daily NRU = (Total NRU ÷ Pattern Area) × (1 / day^0.8)</p>
+                  <p className="mt-1">• D1: 최고점 | D7: D1의 ~30% | D30: D1의 ~10%</p>
+                </div>
+                
+                <div className="mt-2 p-2 bg-white/50 rounded">
+                  <p className="font-semibold text-amber-800">💡 V8.5 모드 vs 레거시 모드:</p>
+                  <p>• <strong>V8.5 모드 (권장):</strong> "3. 마케팅 설정"에서 UA/Brand 예산 입력 → 자동 계산</p>
+                  <p>• <strong>레거시 모드:</strong> 아래에서 총 NRU 직접 입력</p>
+                  <p className="text-[10px] text-gray-600 mt-1">* UA 예산이 설정되면 V8.5 모드가 우선 적용됩니다</p>
+                </div>
+              </div>
             </GuideBox>
             <div className="p-3 bg-gray-50 rounded-lg border"><p className="text-sm text-gray-600"><strong>적용된 표본 게임:</strong> {selectedSampleGames.join(', ') || '(선택 필요)'}</p></div>
             <div>
@@ -952,12 +1232,31 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
         </button>
         {activeSection === 'revenue' && (
           <div className="p-4 space-y-4">
-            <GuideBox title="Revenue 입력 가이드">
-              <ul className="list-disc list-inside space-y-1 text-xs">
-                <li><strong>Revenue 계산식:</strong> DAU × P.Rate(결제율) × ARPPU(결제자 평균 결제금액)</li>
-                <li><strong>P.Rate 보정:</strong> Best/Worst 시나리오별 결제율 조정 (예: Best +5%, Worst -5%)</li>
-                <li><strong>ARPPU 보정:</strong> Best/Worst 시나리오별 ARPPU 조정</li>
-              </ul>
+            <GuideBox title="Revenue 설정 가이드">
+              <div className="space-y-2 text-xs">
+                <p><strong>🎯 작동 원리:</strong> 매출 = DAU × P.Rate(결제율) × ARPPU(결제자 평균 결제금액) × 계절성</p>
+                
+                <div className="mt-2 p-2 bg-white/50 rounded">
+                  <p className="font-semibold text-amber-800">📊 매출 계산 공식:</p>
+                  <p className="font-mono text-[10px] mt-1">Daily Revenue = DAU × P.Rate × ARPPU × Seasonality Factor</p>
+                  <p className="mt-1">• P.Rate: 표본 게임 평균 + BM타입 보정 + 품질등급 보정</p>
+                  <p>• ARPPU: 표본 게임 평균 + BM타입 보정 + 품질등급 보정</p>
+                </div>
+                
+                <div className="mt-2 p-2 bg-white/50 rounded">
+                  <p className="font-semibold text-amber-800">💰 BM 타입별 기준값:</p>
+                  <p>• <strong>Hardcore:</strong> PR 2~3%, ARPPU $80+ (고래 의존형)</p>
+                  <p>• <strong>Midcore:</strong> PR 5%, ARPPU $40 (균형형)</p>
+                  <p>• <strong>Casual:</strong> PR 8~10%, ARPPU $20 (박리다매형)</p>
+                  <p>• <strong>Gacha:</strong> PR 7%, ARPPU $70 (확률형, 고변동)</p>
+                </div>
+                
+                <div className="mt-2 p-2 bg-white/50 rounded">
+                  <p className="font-semibold text-amber-800">⚙️ 시나리오 보정:</p>
+                  <p>• Best: PR/ARPPU를 Normal 대비 +N% 상향</p>
+                  <p>• Worst: PR/ARPPU를 Normal 대비 -N% 하향</p>
+                </div>
+              </div>
             </GuideBox>
             <div className="p-3 bg-gray-50 rounded-lg border"><p className="text-sm text-gray-600"><strong>적용된 표본 게임:</strong> {selectedSampleGames.join(', ') || '(선택 필요)'}</p></div>
             <div className="grid grid-cols-2 gap-6">
@@ -998,11 +1297,29 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
         </button>
         {activeSection === 'seasonality' && (
           <div className="p-4 space-y-4">
-            <GuideBox title="계절성 팩터 적용">
-              <div className="space-y-1 text-xs">
-                <p>실제 게임 지표는 요일/계절에 따라 변동합니다. 이 팩터를 적용하면 더 현실적인 프로젝션이 가능합니다.</p>
-                <p><strong>주말 효과:</strong> 금~일요일 DAU/매출 증가</p>
-                <p><strong>성수기:</strong> 여름방학(7-8월), 연말(12월), 설연휴(1월)</p>
+            <GuideBox title="계절성 팩터 가이드">
+              <div className="space-y-2 text-xs">
+                <p><strong>🎯 작동 원리:</strong> NRU와 매출에 요일/월별 가중치를 곱하여 현실적인 변동을 시뮬레이션합니다.</p>
+                
+                <div className="mt-2 p-2 bg-white/50 rounded">
+                  <p className="font-semibold text-amber-800">📊 계절성 공식:</p>
+                  <p className="font-mono text-[10px] mt-1">Adjusted Value = Base Value × Day Factor × Month Factor × Event Factor</p>
+                </div>
+                
+                <div className="mt-2 p-2 bg-white/50 rounded">
+                  <p className="font-semibold text-amber-800">📅 주요 시즌 효과:</p>
+                  <p>• <strong>주말 효과:</strong> 금(+5%), 토(+25%), 일(+15%) / 평일(-15%)</p>
+                  <p>• <strong>여름방학:</strong> 7~8월 +20% (학생 유저 증가)</p>
+                  <p>• <strong>연말/설연휴:</strong> 12월 +10%, 1월 +15%</p>
+                  <p>• <strong>비수기:</strong> 3~4월, 9~11월 -5% (신학기, 명절 피로)</p>
+                </div>
+                
+                <div className="mt-2 p-2 bg-white/50 rounded">
+                  <p className="font-semibold text-amber-800">🌏 지역별 차이:</p>
+                  <p>• <strong>한국:</strong> 설날(1~2월), 추석(9월), 가정의 달(5월) 효과</p>
+                  <p>• <strong>북미:</strong> 추수감사절(11월), 크리스마스(12월), 여름(7월) 효과</p>
+                  <p>• <strong>일본:</strong> 골든위크(5월), 오봉(8월), 연말(12월) 효과</p>
+                </div>
               </div>
             </GuideBox>
 

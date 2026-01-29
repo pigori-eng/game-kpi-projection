@@ -230,21 +230,45 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
                 <tbody>
                   <tr>
                     <td className="px-4 py-3 border border-gray-200">LTV (유저당 수익)</td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-green-50">{formatCurrency(ltvRoas.best.ltv)}</td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-blue-50">{formatCurrency(ltvRoas.normal.ltv)}</td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-red-50">{formatCurrency(ltvRoas.worst.ltv)}</td>
+                    <td className="px-4 py-3 border border-gray-200 text-right bg-green-50">{formatCurrency(summary.best.ltv || ltvRoas.best.ltv)}</td>
+                    <td className="px-4 py-3 border border-gray-200 text-right bg-blue-50">{formatCurrency(summary.normal.ltv || ltvRoas.normal.ltv)}</td>
+                    <td className="px-4 py-3 border border-gray-200 text-right bg-red-50">{formatCurrency(summary.worst.ltv || ltvRoas.worst.ltv)}</td>
                   </tr>
                   <tr>
-                    <td className="px-4 py-3 border border-gray-200">CAC (유저 획득 비용)</td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-green-50">{formatCurrency(ltvRoas.best.cac)}</td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-blue-50">{formatCurrency(ltvRoas.normal.cac)}</td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-red-50">{formatCurrency(ltvRoas.worst.cac)}</td>
+                    <td className="px-4 py-3 border border-gray-200">
+                      CAC (UA 기준)
+                      <span className="text-xs text-gray-400 ml-1">마케터용</span>
+                    </td>
+                    <td className="px-4 py-3 border border-gray-200 text-right bg-green-50">{formatCurrency(summary.best.cac_paid || ltvRoas.best.cac)}</td>
+                    <td className="px-4 py-3 border border-gray-200 text-right bg-blue-50">{formatCurrency(summary.normal.cac_paid || ltvRoas.normal.cac)}</td>
+                    <td className="px-4 py-3 border border-gray-200 text-right bg-red-50">{formatCurrency(summary.worst.cac_paid || ltvRoas.worst.cac)}</td>
                   </tr>
                   <tr>
-                    <td className="px-4 py-3 border border-gray-200 font-medium">ROAS (광고 회수율)</td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-green-50 font-bold text-green-700">{ltvRoas.best.roas.toLocaleString()}%</td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-blue-50 font-bold text-blue-700">{ltvRoas.normal.roas.toLocaleString()}%</td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-red-50 font-bold text-red-700">{ltvRoas.worst.roas.toLocaleString()}%</td>
+                    <td className="px-4 py-3 border border-gray-200">
+                      CAC (전체 MKT 기준)
+                      <span className="text-xs text-gray-400 ml-1">경영진용</span>
+                    </td>
+                    <td className="px-4 py-3 border border-gray-200 text-right bg-green-50">{formatCurrency(summary.best.cac_blended || 0)}</td>
+                    <td className="px-4 py-3 border border-gray-200 text-right bg-blue-50">{formatCurrency(summary.normal.cac_blended || 0)}</td>
+                    <td className="px-4 py-3 border border-gray-200 text-right bg-red-50">{formatCurrency(summary.worst.cac_blended || 0)}</td>
+                  </tr>
+                  <tr className="bg-green-50/30">
+                    <td className="px-4 py-3 border border-gray-200 font-medium">
+                      🎯 Paid ROAS (UA 효율)
+                      <span className="text-xs text-green-600 ml-1">마케터 KPI</span>
+                    </td>
+                    <td className="px-4 py-3 border border-gray-200 text-right bg-green-100 font-bold text-green-700">{(summary.best.paid_roas || ltvRoas.best.roas).toFixed(1)}%</td>
+                    <td className="px-4 py-3 border border-gray-200 text-right bg-blue-100 font-bold text-blue-700">{(summary.normal.paid_roas || ltvRoas.normal.roas).toFixed(1)}%</td>
+                    <td className="px-4 py-3 border border-gray-200 text-right bg-red-100 font-bold text-red-700">{(summary.worst.paid_roas || ltvRoas.worst.roas).toFixed(1)}%</td>
+                  </tr>
+                  <tr className="bg-purple-50/30">
+                    <td className="px-4 py-3 border border-gray-200 font-medium">
+                      📊 Blended ROAS (전체 효율)
+                      <span className="text-xs text-purple-600 ml-1">경영진 KPI</span>
+                    </td>
+                    <td className="px-4 py-3 border border-gray-200 text-right bg-green-50 font-bold text-green-700">{(summary.best.blended_roas || 0).toFixed(1)}%</td>
+                    <td className="px-4 py-3 border border-gray-200 text-right bg-blue-50 font-bold text-blue-700">{(summary.normal.blended_roas || 0).toFixed(1)}%</td>
+                    <td className="px-4 py-3 border border-gray-200 text-right bg-red-50 font-bold text-red-700">{(summary.worst.blended_roas || 0).toFixed(1)}%</td>
                   </tr>
                   <tr>
                     <td className="px-4 py-3 border border-gray-200">손익분기점 (BEP)</td>
@@ -254,6 +278,34 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
                   </tr>
                 </tbody>
               </table>
+              {/* V8.5 마케팅 분석 표시 */}
+              {results.v85_marketing && results.v85_marketing.total_marketing_budget > 0 && (
+                <div className="mt-4 p-4 bg-gradient-to-r from-orange-50 to-purple-50 rounded-lg border border-orange-200">
+                  <h4 className="font-semibold text-gray-700 mb-2">📊 V8.5 마케팅 예산 분석</h4>
+                  <div className="grid grid-cols-4 gap-3 text-sm">
+                    <div className="text-center p-2 bg-green-100 rounded">
+                      <div className="text-xs text-green-600">UA 예산</div>
+                      <div className="font-bold text-green-700">{formatCurrency(results.v85_marketing.ua_budget)}</div>
+                      <div className="text-xs text-green-500">{results.v85_marketing.budget_breakdown.ua_ratio}%</div>
+                    </div>
+                    <div className="text-center p-2 bg-purple-100 rounded">
+                      <div className="text-xs text-purple-600">Brand 예산</div>
+                      <div className="font-bold text-purple-700">{formatCurrency(results.v85_marketing.brand_budget)}</div>
+                      <div className="text-xs text-purple-500">{results.v85_marketing.budget_breakdown.brand_ratio}%</div>
+                    </div>
+                    <div className="text-center p-2 bg-blue-100 rounded">
+                      <div className="text-xs text-blue-600">연간 Sustaining</div>
+                      <div className="font-bold text-blue-700">{formatCurrency(results.v85_marketing.sustaining_budget_annual)}</div>
+                      <div className="text-xs text-blue-500">{results.v85_marketing.budget_breakdown.sustaining_ratio}%</div>
+                    </div>
+                    <div className="text-center p-2 bg-orange-100 rounded">
+                      <div className="text-xs text-orange-600">Organic Boost</div>
+                      <div className="font-bold text-orange-700">{results.v85_marketing.organic_boost_factor}x</div>
+                      <div className="text-xs text-orange-500">자연유입 증폭</div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </section>
@@ -316,7 +368,8 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
 
 const RetentionTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
   const [showTable, setShowTable] = useState(false);
-  const chartData = results.results.best.retention.curve.map((_, i) => ({ day: i + 1, best: results.results.best.retention.curve[i] * 100, normal: results.results.normal.retention.curve[i] * 100, worst: results.results.worst.retention.curve[i] * 100 }));
+  // D365 전체 데이터 사용
+  const chartData = results.results.best.full_data.retention.map((_, i) => ({ day: i + 1, best: results.results.best.full_data.retention[i] * 100, normal: results.results.normal.full_data.retention[i] * 100, worst: results.results.worst.full_data.retention[i] * 100 }));
   const tableData = results.results.best.full_data.retention.map((_, i) => ({ day: `D+${i + 1}`, best: (results.results.best.full_data.retention[i] * 100).toFixed(1), normal: (results.results.normal.full_data.retention[i] * 100).toFixed(1), worst: (results.results.worst.full_data.retention[i] * 100).toFixed(1) }));
   return (
     <div className="space-y-6">
@@ -339,7 +392,7 @@ const RetentionTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
         </table>
       </div>
       <div className="bg-white rounded-xl border p-6">
-        <h3 className="text-lg font-semibold mb-4">Retention Curve</h3>
+        <h3 className="text-lg font-semibold mb-4">Retention Curve (D1~D365)</h3>
         <div className="h-80">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="day" /><YAxis domain={[0, 60]} tickFormatter={(v) => `${v}%`} /><Tooltip formatter={(v: number) => `${v.toFixed(2)}%`} /><Legend />
@@ -360,7 +413,8 @@ const RetentionTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
 
 const NRUTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
   const [showTable, setShowTable] = useState(false);
-  const chartData = results.results.best.nru.series.map((_, i) => ({ day: i + 1, best: results.results.best.nru.series[i], normal: results.results.normal.nru.series[i], worst: results.results.worst.nru.series[i] }));
+  // D365 전체 데이터 사용
+  const chartData = results.results.best.full_data.nru.map((_, i) => ({ day: i + 1, best: results.results.best.full_data.nru[i], normal: results.results.normal.full_data.nru[i], worst: results.results.worst.full_data.nru[i] }));
   const tableData = results.results.best.full_data.nru.map((_, i) => ({ day: `D+${i + 1}`, best: results.results.best.full_data.nru[i], normal: results.results.normal.full_data.nru[i], worst: results.results.worst.full_data.nru[i] }));
   return (
     <div className="space-y-6">
@@ -370,7 +424,7 @@ const NRUTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
           <tbody>{(['best', 'normal', 'worst'] as const).map(s => <tr key={s} className={s === 'best' ? 'bg-green-50' : s === 'normal' ? 'bg-blue-50' : 'bg-red-50'}><td className="px-4 py-2 border-b font-medium">{s.charAt(0).toUpperCase() + s.slice(1)}</td><td className="px-4 py-2 border-b text-right">{formatNumber(results.results[s].nru.d1_nru)}</td><td className="px-4 py-2 border-b text-right font-bold">{formatNumber(results.results[s].nru.total)}</td></tr>)}</tbody>
         </table>
       </div>
-      <div className="bg-white rounded-xl border p-6"><h3 className="text-lg font-semibold mb-4">NRU 추이 (D1~D90)</h3><div className="h-80"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="day" /><YAxis tickFormatter={(v) => formatCompactKorean(v)} width={80} /><Tooltip formatter={(v: number) => [formatNumber(v), '']} /><Legend /><Area type="monotone" dataKey="best" stroke={COLORS.best} fill={COLORS.best} fillOpacity={0.2} name="Best" /><Area type="monotone" dataKey="normal" stroke={COLORS.normal} fill={COLORS.normal} fillOpacity={0.2} name="Normal" /><Area type="monotone" dataKey="worst" stroke={COLORS.worst} fill={COLORS.worst} fillOpacity={0.2} name="Worst" /></AreaChart></ResponsiveContainer></div></div>
+      <div className="bg-white rounded-xl border p-6"><h3 className="text-lg font-semibold mb-4">NRU 추이 (D1~D365)</h3><div className="h-80"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="day" /><YAxis tickFormatter={(v) => formatCompactKorean(v)} width={80} /><Tooltip formatter={(v: number) => [formatNumber(v), '']} /><Legend /><Area type="monotone" dataKey="best" stroke={COLORS.best} fill={COLORS.best} fillOpacity={0.2} name="Best" /><Area type="monotone" dataKey="normal" stroke={COLORS.normal} fill={COLORS.normal} fillOpacity={0.2} name="Normal" /><Area type="monotone" dataKey="worst" stroke={COLORS.worst} fill={COLORS.worst} fillOpacity={0.2} name="Worst" /></AreaChart></ResponsiveContainer></div></div>
       <div className="border rounded-lg overflow-hidden"><div className="bg-gray-100 px-4 py-2 flex justify-between"><span className="font-semibold">상세 테이블</span><div className="flex gap-2"><button onClick={() => setShowTable(!showTable)} className="text-sm text-blue-600">{showTable ? '접기' : '펼치기'}</button><button onClick={() => downloadCSV(tableData, 'nru.csv', ['day', 'best', 'normal', 'worst'])} className="flex items-center gap-1 text-sm bg-green-600 text-white px-3 py-1 rounded"><Download className="w-4 h-4" />CSV</button></div></div>{showTable && <div className="max-h-96 overflow-y-auto"><table className="w-full text-xs"><thead className="bg-gray-50 sticky top-0"><tr><th className="px-3 py-2 text-left border-b">Day</th><th className="px-3 py-2 text-right border-b bg-green-50">Best</th><th className="px-3 py-2 text-right border-b bg-blue-50">Normal</th><th className="px-3 py-2 text-right border-b bg-red-50">Worst</th></tr></thead><tbody>{tableData.slice(0, 365).map((r, i) => <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}><td className="px-3 py-1 border-b">{r.day}</td><td className="px-3 py-1 border-b text-right">{formatNumber(r.best)}</td><td className="px-3 py-1 border-b text-right">{formatNumber(r.normal)}</td><td className="px-3 py-1 border-b text-right">{formatNumber(r.worst)}</td></tr>)}</tbody></table></div>}</div>
     </div>
   );
@@ -378,7 +432,8 @@ const NRUTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
 
 const RevenueTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
   const [showTable, setShowTable] = useState(false);
-  const chartData = results.results.best.revenue.daily_revenue.map((_, i) => ({ day: i + 1, best: results.results.best.revenue.daily_revenue[i], normal: results.results.normal.revenue.daily_revenue[i], worst: results.results.worst.revenue.daily_revenue[i] }));
+  // D365 전체 데이터 사용
+  const chartData = results.results.best.full_data.revenue.map((_, i) => ({ day: i + 1, best: results.results.best.full_data.revenue[i], normal: results.results.normal.full_data.revenue[i], worst: results.results.worst.full_data.revenue[i] }));
   const tableData = results.results.best.full_data.revenue.map((_, i) => ({ day: `D+${i + 1}`, best: Math.round(results.results.best.full_data.revenue[i]), normal: Math.round(results.results.normal.full_data.revenue[i]), worst: Math.round(results.results.worst.full_data.revenue[i]) }));
   return (
     <div className="space-y-6">
@@ -388,7 +443,7 @@ const RevenueTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
           <tbody>{(['best', 'normal', 'worst'] as const).map(s => <tr key={s} className={s === 'best' ? 'bg-green-50' : s === 'normal' ? 'bg-blue-50' : 'bg-red-50'}><td className="px-4 py-2 border-b font-medium">{s.charAt(0).toUpperCase() + s.slice(1)}</td><td className="px-4 py-2 border-b text-right font-bold">{formatCurrency(results.results[s].revenue.total_gross)}</td><td className="px-4 py-2 border-b text-right">{formatCurrency(results.results[s].revenue.average_daily)}</td></tr>)}</tbody>
         </table>
       </div>
-      <div className="bg-white rounded-xl border p-6"><h3 className="text-lg font-semibold mb-4">일별 매출 (D1~D90)</h3><div className="h-80"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="day" /><YAxis tickFormatter={(v) => formatCompactKorean(v)} width={80} /><Tooltip formatter={(v: number) => [formatCurrency(v), '']} /><Legend /><Area type="monotone" dataKey="best" stroke={COLORS.best} fill={COLORS.best} fillOpacity={0.2} name="Best" /><Area type="monotone" dataKey="normal" stroke={COLORS.normal} fill={COLORS.normal} fillOpacity={0.2} name="Normal" /><Area type="monotone" dataKey="worst" stroke={COLORS.worst} fill={COLORS.worst} fillOpacity={0.2} name="Worst" /></AreaChart></ResponsiveContainer></div></div>
+      <div className="bg-white rounded-xl border p-6"><h3 className="text-lg font-semibold mb-4">일별 매출 (D1~D365)</h3><div className="h-80"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="day" /><YAxis tickFormatter={(v) => formatCompactKorean(v)} width={80} /><Tooltip formatter={(v: number) => [formatCurrency(v), '']} /><Legend /><Area type="monotone" dataKey="best" stroke={COLORS.best} fill={COLORS.best} fillOpacity={0.2} name="Best" /><Area type="monotone" dataKey="normal" stroke={COLORS.normal} fill={COLORS.normal} fillOpacity={0.2} name="Normal" /><Area type="monotone" dataKey="worst" stroke={COLORS.worst} fill={COLORS.worst} fillOpacity={0.2} name="Worst" /></AreaChart></ResponsiveContainer></div></div>
       <div className="border rounded-lg overflow-hidden"><div className="bg-gray-100 px-4 py-2 flex justify-between"><span className="font-semibold">상세 테이블</span><div className="flex gap-2"><button onClick={() => setShowTable(!showTable)} className="text-sm text-blue-600">{showTable ? '접기' : '펼치기'}</button><button onClick={() => downloadCSV(tableData, 'revenue.csv', ['day', 'best', 'normal', 'worst'])} className="flex items-center gap-1 text-sm bg-green-600 text-white px-3 py-1 rounded"><Download className="w-4 h-4" />CSV</button></div></div>{showTable && <div className="max-h-96 overflow-y-auto"><table className="w-full text-xs"><thead className="bg-gray-50 sticky top-0"><tr><th className="px-3 py-2 text-left border-b">Day</th><th className="px-3 py-2 text-right border-b bg-green-50">Best</th><th className="px-3 py-2 text-right border-b bg-blue-50">Normal</th><th className="px-3 py-2 text-right border-b bg-red-50">Worst</th></tr></thead><tbody>{tableData.slice(0, 365).map((r, i) => <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}><td className="px-3 py-1 border-b">{r.day}</td><td className="px-3 py-1 border-b text-right">{formatCurrency(r.best)}</td><td className="px-3 py-1 border-b text-right">{formatCurrency(r.normal)}</td><td className="px-3 py-1 border-b text-right">{formatCurrency(r.worst)}</td></tr>)}</tbody></table></div>}</div>
     </div>
   );
@@ -396,7 +451,8 @@ const RevenueTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
 
 const TotalTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
   const [showTable, setShowTable] = useState(false);
-  const chartData = results.results.normal.full_data.dau.slice(0, 90).map((_, i) => ({ day: i + 1, dau_normal: results.results.normal.full_data.dau[i], revenue_best: results.results.best.full_data.revenue[i], revenue_normal: results.results.normal.full_data.revenue[i], revenue_worst: results.results.worst.full_data.revenue[i] }));
+  // D365 전체 데이터 사용
+  const chartData = results.results.normal.full_data.dau.map((_, i) => ({ day: i + 1, dau_normal: results.results.normal.full_data.dau[i], revenue_best: results.results.best.full_data.revenue[i], revenue_normal: results.results.normal.full_data.revenue[i], revenue_worst: results.results.worst.full_data.revenue[i] }));
   const tableData = results.results.normal.full_data.dau.map((_, i) => ({ day: `D+${i + 1}`, dau_best: results.results.best.full_data.dau[i], dau_normal: results.results.normal.full_data.dau[i], dau_worst: results.results.worst.full_data.dau[i], revenue_best: Math.round(results.results.best.full_data.revenue[i]), revenue_normal: Math.round(results.results.normal.full_data.revenue[i]), revenue_worst: Math.round(results.results.worst.full_data.revenue[i]) }));
   return (
     <div className="space-y-6">
@@ -411,7 +467,7 @@ const TotalTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
           </tbody>
         </table>
       </div>
-      <div className="bg-white rounded-xl border p-6"><h3 className="text-lg font-semibold mb-4">통합 KPI 추이</h3><div className="h-96"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="day" /><YAxis yAxisId="left" tickFormatter={(v) => formatCompactKorean(v)} width={80} /><YAxis yAxisId="right" orientation="right" tickFormatter={(v) => formatCompactKorean(v)} width={80} /><Tooltip /><Legend /><Bar yAxisId="left" dataKey="dau_normal" fill={COLORS.normal} name="DAU" opacity={0.7} /><Line yAxisId="right" type="monotone" dataKey="revenue_best" stroke={COLORS.best} name="Revenue (Best)" dot={false} /><Line yAxisId="right" type="monotone" dataKey="revenue_normal" stroke={COLORS.normal} name="Revenue (Normal)" dot={false} /><Line yAxisId="right" type="monotone" dataKey="revenue_worst" stroke={COLORS.worst} name="Revenue (Worst)" dot={false} /></ComposedChart></ResponsiveContainer></div></div>
+      <div className="bg-white rounded-xl border p-6"><h3 className="text-lg font-semibold mb-4">통합 KPI 추이 (D1~D365)</h3><div className="h-96"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="day" /><YAxis yAxisId="left" tickFormatter={(v) => formatCompactKorean(v)} width={80} /><YAxis yAxisId="right" orientation="right" tickFormatter={(v) => formatCompactKorean(v)} width={80} /><Tooltip /><Legend /><Bar yAxisId="left" dataKey="dau_normal" fill={COLORS.normal} name="DAU" opacity={0.7} /><Line yAxisId="right" type="monotone" dataKey="revenue_best" stroke={COLORS.best} name="Revenue (Best)" dot={false} /><Line yAxisId="right" type="monotone" dataKey="revenue_normal" stroke={COLORS.normal} name="Revenue (Normal)" dot={false} /><Line yAxisId="right" type="monotone" dataKey="revenue_worst" stroke={COLORS.worst} name="Revenue (Worst)" dot={false} /></ComposedChart></ResponsiveContainer></div></div>
       <div className="border rounded-lg overflow-hidden"><div className="bg-gray-100 px-4 py-2 flex justify-between"><span className="font-semibold">상세 테이블</span><div className="flex gap-2"><button onClick={() => setShowTable(!showTable)} className="text-sm text-blue-600">{showTable ? '접기' : '펼치기'}</button><button onClick={() => downloadCSV(tableData, 'total_kpi.csv', ['day', 'dau_best', 'dau_normal', 'dau_worst', 'revenue_best', 'revenue_normal', 'revenue_worst'])} className="flex items-center gap-1 text-sm bg-green-600 text-white px-3 py-1 rounded"><Download className="w-4 h-4" />CSV</button></div></div>{showTable && <div className="max-h-96 overflow-x-auto overflow-y-auto"><table className="w-full text-xs whitespace-nowrap"><thead className="bg-gray-50 sticky top-0"><tr><th className="px-2 py-2 text-left border-b">Day</th><th className="px-2 py-2 text-right border-b text-green-600">DAU Best</th><th className="px-2 py-2 text-right border-b text-blue-600">Normal</th><th className="px-2 py-2 text-right border-b text-red-600">Worst</th><th className="px-2 py-2 text-right border-b text-green-600">Rev Best</th><th className="px-2 py-2 text-right border-b text-blue-600">Normal</th><th className="px-2 py-2 text-right border-b text-red-600">Worst</th></tr></thead><tbody>{tableData.slice(0, 365).map((r, i) => <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}><td className="px-2 py-1 border-b">{r.day}</td><td className="px-2 py-1 border-b text-right">{formatNumber(r.dau_best)}</td><td className="px-2 py-1 border-b text-right">{formatNumber(r.dau_normal)}</td><td className="px-2 py-1 border-b text-right">{formatNumber(r.dau_worst)}</td><td className="px-2 py-1 border-b text-right">{formatCurrency(r.revenue_best)}</td><td className="px-2 py-1 border-b text-right">{formatCurrency(r.revenue_normal)}</td><td className="px-2 py-1 border-b text-right">{formatCurrency(r.revenue_worst)}</td></tr>)}</tbody></table></div>}</div>
     </div>
   );
@@ -419,7 +475,8 @@ const TotalTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
 
 const DAUTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
   const [showTable, setShowTable] = useState(false);
-  const chartData = results.results.best.dau.series.map((_, i) => ({ day: i + 1, best: results.results.best.dau.series[i], normal: results.results.normal.dau.series[i], worst: results.results.worst.dau.series[i] }));
+  // D365 전체 데이터 사용
+  const chartData = results.results.best.full_data.dau.map((_, i) => ({ day: i + 1, best: results.results.best.full_data.dau[i], normal: results.results.normal.full_data.dau[i], worst: results.results.worst.full_data.dau[i] }));
   const tableData = results.results.best.full_data.dau.map((_, i) => ({ day: `D+${i + 1}`, best: results.results.best.full_data.dau[i], normal: results.results.normal.full_data.dau[i], worst: results.results.worst.full_data.dau[i] }));
   return (
     <div className="space-y-6">
@@ -444,7 +501,7 @@ const DAUTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
           ))}
         </div>
       </div>
-      <div className="bg-white rounded-xl border p-6"><h3 className="text-lg font-semibold mb-4">DAU 추이</h3><div className="h-80"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="day" /><YAxis tickFormatter={(v) => formatCompactKorean(v)} width={80} /><Tooltip formatter={(v: number) => formatNumber(v)} /><Legend /><Area type="monotone" dataKey="best" stroke={COLORS.best} fill={COLORS.best} fillOpacity={0.2} name="Best" /><Area type="monotone" dataKey="normal" stroke={COLORS.normal} fill={COLORS.normal} fillOpacity={0.2} name="Normal" /><Area type="monotone" dataKey="worst" stroke={COLORS.worst} fill={COLORS.worst} fillOpacity={0.2} name="Worst" /></AreaChart></ResponsiveContainer></div></div>
+      <div className="bg-white rounded-xl border p-6"><h3 className="text-lg font-semibold mb-4">DAU 추이 (D1~D365)</h3><div className="h-80"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="day" /><YAxis tickFormatter={(v) => formatCompactKorean(v)} width={80} /><Tooltip formatter={(v: number) => formatNumber(v)} /><Legend /><Area type="monotone" dataKey="best" stroke={COLORS.best} fill={COLORS.best} fillOpacity={0.2} name="Best" /><Area type="monotone" dataKey="normal" stroke={COLORS.normal} fill={COLORS.normal} fillOpacity={0.2} name="Normal" /><Area type="monotone" dataKey="worst" stroke={COLORS.worst} fill={COLORS.worst} fillOpacity={0.2} name="Worst" /></AreaChart></ResponsiveContainer></div></div>
       <div className="border rounded-lg overflow-hidden"><div className="bg-gray-100 px-4 py-2 flex justify-between"><span className="font-semibold">상세 테이블</span><div className="flex gap-2"><button onClick={() => setShowTable(!showTable)} className="text-sm text-blue-600">{showTable ? '접기' : '펼치기'}</button><button onClick={() => downloadCSV(tableData, 'dau.csv', ['day', 'best', 'normal', 'worst'])} className="flex items-center gap-1 text-sm bg-green-600 text-white px-3 py-1 rounded"><Download className="w-4 h-4" />CSV</button></div></div>{showTable && <div className="max-h-96 overflow-y-auto"><table className="w-full text-xs"><thead className="bg-gray-50 sticky top-0"><tr><th className="px-3 py-2 text-left border-b">Day</th><th className="px-3 py-2 text-right border-b bg-green-50">Best</th><th className="px-3 py-2 text-right border-b bg-blue-50">Normal</th><th className="px-3 py-2 text-right border-b bg-red-50">Worst</th></tr></thead><tbody>{tableData.slice(0, 365).map((r, i) => <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}><td className="px-3 py-1 border-b">{r.day}</td><td className="px-3 py-1 border-b text-right">{formatNumber(r.best)}</td><td className="px-3 py-1 border-b text-right">{formatNumber(r.normal)}</td><td className="px-3 py-1 border-b text-right">{formatNumber(r.worst)}</td></tr>)}</tbody></table></div>}</div>
     </div>
   );

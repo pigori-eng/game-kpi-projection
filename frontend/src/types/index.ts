@@ -38,6 +38,8 @@ export interface BasicSettings {
   uac?: number;
   // V8: 개발비
   dev_cost?: number;
+  // V8.5: Sustaining MKT 월간 예산
+  sustaining_mkt_budget_monthly?: number;
   // HR Cost (직접/간접 분리)
   hr_direct_headcount?: number;
   hr_indirect_headcount?: number;
@@ -128,6 +130,16 @@ export interface NRUInput {
     best_vs_normal: number;
     worst_vs_normal: number;
   };
+  // V8.5: UA/Brand 예산 분리
+  ua_budget?: number;           // 퍼포먼스 마케팅 예산 (직접 유입)
+  brand_budget?: number;        // 브랜딩 예산 (Organic Boost)
+  target_cpa?: number;          // CPI/CPA 단가
+  base_organic_ratio?: number;  // 기본 자연 유입 비율
+  // V8.5+: Pre-Launch & Advanced Settings
+  pre_marketing_ratio?: number;      // 사전 마케팅 비중 (0~1)
+  wishlist_conversion_rate?: number; // 위시리스트/사전예약 전환율
+  cpa_saturation_enabled?: boolean;  // CPA 상승 계수 활성화
+  brand_time_lag_enabled?: boolean;  // 브랜딩 지연 효과 활성화
 }
 
 export interface RevenueInput {
@@ -218,10 +230,15 @@ export interface SummaryResult {
   peak_dau: number;
   average_dau: number;
   average_daily_revenue: number;
-  // Phase 2: LTV & ROAS
-  ltv?: number;           // Life Time Value (유저당 평균 수익)
-  cac?: number;           // Customer Acquisition Cost
-  roas?: number;          // Return On Ad Spend (%)
+  // V8.5: ROAS 분리
+  paid_roas?: number;      // UA 효율 (마케터용)
+  blended_roas?: number;   // 전체 효율 (경영진용)
+  ltv?: number;            // Life Time Value (유저당 평균 수익)
+  cac_paid?: number;       // UA 기준 CAC
+  cac_blended?: number;    // 전체 기준 CAC
+  // Legacy
+  cac?: number;            // 레거시 호환
+  roas?: number;           // 레거시 호환
   break_even_day?: number; // 손익분기점 도달 일수
 }
 
@@ -258,6 +275,37 @@ export interface ProjectionResult {
     bm_modifier: { pr_mod: number; arppu_mod: number };
     regions: string[];
     seasonality_applied: boolean;
+  };
+  v85_marketing?: {  // V8.5
+    ua_budget: number;
+    brand_budget: number;
+    sustaining_budget_annual: number;
+    total_marketing_budget: number;
+    organic_boost_factor: number;
+    budget_breakdown: {
+      ua_ratio: number;
+      brand_ratio: number;
+      sustaining_ratio: number;
+    };
+    // V8.5+ 신규
+    pre_launch_settings?: {
+      pre_marketing_ratio: number;
+      wishlist_conversion_rate: number;
+      cpa_saturation_enabled: boolean;
+      brand_time_lag_enabled: boolean;
+    };
+    nru_analysis?: {
+      paid_nru: number;
+      organic_nru: number;
+      organic_boost_factor: number;
+      total_nru: number;
+      effective_cpa: number;
+      cpa_saturation_factor: number;
+      pre_launch_users: number;
+      wishlist_users: number;
+      d1_burst_users: number;
+      brand_time_lag_peak_day: number;
+    } | null;
   };
   summary: {
     best: SummaryResult;
