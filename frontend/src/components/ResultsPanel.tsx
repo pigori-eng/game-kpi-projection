@@ -135,6 +135,28 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
           <h2 className="text-xl font-bold text-gray-800">📈 Section 2: Key Metrics</h2>
         </div>
         <div className="p-6">
+          {/* 계산 방식 설명 박스 */}
+          <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <p className="text-sm font-semibold text-blue-800 mb-2">📊 지표 계산 방식</p>
+            <div className="grid grid-cols-2 gap-3 text-xs text-blue-700">
+              <div className="bg-white/70 rounded p-2">
+                <strong>Gross Revenue</strong> = Σ(DAU × P.Rate × ARPPU)<br/>
+                <span className="text-gray-500">365일간 일별 매출의 총합</span>
+              </div>
+              <div className="bg-white/70 rounded p-2">
+                <strong>Net Revenue</strong> = Gross × (1 - 수수료 - VAT)<br/>
+                <span className="text-gray-500">플랫폼 수수료(30%) 및 세금 차감</span>
+              </div>
+              <div className="bg-white/70 rounded p-2">
+                <strong>총 NRU</strong> = UA예산÷CPA × (1+Organic Boost)<br/>
+                <span className="text-gray-500">런칭 30일 + Sustaining 기간 유입 합계</span>
+              </div>
+              <div className="bg-white/70 rounded p-2">
+                <strong>DAU</strong> = Σ(NRU[t-k] × Retention[k])<br/>
+                <span className="text-gray-500">과거 유입 유저들의 리텐션 누적</span>
+              </div>
+            </div>
+          </div>
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="bg-gray-50">
@@ -187,6 +209,29 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
             <h2 className="text-xl font-bold text-orange-800">💰 Section 3: Financial Analysis</h2>
           </div>
           <div className="p-6 space-y-6">
+            {/* 계산 방식 설명 박스 */}
+            <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
+              <p className="text-sm font-semibold text-orange-800 mb-2">📊 재무 지표 계산 방식</p>
+              <div className="grid grid-cols-2 gap-3 text-xs text-orange-700">
+                <div className="bg-white/70 rounded p-2">
+                  <strong>LTV (Life Time Value)</strong> = 총 매출 ÷ 총 NRU<br/>
+                  <span className="text-gray-500">유저 1명이 365일간 창출하는 평균 수익</span>
+                </div>
+                <div className="bg-white/70 rounded p-2">
+                  <strong>CAC (Customer Acquisition Cost)</strong> = MKT 예산 ÷ 총 NRU<br/>
+                  <span className="text-gray-500">유저 1명 획득에 소요된 평균 비용</span>
+                </div>
+                <div className="bg-white/70 rounded p-2">
+                  <strong>Paid ROAS</strong> = (총 매출 ÷ UA 예산) × 100%<br/>
+                  <span className="text-gray-500">UA 마케팅만의 효율 (마케터 KPI)</span>
+                </div>
+                <div className="bg-white/70 rounded p-2">
+                  <strong>Blended ROAS</strong> = 총 매출 ÷ (UA+Brand+Sustaining)<br/>
+                  <span className="text-gray-500">전체 마케팅 효율 (경영진 KPI)</span>
+                </div>
+              </div>
+            </div>
+            
             {/* V8 #3: BEP 시각화 차트 */}
             <div>
               <h3 className="font-semibold text-gray-700 mb-3">BEP Analysis Chart (Normal 시나리오)</h3>
@@ -246,7 +291,6 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
                   <tr>
                     <td className="px-4 py-3 border border-gray-200">
                       CAC (전체 MKT 기준)
-                      <span className="text-xs text-gray-400 ml-1">경영진용</span>
                     </td>
                     <td className="px-4 py-3 border border-gray-200 text-right bg-green-50">{formatCurrency(summary.best.cac_blended || 0)}</td>
                     <td className="px-4 py-3 border border-gray-200 text-right bg-blue-50">{formatCurrency(summary.normal.cac_blended || 0)}</td>
@@ -264,7 +308,6 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
                   <tr className="bg-purple-50/30">
                     <td className="px-4 py-3 border border-gray-200 font-medium">
                       📊 Blended ROAS (전체 효율)
-                      <span className="text-xs text-purple-600 ml-1">경영진 KPI</span>
                     </td>
                     <td className="px-4 py-3 border border-gray-200 text-right bg-green-50 font-bold text-green-700">{(summary.best.blended_roas || 0).toFixed(1)}%</td>
                     <td className="px-4 py-3 border border-gray-200 text-right bg-blue-50 font-bold text-blue-700">{(summary.normal.blended_roas || 0).toFixed(1)}%</td>
@@ -480,6 +523,15 @@ const DAUTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
   const tableData = results.results.best.full_data.dau.map((_, i) => ({ day: `D+${i + 1}`, best: results.results.best.full_data.dau[i], normal: results.results.normal.full_data.dau[i], worst: results.results.worst.full_data.dau[i] }));
   return (
     <div className="space-y-6">
+      {/* DAU 계산 방식 설명 */}
+      <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200">
+        <p className="text-sm font-semibold text-emerald-800 mb-2">📊 DAU 계산 방식</p>
+        <div className="text-xs text-emerald-700 space-y-1">
+          <p><strong>공식:</strong> DAU(t) = Σ[ NRU(t-k) × Retention(k) ] for k = 0 to t</p>
+          <p><strong>해석:</strong> 특정일의 DAU는 과거에 유입된 모든 유저들이 해당일에 접속할 확률(리텐션)의 합계입니다.</p>
+          <p><strong>예시:</strong> D+30 DAU = (D+1 유입 × D30 리텐션) + (D+2 유입 × D29 리텐션) + ... + (D+30 유입 × D1 리텐션)</p>
+        </div>
+      </div>
       <div className="border rounded-lg overflow-hidden">
         <div className="bg-gray-100 px-4 py-2 font-semibold">DAU 상세 요약</div>
         <div className="p-4 grid grid-cols-3 gap-4">

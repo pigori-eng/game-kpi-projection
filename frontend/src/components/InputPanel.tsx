@@ -487,6 +487,14 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                     <strong>작동 원리:</strong> 숫자를 곱하는 게 아니라, <strong>비교할 PR/ARPPU 기준을 교체</strong>합니다.
                     <br />이 선택이 <strong>매출 프로젝션의 현실성을 결정짓는 핵심 변수</strong>입니다.
                   </p>
+                  <div className="text-xs bg-indigo-50 rounded p-2 border border-indigo-200 mb-3">
+                    <p className="font-semibold text-indigo-800 mb-1">📊 매출 계산 공식:</p>
+                    <p className="font-mono text-[10px]">Daily Revenue = DAU × <strong className="text-blue-600">P.Rate</strong> × <strong className="text-green-600">ARPPU</strong></p>
+                    <p className="mt-1 text-[10px] text-gray-600">
+                      • <strong className="text-blue-600">P.Rate (결제율)</strong>: BM 타입별 기준값이 적용됨 (Hardcore 3% vs Casual 10%)
+                      <br />• <strong className="text-green-600">ARPPU (결제자당 평균 수익)</strong>: BM 타입별 기준값이 적용됨 (Hardcore $80 vs Casual $20)
+                    </p>
+                  </div>
                   <div className="grid grid-cols-5 gap-2 mb-2">
                     {[
                       {v:'Hardcore',l:'하드코어',d:'타르코프류',pr:'PR 2~3%',arppu:'ARPPU $80+'},
@@ -691,53 +699,6 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                 <p className="text-sm text-purple-700"><strong>✅ 선택된 표본 게임:</strong> {selectedSampleGames.join(', ')}</p>
               </div>
             )}
-          </div>
-        )}
-      </div>
-
-      {/* 5. Retention (기존 3) */}
-      <div className="border border-gray-200 rounded-lg overflow-hidden">
-        <button onClick={() => setActiveSection(activeSection === 'retention' ? null : 'retention')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'retention' ? 'bg-emerald-50 border-b border-emerald-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
-          <div className="flex items-center gap-2"><TrendingUp className="w-5 h-5 text-emerald-600" /><span className="font-medium">5. Retention 설정</span></div>
-          {activeSection === 'retention' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-        </button>
-        {activeSection === 'retention' && (
-          <div className="p-4 space-y-4">
-            <GuideBox title="Retention 설정 가이드">
-              <div className="space-y-2 text-xs">
-                <p><strong>🎯 작동 원리:</strong> 입력한 D+1 Retention을 기준으로 Power Law 곡선을 생성하여 D365까지 리텐션을 추정합니다.</p>
-                
-                <div className="mt-2 p-2 bg-white/50 rounded">
-                  <p className="font-semibold text-amber-800">📊 Retention Curve 공식:</p>
-                  <p className="font-mono text-[10px] mt-1">Retention(day) = a × day^b</p>
-                  <p className="mt-1">• <strong>a (초기 계수):</strong> 표본 게임들의 D+1 Retention 평균값 기반</p>
-                  <p>• <strong>b (감쇠 계수):</strong> 표본 게임들의 리텐션 감소 기울기 (일반적으로 -0.5 ~ -1.0)</p>
-                </div>
-                
-                <div className="mt-2 p-2 bg-white/50 rounded">
-                  <p className="font-semibold text-amber-800">💡 장르별 D+1 권장값:</p>
-                  <p>• <strong>MMORPG:</strong> Best 45~50%, Normal 35~40%, Worst 25~30%</p>
-                  <p>• <strong>캐주얼:</strong> Best 50~55%, Normal 40~45%, Worst 30~35%</p>
-                  <p>• <strong>FPS/Battle Royale:</strong> Best 40~45%, Normal 30~35%, Worst 20~25%</p>
-                </div>
-                
-                <div className="mt-2 p-2 bg-white/50 rounded">
-                  <p className="font-semibold text-amber-800">⚙️ 블렌딩 적용:</p>
-                  <p>• 내부 표본 커브와 시장 벤치마크 커브를 Time-Decay 방식으로 블렌딩</p>
-                  <p>• 초반(D1~D30): 내부 데이터 비중↑ / 후반(D90+): 벤치마크 비중↑</p>
-                </div>
-              </div>
-            </GuideBox>
-            <div className="p-3 bg-gray-50 rounded-lg border"><p className="text-sm text-gray-600"><strong>적용된 표본 게임:</strong> {selectedSampleGames.length > 0 ? selectedSampleGames.join(', ') : '(2. 표본 게임 선택에서 선택해주세요)'}</p></div>
-            <div>
-              <h4 className="font-medium text-gray-700 mb-2">예상 D+1 Retention 입력 (%)</h4>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="p-3 bg-green-50 rounded-lg border border-green-200"><label className="block text-xs font-medium text-green-700 mb-1">Best</label><div className="flex items-center"><input type="number" step="1" value={Math.round(input.retention.target_d1_retention.best * 100)} onChange={(e) => setInput(prev => ({ ...prev, retention: { ...prev.retention, target_d1_retention: { ...prev.retention.target_d1_retention, best: (parseFloat(e.target.value) || 0) / 100 } } }))} className="w-full px-2 py-1 border border-green-300 rounded text-right" /><span className="ml-1">%</span></div></div>
-                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200"><label className="block text-xs font-medium text-blue-700 mb-1">Normal</label><div className="flex items-center"><input type="number" step="1" value={Math.round(input.retention.target_d1_retention.normal * 100)} onChange={(e) => setInput(prev => ({ ...prev, retention: { ...prev.retention, target_d1_retention: { ...prev.retention.target_d1_retention, normal: (parseFloat(e.target.value) || 0) / 100 } } }))} className="w-full px-2 py-1 border border-blue-300 rounded text-right" /><span className="ml-1">%</span></div></div>
-                <div className="p-3 bg-red-50 rounded-lg border border-red-200"><label className="block text-xs font-medium text-red-700 mb-1">Worst</label><div className="flex items-center"><input type="number" step="1" value={Math.round(input.retention.target_d1_retention.worst * 100)} onChange={(e) => setInput(prev => ({ ...prev, retention: { ...prev.retention, target_d1_retention: { ...prev.retention.target_d1_retention, worst: (parseFloat(e.target.value) || 0) / 100 } } }))} className="w-full px-2 py-1 border border-red-300 rounded text-right" /><span className="ml-1">%</span></div></div>
-              </div>
-            </div>
-            <RegressionResultTable selectedGames={selectedSampleGames} d1Retention={input.retention.target_d1_retention} />
           </div>
         )}
       </div>
@@ -1050,7 +1011,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                     className="w-4 h-4 text-orange-600"
                   />
                   <label htmlFor="nru-auto-calc" className="text-sm font-medium text-orange-800">
-                    🔄 총 NRU 자동 계산 (5. NRU 설정에 반영)
+                    🔄 총 NRU 자동 계산 (4. NRU 설정에 반영)
                   </label>
                 </div>
                 <div className="border border-orange-300 rounded-lg overflow-hidden">
@@ -1143,6 +1104,53 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* 5. Retention 설정 */}
+      <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <button onClick={() => setActiveSection(activeSection === 'retention' ? null : 'retention')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'retention' ? 'bg-emerald-50 border-b border-emerald-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
+          <div className="flex items-center gap-2"><TrendingUp className="w-5 h-5 text-emerald-600" /><span className="font-medium">5. Retention 설정</span></div>
+          {activeSection === 'retention' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+        </button>
+        {activeSection === 'retention' && (
+          <div className="p-4 space-y-4">
+            <GuideBox title="Retention 설정 가이드">
+              <div className="space-y-2 text-xs">
+                <p><strong>🎯 작동 원리:</strong> 입력한 D+1 Retention을 기준으로 Power Law 곡선을 생성하여 D365까지 리텐션을 추정합니다.</p>
+                
+                <div className="mt-2 p-2 bg-white/50 rounded">
+                  <p className="font-semibold text-amber-800">📊 Retention Curve 공식:</p>
+                  <p className="font-mono text-[10px] mt-1">Retention(day) = a × day^b</p>
+                  <p className="mt-1">• <strong>a (초기 계수):</strong> 표본 게임들의 D+1 Retention 평균값 기반</p>
+                  <p>• <strong>b (감쇠 계수):</strong> 표본 게임들의 리텐션 감소 기울기 (일반적으로 -0.5 ~ -1.0)</p>
+                </div>
+                
+                <div className="mt-2 p-2 bg-white/50 rounded">
+                  <p className="font-semibold text-amber-800">💡 장르별 D+1 권장값:</p>
+                  <p>• <strong>MMORPG:</strong> Best 45~50%, Normal 35~40%, Worst 25~30%</p>
+                  <p>• <strong>캐주얼:</strong> Best 50~55%, Normal 40~45%, Worst 30~35%</p>
+                  <p>• <strong>FPS/Battle Royale:</strong> Best 40~45%, Normal 30~35%, Worst 20~25%</p>
+                </div>
+                
+                <div className="mt-2 p-2 bg-white/50 rounded">
+                  <p className="font-semibold text-amber-800">⚙️ 블렌딩 적용:</p>
+                  <p>• 내부 표본 커브와 시장 벤치마크 커브를 Time-Decay 방식으로 블렌딩</p>
+                  <p>• 초반(D1~D30): 내부 데이터 비중↑ / 후반(D90+): 벤치마크 비중↑</p>
+                </div>
+              </div>
+            </GuideBox>
+            <div className="p-3 bg-gray-50 rounded-lg border"><p className="text-sm text-gray-600"><strong>적용된 표본 게임:</strong> {selectedSampleGames.length > 0 ? selectedSampleGames.join(', ') : '(2. 표본 게임 선택에서 선택해주세요)'}</p></div>
+            <div>
+              <h4 className="font-medium text-gray-700 mb-2">예상 D+1 Retention 입력 (%)</h4>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="p-3 bg-green-50 rounded-lg border border-green-200"><label className="block text-xs font-medium text-green-700 mb-1">Best</label><div className="flex items-center"><input type="number" step="1" value={Math.round(input.retention.target_d1_retention.best * 100)} onChange={(e) => setInput(prev => ({ ...prev, retention: { ...prev.retention, target_d1_retention: { ...prev.retention.target_d1_retention, best: (parseFloat(e.target.value) || 0) / 100 } } }))} className="w-full px-2 py-1 border border-green-300 rounded text-right" /><span className="ml-1">%</span></div></div>
+                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200"><label className="block text-xs font-medium text-blue-700 mb-1">Normal</label><div className="flex items-center"><input type="number" step="1" value={Math.round(input.retention.target_d1_retention.normal * 100)} onChange={(e) => setInput(prev => ({ ...prev, retention: { ...prev.retention, target_d1_retention: { ...prev.retention.target_d1_retention, normal: (parseFloat(e.target.value) || 0) / 100 } } }))} className="w-full px-2 py-1 border border-blue-300 rounded text-right" /><span className="ml-1">%</span></div></div>
+                <div className="p-3 bg-red-50 rounded-lg border border-red-200"><label className="block text-xs font-medium text-red-700 mb-1">Worst</label><div className="flex items-center"><input type="number" step="1" value={Math.round(input.retention.target_d1_retention.worst * 100)} onChange={(e) => setInput(prev => ({ ...prev, retention: { ...prev.retention, target_d1_retention: { ...prev.retention.target_d1_retention, worst: (parseFloat(e.target.value) || 0) / 100 } } }))} className="w-full px-2 py-1 border border-red-300 rounded text-right" /><span className="ml-1">%</span></div></div>
+              </div>
+            </div>
+            <RegressionResultTable selectedGames={selectedSampleGames} d1Retention={input.retention.target_d1_retention} />
           </div>
         )}
       </div>
@@ -1257,12 +1265,12 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
       </div>
 
 
-      {/* 6. 계절성 팩터 */}
+      {/* 7. 계절성 팩터 */}
       <div className="border border-teal-200 rounded-lg overflow-hidden">
         <button onClick={() => setActiveSection(activeSection === 'seasonality' ? null : 'seasonality')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'seasonality' ? 'bg-teal-50 border-b border-teal-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
           <div className="flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-teal-600" />
-            <span className="font-medium">6. 계절성 팩터 (Seasonality)</span>
+            <span className="font-medium">7. 계절성 팩터 (Seasonality)</span>
             <span className="text-xs bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full">선택</span>
           </div>
           {activeSection === 'seasonality' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
@@ -1306,6 +1314,26 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
               <label htmlFor="seasonality-enabled" className="text-sm font-medium text-teal-800">
                 계절성 팩터 적용 (프로젝션에 반영)
               </label>
+            </div>
+
+            {/* 지역 선택 (계절성에 영향) */}
+            <div className="border border-teal-300 rounded-lg p-3 bg-teal-50/50">
+              <label className="block text-sm font-semibold text-teal-800 mb-2">🌏 타겟 지역 선택</label>
+              <p className="text-xs text-teal-700 mb-2">선택한 지역에 따라 월별 계절성 팩터가 자동 조정됩니다.</p>
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  {v:'korea', l:'🇰🇷 한국', d:'설날/추석 효과'},
+                  {v:'japan', l:'🇯🇵 일본', d:'골든위크/오봉'},
+                  {v:'na', l:'🇺🇸 북미', d:'추수감사절/크리스마스'},
+                  {v:'global', l:'🌍 글로벌', d:'연말/여름'}
+                ].map(({v, l, d}) => (
+                  <label key={v} className={`flex flex-col items-center px-2 py-2 rounded border cursor-pointer text-xs transition-colors ${(input.regions?.[0] || 'global') === v ? 'bg-teal-100 border-teal-500 text-teal-800 font-bold ring-2 ring-teal-400' : 'bg-white border-gray-300 hover:bg-gray-50'}`}>
+                    <input type="radio" name="region" value={v} checked={(input.regions?.[0] || 'global') === v} onChange={(e) => setInput(prev => ({...prev, regions: [e.target.value]}))} className="sr-only" />
+                    <span className="font-bold">{l}</span>
+                    <span className="text-[10px] text-gray-500">{d}</span>
+                  </label>
+                ))}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">

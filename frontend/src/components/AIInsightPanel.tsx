@@ -21,7 +21,7 @@ const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ results, autoLoad = tru
   const [showDetails, setShowDetails] = useState(false);
 
   const analysisTypes = [
-    { id: 'executive_report' as AnalysisType, label: '📋 경영진 보고서', icon: FileText, color: 'violet', description: 'Go/No-Go 권고, 산술 근거, 4명 전문가 종합 분석 (자동 생성)', main: true },
+    { id: 'executive_report' as AnalysisType, label: '📋 종합분석 보고서', icon: FileText, color: 'violet', description: 'Go/No-Go 권고, 산술 근거, 4명 전문가 종합 분석 (자동 생성)', main: true },
     { id: 'general' as AnalysisType, label: '종합 분석', icon: Brain, color: 'blue', description: '4명의 전문가가 종합 평가' },
     { id: 'reliability' as AnalysisType, label: '신뢰도 평가', icon: Shield, color: 'indigo', description: '프로젝션 신뢰도 점수 및 전문가별 평가' },
     { id: 'retention' as AnalysisType, label: '리텐션 분석', icon: TrendingUp, color: 'emerald', description: 'DAU 패턴 및 리텐션 개선 액션 플랜' },
@@ -97,35 +97,35 @@ const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ results, autoLoad = tru
 
   return (
     <div className="border-2 border-violet-300 rounded-xl overflow-hidden shadow-lg">
-      {/* V7: 경영진 보고서 헤더 */}
+      {/* V8: 종합분석 보고서 헤더 */}
       <div className="bg-gradient-to-r from-violet-600 via-purple-600 to-blue-600 px-4 py-4">
         <div className="flex items-center justify-between text-white">
           <div className="flex items-center gap-2">
             <FileText className="w-6 h-6" />
-            <span className="font-bold text-lg">AI 종합 분석 보고서</span>
-            <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">V7 Executive Report</span>
+            <span className="font-bold text-lg">AI 종합분석 보고서</span>
+            <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">Integrated Analysis</span>
           </div>
           <div className="flex items-center gap-2 text-sm">
             <Sparkles className="w-4 h-4" />
             <span>Claude Sonnet 4 · Multi-Persona</span>
           </div>
         </div>
-        <p className="text-violet-200 text-sm mt-1">4명의 전문가 (UA, 데이터, 퍼블리싱, 재무)가 분석한 경영진 의사결정 지원 보고서</p>
+        <p className="text-violet-200 text-sm mt-1">4명의 전문가 (UA마케터, 퍼블리싱, 데이터 사이언스, 라이브 서비스)가 분석한 의사결정 지원 보고서</p>
       </div>
 
       <div className="p-4 space-y-4 bg-gradient-to-b from-violet-50 to-white">
-        {/* V7: 메인 경영진 보고서 (자동 로드) */}
+        {/* V8: 메인 종합분석 보고서 (자동 로드) */}
         {loading && selectedType === 'executive_report' && !executiveReport ? (
           <div className="p-6 bg-white rounded-lg border-2 border-violet-200 text-center">
             <RefreshCw className="w-8 h-8 animate-spin text-violet-600 mx-auto mb-2" />
-            <p className="text-violet-700 font-medium">AI 경영진 보고서 생성 중...</p>
+            <p className="text-violet-700 font-medium">AI 종합분석 보고서 생성 중...</p>
             <p className="text-sm text-gray-500">4명의 전문가가 분석하고 있습니다</p>
           </div>
         ) : executiveReport ? (
           <div className="p-5 bg-white rounded-lg border-2 border-violet-200 shadow-sm">
             <div className="flex items-center gap-2 mb-4 pb-3 border-b border-violet-100">
               <FileText className="w-5 h-5 text-violet-600" />
-              <span className="font-bold text-violet-800">📋 경영진 종합 보고서</span>
+              <span className="font-bold text-violet-800">📋 종합분석 보고서</span>
               <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full ml-auto">✓ 자동 생성 완료</span>
             </div>
             <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
@@ -135,7 +135,7 @@ const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ results, autoLoad = tru
         ) : (
           <div className="p-6 bg-white rounded-lg border-2 border-dashed border-violet-200 text-center">
             <FileText className="w-8 h-8 text-violet-400 mx-auto mb-2" />
-            <p className="text-gray-600">AI 경영진 보고서를 생성하려면 아래 버튼을 클릭하세요</p>
+            <p className="text-gray-600">AI 종합분석 보고서를 생성하려면 아래 버튼을 클릭하세요</p>
           </div>
         )}
 
