@@ -1,805 +1,352 @@
-import { useState, useRef } from 'react';
-import { Download, FileSpreadsheet, RefreshCw, AlertTriangle } from 'lucide-react';
+import React, { useState } from 'react';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, AreaChart, Area, ComposedChart, Bar
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  AreaChart, Area, ComposedChart, Bar
 } from 'recharts';
-import type { ProjectionResult, TabType, GameListResponse, BasicSettings } from '../types';
-import { formatNumber, formatCurrency, formatPercent, formatCompactNumber, formatCompactKorean } from '../utils/format';
-import AIInsightPanel from './AIInsightPanel';
+import { Download, TrendingUp, Users, DollarSign, Activity, AlertTriangle } from 'lucide-react';
+import type { ProjectionInput } from '../types';
 
 interface ResultsPanelProps {
-  results: ProjectionResult;
-  activeTab: TabType;
-  games: GameListResponse | null;
-  basicSettings?: BasicSettings;
+  results: any;
+  summary: any;
+  aiReport: any;
+  inputData: ProjectionInput;
 }
 
-const COLORS = { best: '#22c55e', normal: '#3b82f6', worst: '#ef4444' };
+const ResultsPanel: React.FC<ResultsPanelProps> = ({ results, summary, aiReport, inputData }) => {
+  const [activeTab, setActiveTab] = useState<'financial' | 'traffic' | 'retention'>('financial');
+  const [selectedScenario, setSelectedScenario] = useState<'best' | 'normal' | 'worst'>('normal');
 
-const downloadCSV = (data: any[], filename: string, headers: string[]) => {
-  const csvContent = [headers.join(','), ...data.map(row => headers.map(h => row[h] ?? '').join(','))].join('\n');
-  const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = filename;
-  link.click();
-};
+  // [V10.0 Fix] 데이터 구조 평탄화 대응
+  const res = results[selectedScenario];
+  if (!res) return <div className="p-8 text-center text-gray-500">데이터가 없습니다.</div>;
 
-const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSettings }> = ({ results, basicSettings }) => {
-  const { summary } = results;
-  
-  // Phase 2: LTV & ROAS 계산
-  const calculateLtvRoas = (scenario: 'best' | 'normal' | 'worst') => {
-    const s = summary[scenario];
-    const mktBudget = basicSettings?.launch_mkt_budget || 0;
-    const totalNru = s.total_nru || 1;
-    
-    const ltv = s.gross_revenue / totalNru;
-    const cac = mktBudget / totalNru;
-    const roas = mktBudget > 0 ? (s.gross_revenue / mktBudget) * 100 : 0;
-    
-    let breakEvenDay = 0;
-    let cumRevenue = 0;
-    const dailyRevenue = results.results[scenario].revenue.daily_revenue;
-    for (let i = 0; i < dailyRevenue.length; i++) {
-      cumRevenue += dailyRevenue[i];
-      if (cumRevenue >= mktBudget && breakEvenDay === 0) {
-        breakEvenDay = i + 1;
-        break;
-      }
-    }
-    
-    return { ltv, cac, roas, breakEvenDay };
-  };
+  // 차트용 데이터 변환 (Array of Objects) - 성능을 위해 샘플링
+  const sampleRate = Math.ceil(res.revenue.length / 90); // 최대 90개 포인트
+  const chartData = res.revenue
+    .filter((_: number, idx: number) => idx % sampleRate === 0 || idx === res.revenue.length - 1)
+    .map((val: number, idx: number) => {
+      const realIdx = idx * sampleRate;
+      return {
+        day: realIdx + 1,
+        revenue: val,
+        profit: res.profit ? res.profit[realIdx] : 0,
+        cum_profit: res.cum_profit ? res.cum_profit[realIdx] : 0,
+        cost: res.cost ? res.cost[realIdx] : 0,
+        dau: res.dau[realIdx],
+        nru: res.nru[realIdx],
+        nru_paid: res.nru_paid ? res.nru_paid[realIdx] : 0,
+        nru_organic: res.nru_organic ? res.nru_organic[realIdx] : 0,
+        retention: res.retention ? res.retention[realIdx] : 0,
+      };
+    });
 
-  const ltvRoas = {
-    best: calculateLtvRoas('best'),
-    normal: calculateLtvRoas('normal'),
-    worst: calculateLtvRoas('worst'),
-  };
-
-  // V8 #3: BEP 차트 데이터 생성
-  const generateBepChartData = (): { day: number; cumRevenue: number; cumCost: number; isBep: boolean }[] => {
-    const mktBudget = basicSettings?.launch_mkt_budget || 0;
-    const devCost = basicSettings?.dev_cost || 0;
-    const sustainingRatio = basicSettings?.sustaining_mkt_ratio || 0.07;
-    
-    const data: { day: number; cumRevenue: number; cumCost: number; isBep: boolean }[] = [];
-    let cumRevenue = 0;
-    let cumCost = devCost + mktBudget; // 초기 비용 = 개발비 + 런칭 MKT
-    
-    const dailyRevenue = results.results.normal.full_data.revenue;
-    
-    for (let i = 0; i < Math.min(dailyRevenue.length, 365); i++) {
-      cumRevenue += dailyRevenue[i];
-      // Sustaining MKT = 일별 매출의 일정 비율
-      const dailySustaining = dailyRevenue[i] * sustainingRatio;
-      cumCost += dailySustaining;
-      
-      const prevData = data[i - 1];
-      data.push({
-        day: i + 1,
-        cumRevenue: Math.round(cumRevenue),
-        cumCost: Math.round(cumCost),
-        // BEP 교차점 마커
-        isBep: i > 0 && prevData && prevData.cumRevenue < prevData.cumCost && cumRevenue >= cumCost
-      });
-    }
-    return data;
-  };
-
-  const bepChartData = generateBepChartData();
-  const bepDay = bepChartData.findIndex(d => d.isBep) + 1;
-
-  return (
-    <div className="space-y-8 max-w-4xl mx-auto">
-      {/* V8 #5: A4 스타일 종합 보고서 헤더 */}
-      <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-xl p-8 text-white print:bg-slate-800">
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="text-3xl font-bold">📊 KPI Projection Report</h1>
-          <div className="text-right text-sm text-slate-300">
-            <p>Generated: {new Date().toLocaleDateString('ko-KR')}</p>
-            <p>Period: {results.input.projection_days} days</p>
-          </div>
-        </div>
-        <div className="grid grid-cols-3 gap-4 mt-6">
-          <div className="bg-white/10 rounded-lg p-4">
-            <p className="text-slate-300 text-sm">Normal Revenue</p>
-            <p className="text-2xl font-bold">{formatCurrency(summary.normal.gross_revenue)}</p>
-          </div>
-          <div className="bg-white/10 rounded-lg p-4">
-            <p className="text-slate-300 text-sm">Peak DAU</p>
-            <p className="text-2xl font-bold">{summary.normal.peak_dau.toLocaleString()}</p>
-          </div>
-          <div className="bg-white/10 rounded-lg p-4">
-            <p className="text-slate-300 text-sm">BEP</p>
-            <p className="text-2xl font-bold">{bepDay > 0 ? `D+${bepDay}` : 'N/A'}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Section 1: Executive Summary (AI) */}
-      <section className="bg-white rounded-xl border-2 border-violet-200 overflow-hidden">
-        <div className="bg-violet-100 px-6 py-4 border-b border-violet-200">
-          <h2 className="text-xl font-bold text-violet-900">📋 Section 1: Executive Summary</h2>
-        </div>
-        <div className="p-6">
-          <AIInsightPanel results={results} autoLoad={true} />
-        </div>
-      </section>
-
-      {/* Section 2: 핵심 KPI 요약 */}
-      <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="bg-gray-100 px-6 py-4 border-b">
-          <h2 className="text-xl font-bold text-gray-800">📈 Section 2: Key Metrics</h2>
-        </div>
-        <div className="p-6">
-          {/* 계산 방식 설명 박스 */}
-          <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <p className="text-sm font-semibold text-blue-800 mb-2">📊 지표 계산 방식</p>
-            <div className="grid grid-cols-2 gap-3 text-xs text-blue-700">
-              <div className="bg-white/70 rounded p-2">
-                <strong>Gross Revenue</strong> = Σ(DAU × P.Rate × ARPPU)<br/>
-                <span className="text-gray-500">365일간 일별 매출의 총합</span>
-              </div>
-              <div className="bg-white/70 rounded p-2">
-                <strong>Net Revenue</strong> = Gross × (1 - 수수료 - VAT)<br/>
-                <span className="text-gray-500">플랫폼 수수료(30%) 및 세금 차감</span>
-              </div>
-              <div className="bg-white/70 rounded p-2">
-                <strong>총 NRU</strong> = UA예산÷CPA × (1+Organic Boost)<br/>
-                <span className="text-gray-500">런칭 30일 + Sustaining 기간 유입 합계</span>
-              </div>
-              <div className="bg-white/70 rounded p-2">
-                <strong>DAU</strong> = Σ(NRU[t-k] × Retention[k])<br/>
-                <span className="text-gray-500">과거 유입 유저들의 리텐션 누적</span>
-              </div>
-            </div>
-          </div>
-          <table className="w-full text-sm border-collapse">
-            <thead>
-              <tr className="bg-gray-50">
-                <th className="px-4 py-3 text-left border border-gray-200 font-semibold">지표</th>
-                <th className="px-4 py-3 text-right border border-gray-200 bg-green-50 text-green-700 font-semibold">Best</th>
-                <th className="px-4 py-3 text-right border border-gray-200 bg-blue-50 text-blue-700 font-semibold">Normal</th>
-                <th className="px-4 py-3 text-right border border-gray-200 bg-red-50 text-red-700 font-semibold">Worst</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td className="px-4 py-3 border border-gray-200 font-medium">총 Gross Revenue</td>
-                <td className="px-4 py-3 border border-gray-200 text-right bg-green-50 font-bold">{formatCurrency(summary.best.gross_revenue)}</td>
-                <td className="px-4 py-3 border border-gray-200 text-right bg-blue-50 font-bold">{formatCurrency(summary.normal.gross_revenue)}</td>
-                <td className="px-4 py-3 border border-gray-200 text-right bg-red-50 font-bold">{formatCurrency(summary.worst.gross_revenue)}</td>
-              </tr>
-              <tr>
-                <td className="px-4 py-3 border border-gray-200">총 Net Revenue</td>
-                <td className="px-4 py-3 border border-gray-200 text-right bg-green-50">{formatCurrency(summary.best.net_revenue)}</td>
-                <td className="px-4 py-3 border border-gray-200 text-right bg-blue-50">{formatCurrency(summary.normal.net_revenue)}</td>
-                <td className="px-4 py-3 border border-gray-200 text-right bg-red-50">{formatCurrency(summary.worst.net_revenue)}</td>
-              </tr>
-              <tr>
-                <td className="px-4 py-3 border border-gray-200">총 NRU</td>
-                <td className="px-4 py-3 border border-gray-200 text-right bg-green-50">{summary.best.total_nru.toLocaleString()}</td>
-                <td className="px-4 py-3 border border-gray-200 text-right bg-blue-50">{summary.normal.total_nru.toLocaleString()}</td>
-                <td className="px-4 py-3 border border-gray-200 text-right bg-red-50">{summary.worst.total_nru.toLocaleString()}</td>
-              </tr>
-              <tr>
-                <td className="px-4 py-3 border border-gray-200">Peak DAU</td>
-                <td className="px-4 py-3 border border-gray-200 text-right bg-green-50">{summary.best.peak_dau.toLocaleString()}</td>
-                <td className="px-4 py-3 border border-gray-200 text-right bg-blue-50">{summary.normal.peak_dau.toLocaleString()}</td>
-                <td className="px-4 py-3 border border-gray-200 text-right bg-red-50">{summary.worst.peak_dau.toLocaleString()}</td>
-              </tr>
-              <tr>
-                <td className="px-4 py-3 border border-gray-200">평균 DAU</td>
-                <td className="px-4 py-3 border border-gray-200 text-right bg-green-50">{summary.best.average_dau.toLocaleString()}</td>
-                <td className="px-4 py-3 border border-gray-200 text-right bg-blue-50">{summary.normal.average_dau.toLocaleString()}</td>
-                <td className="px-4 py-3 border border-gray-200 text-right bg-red-50">{summary.worst.average_dau.toLocaleString()}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {/* Section 3: Financial Analysis (BEP 차트 + ROAS) */}
-      {((basicSettings?.launch_mkt_budget && basicSettings.launch_mkt_budget > 0) || (basicSettings?.dev_cost && basicSettings.dev_cost > 0)) && (
-        <section className="bg-white rounded-xl border border-orange-200 overflow-hidden">
-          <div className="bg-orange-100 px-6 py-4 border-b border-orange-200">
-            <h2 className="text-xl font-bold text-orange-800">💰 Section 3: Financial Analysis (BEP)</h2>
-          </div>
-          <div className="p-6 space-y-6">
-            {/* 계산 방식 설명 박스 */}
-            <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
-              <p className="text-sm font-semibold text-orange-800 mb-2">📊 재무 지표 계산 방식</p>
-              <div className="grid grid-cols-2 gap-3 text-xs text-orange-700">
-                <div className="bg-white/70 rounded p-2">
-                  <strong>LTV (Life Time Value)</strong> = 총 매출 ÷ 총 NRU<br/>
-                  <span className="text-gray-500">유저 1명이 365일간 창출하는 평균 수익</span>
-                </div>
-                <div className="bg-white/70 rounded p-2">
-                  <strong>CAC (Customer Acquisition Cost)</strong> = MKT 예산 ÷ 총 NRU<br/>
-                  <span className="text-gray-500">유저 1명 획득에 소요된 평균 비용</span>
-                </div>
-                <div className="bg-white/70 rounded p-2">
-                  <strong>Paid ROAS</strong> = (총 매출 ÷ UA 예산) × 100%<br/>
-                  <span className="text-gray-500">UA 마케팅만의 효율 (마케터 KPI)</span>
-                </div>
-                <div className="bg-white/70 rounded p-2">
-                  <strong>Blended ROAS</strong> = 총 매출 ÷ (UA+Brand+Sustaining)<br/>
-                  <span className="text-gray-500">전체 마케팅 효율 (경영진 KPI)</span>
-                </div>
-              </div>
-            </div>
-            
-            {/* V9.2: ROI / BEP / 순수익 요약 카드 */}
-            <div className="grid grid-cols-3 gap-4">
-              {/* ROI Card */}
-              <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <div className="text-sm text-gray-500 mb-1">예상 ROI (Normal)</div>
-                <div className={`text-2xl font-bold ${(() => {
-                  const totalCost = (basicSettings?.launch_mkt_budget || 0) + (basicSettings?.dev_cost || 0);
-                  const roi = totalCost > 0 ? ((summary.normal.gross_revenue - totalCost) / totalCost) * 100 : 0;
-                  return roi >= 0 ? 'text-green-600' : 'text-red-500';
-                })()}`}>
-                  {(() => {
-                    const totalCost = (basicSettings?.launch_mkt_budget || 0) + (basicSettings?.dev_cost || 0);
-                    const roi = totalCost > 0 ? ((summary.normal.gross_revenue - totalCost) / totalCost) * 100 : 0;
-                    return roi.toFixed(1);
-                  })()}%
-                </div>
-              </div>
-              {/* BEP Day Card */}
-              <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <div className="text-sm text-gray-500 mb-1">손익분기점 (BEP)</div>
-                <div className={`text-2xl font-bold ${bepDay > 0 ? 'text-blue-600' : 'text-red-500'}`}>
-                  {bepDay > 0 ? `D+${bepDay}` : "미달성"}
-                </div>
-                {bepDay <= 0 && <div className="text-xs text-red-400">(Year 1 내)</div>}
-              </div>
-              {/* Profit Card */}
-              <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <div className="text-sm text-gray-500 mb-1">예상 순수익 (Normal)</div>
-                <div className={`text-xl font-bold ${(() => {
-                  const totalCost = (basicSettings?.launch_mkt_budget || 0) + (basicSettings?.dev_cost || 0);
-                  const profit = summary.normal.gross_revenue - totalCost;
-                  return profit >= 0 ? 'text-gray-800' : 'text-red-500';
-                })()}`}>
-                  {formatCurrency(summary.normal.gross_revenue - ((basicSettings?.launch_mkt_budget || 0) + (basicSettings?.dev_cost || 0)))}
-                </div>
-              </div>
-            </div>
-            
-            {/* V8 #3: BEP 시각화 차트 */}
-            <div>
-              <h3 className="font-semibold text-gray-700 mb-3">BEP Analysis Chart (Normal 시나리오)</h3>
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={bepChartData.filter((_, i) => i < 180)}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="day" label={{ value: 'Day', position: 'bottom' }} />
-                    <YAxis tickFormatter={(v) => formatCompactKorean(v)} width={80} />
-                    <Tooltip formatter={(v: number) => formatCurrency(v)} />
-                    <Legend />
-                    <Line type="monotone" dataKey="cumRevenue" stroke="#22c55e" strokeWidth={2} name="누적 매출" dot={false} />
-                    <Line type="monotone" dataKey="cumCost" stroke="#ef4444" strokeWidth={2} name="누적 비용" dot={false} />
-                    {bepDay > 0 && bepDay < 180 && (
-                      <Line type="monotone" dataKey={(d: any) => d.isBep ? d.cumRevenue : null} stroke="#8b5cf6" strokeWidth={0} dot={{ r: 8, fill: '#8b5cf6' }} name={`BEP (D+${bepDay})`} />
-                    )}
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-              {bepDay > 0 ? (
-                <div className="mt-3 p-3 bg-violet-50 rounded-lg border border-violet-200 text-center">
-                  <span className="text-violet-800 font-semibold">🎯 손익분기점 도달 예상: </span>
-                  <span className="text-violet-900 font-bold text-lg">D+{bepDay}</span>
-                  <span className="text-violet-600 text-sm ml-2">({Math.round(bepDay / 30)}개월차)</span>
-                  <p className="text-xs text-violet-500 mt-1">안정적인 현금 흐름이 기대됩니다.</p>
-                </div>
-              ) : (
-                <div className="mt-3 p-4 bg-red-50 rounded-lg border border-red-300 flex items-start gap-3">
-                  <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-red-800 font-bold text-sm mb-2">⚠️ BEP 달성 실패 경고 (Year 1 내 미도달)</p>
-                    <p className="text-red-700 text-xs mb-2">현재 구조로는 1년 내 투자 회수가 어렵습니다. 다음 전략을 검토하세요:</p>
-                    <ul className="text-xs text-red-600 space-y-1 mb-3">
-                      <li>• <strong>CPA/CPI 절감:</strong> 타겟팅 최적화 또는 오가닉 비중 확대</li>
-                      <li>• <strong>LTV 개선:</strong> D30 리텐션을 5%p 올리거나 ARPPU를 15% 상향</li>
-                      <li>• <strong>BM 재검토:</strong> 패키지 가격 또는 인게임 결제 모델 조정</li>
-                    </ul>
-                    <p className="text-xs text-red-500 italic border-t border-red-200 pt-2">
-                      💡 <strong>AI 종합 분석 보고서</strong>의 [리스크 분석 및 BEP 달성 전략] 섹션에서 상세 제언을 확인하세요.
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* ROAS 테이블 */}
-            <div>
-              <h3 className="font-semibold text-gray-700 mb-3">LTV & ROAS Analysis</h3>
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="bg-gray-50">
-                    <th className="px-4 py-3 text-left border border-gray-200 font-semibold">지표</th>
-                    <th className="px-4 py-3 text-right border border-gray-200 bg-green-50 font-semibold">Best</th>
-                    <th className="px-4 py-3 text-right border border-gray-200 bg-blue-50 font-semibold">Normal</th>
-                    <th className="px-4 py-3 text-right border border-gray-200 bg-red-50 font-semibold">Worst</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td className="px-4 py-3 border border-gray-200">LTV (유저당 수익)</td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-green-50">{formatCurrency(summary.best.ltv || ltvRoas.best.ltv)}</td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-blue-50">{formatCurrency(summary.normal.ltv || ltvRoas.normal.ltv)}</td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-red-50">{formatCurrency(summary.worst.ltv || ltvRoas.worst.ltv)}</td>
-                  </tr>
-                  <tr>
-                    <td className="px-4 py-3 border border-gray-200">
-                      CAC (UA 기준)
-                      <span className="text-xs text-gray-400 ml-1">마케터용</span>
-                    </td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-green-50">{formatCurrency(summary.best.cac_paid || ltvRoas.best.cac)}</td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-blue-50">{formatCurrency(summary.normal.cac_paid || ltvRoas.normal.cac)}</td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-red-50">{formatCurrency(summary.worst.cac_paid || ltvRoas.worst.cac)}</td>
-                  </tr>
-                  <tr>
-                    <td className="px-4 py-3 border border-gray-200">
-                      CAC (전체 MKT 기준)
-                    </td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-green-50">{formatCurrency(summary.best.cac_blended || 0)}</td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-blue-50">{formatCurrency(summary.normal.cac_blended || 0)}</td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-red-50">{formatCurrency(summary.worst.cac_blended || 0)}</td>
-                  </tr>
-                  <tr className="bg-green-50/30">
-                    <td className="px-4 py-3 border border-gray-200 font-medium">
-                      🎯 Paid ROAS (UA 효율)
-                      <span className="text-xs text-green-600 ml-1">마케터 KPI</span>
-                    </td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-green-100 font-bold text-green-700">{(summary.best.paid_roas || ltvRoas.best.roas).toFixed(1)}%</td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-blue-100 font-bold text-blue-700">{(summary.normal.paid_roas || ltvRoas.normal.roas).toFixed(1)}%</td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-red-100 font-bold text-red-700">{(summary.worst.paid_roas || ltvRoas.worst.roas).toFixed(1)}%</td>
-                  </tr>
-                  <tr className="bg-purple-50/30">
-                    <td className="px-4 py-3 border border-gray-200 font-medium">
-                      📊 Blended ROAS (전체 효율)
-                    </td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-green-50 font-bold text-green-700">{(summary.best.blended_roas || 0).toFixed(1)}%</td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-blue-50 font-bold text-blue-700">{(summary.normal.blended_roas || 0).toFixed(1)}%</td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-red-50 font-bold text-red-700">{(summary.worst.blended_roas || 0).toFixed(1)}%</td>
-                  </tr>
-                  <tr>
-                    <td className="px-4 py-3 border border-gray-200">손익분기점 (BEP)</td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-green-50">{ltvRoas.best.breakEvenDay > 0 ? `D+${ltvRoas.best.breakEvenDay}` : '-'}</td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-blue-50">{ltvRoas.normal.breakEvenDay > 0 ? `D+${ltvRoas.normal.breakEvenDay}` : '-'}</td>
-                    <td className="px-4 py-3 border border-gray-200 text-right bg-red-50">{ltvRoas.worst.breakEvenDay > 0 ? `D+${ltvRoas.worst.breakEvenDay}` : '-'}</td>
-                  </tr>
-                </tbody>
-              </table>
-              {/* V8.5 마케팅 분석 표시 */}
-              {results.v85_marketing && results.v85_marketing.total_marketing_budget > 0 && (
-                <div className="mt-4 p-4 bg-gradient-to-r from-orange-50 to-purple-50 rounded-lg border border-orange-200">
-                  <h4 className="font-semibold text-gray-700 mb-2">📊 V8.5 마케팅 예산 분석</h4>
-                  <div className="grid grid-cols-4 gap-3 text-sm">
-                    <div className="text-center p-2 bg-green-100 rounded">
-                      <div className="text-xs text-green-600">UA 예산</div>
-                      <div className="font-bold text-green-700">{formatCurrency(results.v85_marketing.ua_budget)}</div>
-                      <div className="text-xs text-green-500">{results.v85_marketing.budget_breakdown.ua_ratio}%</div>
-                    </div>
-                    <div className="text-center p-2 bg-purple-100 rounded">
-                      <div className="text-xs text-purple-600">Brand 예산</div>
-                      <div className="font-bold text-purple-700">{formatCurrency(results.v85_marketing.brand_budget)}</div>
-                      <div className="text-xs text-purple-500">{results.v85_marketing.budget_breakdown.brand_ratio}%</div>
-                    </div>
-                    <div className="text-center p-2 bg-blue-100 rounded">
-                      <div className="text-xs text-blue-600">연간 Sustaining</div>
-                      <div className="font-bold text-blue-700">{formatCurrency(results.v85_marketing.sustaining_budget_annual)}</div>
-                      <div className="text-xs text-blue-500">{results.v85_marketing.budget_breakdown.sustaining_ratio}%</div>
-                    </div>
-                    <div className="text-center p-2 bg-orange-100 rounded">
-                      <div className="text-xs text-orange-600">Organic Boost</div>
-                      <div className="font-bold text-orange-700">{results.v85_marketing.organic_boost_factor}x</div>
-                      <div className="text-xs text-orange-500">자연유입 증폭</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Section 4: 산정 근거 */}
-      <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="bg-gray-100 px-6 py-4 border-b">
-          <h2 className="text-xl font-bold text-gray-800">📐 Section 4: Calculation Basis</h2>
-        </div>
-        <div className="p-6">
-          {results.blending && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-              <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
-                <p className="text-xs text-blue-600">블렌딩 비율</p>
-                <p className="font-semibold text-blue-800">내부 {(results.blending.weight_internal * 100).toFixed(0)}% : 벤치마크 {(results.blending.weight_benchmark * 100).toFixed(0)}%</p>
-              </div>
-              <div className="p-3 bg-violet-50 rounded-lg border border-violet-200">
-                <p className="text-xs text-violet-600">품질 등급</p>
-                <p className="font-semibold text-violet-800">{results.v7_settings?.quality_score || 'B'}급 (×{results.v7_settings?.quality_multiplier || 1.0})</p>
-              </div>
-              <div className="p-3 bg-indigo-50 rounded-lg border border-indigo-200">
-                <p className="text-xs text-indigo-600">BM 타입</p>
-                <p className="font-semibold text-indigo-800">{results.v7_settings?.bm_type || 'Midcore'}</p>
-              </div>
-              <div className="p-3 bg-green-50 rounded-lg border border-green-200">
-                <p className="text-xs text-green-600">지역</p>
-                <p className="font-semibold text-green-800">{results.v7_settings?.regions?.join(', ') || 'Global'}</p>
-              </div>
-            </div>
-          )}
-          <div className="bg-gray-50 rounded-lg p-4">
-            <h3 className="font-medium text-gray-700 mb-3">선택된 표본 게임</h3>
-            <div className="grid grid-cols-4 gap-4 text-sm">
-              <div><p className="text-gray-500">Retention</p><p className="font-medium">{results.input.retention_games.join(', ') || '-'}</p></div>
-              <div><p className="text-gray-500">NRU</p><p className="font-medium">{results.input.nru_games.join(', ') || '-'}</p></div>
-              <div><p className="text-gray-500">P.Rate</p><p className="font-medium">{results.input.pr_games.join(', ') || '-'}</p></div>
-              <div><p className="text-gray-500">ARPPU</p><p className="font-medium">{results.input.arppu_games.join(', ') || '-'}</p></div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 벤치마크 100% 경고 */}
-      {results.blending?.benchmark_only && (
-        <div className="bg-amber-50 border-2 border-amber-400 rounded-xl p-4 flex items-start gap-3">
-          <span className="text-2xl">⚠️</span>
-          <div>
-            <h3 className="font-bold text-amber-800 mb-1">시장 평균 데이터만 사용되었습니다</h3>
-            <p className="text-sm text-amber-700">
-              표본 게임이 선택되지 않아 벤치마크 100%로 계산되었습니다. 
-              더 정확한 프로젝션을 위해 유사 게임을 표본으로 선택해주세요.
-            </p>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-const RetentionTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
-  const [showTable, setShowTable] = useState(false);
-  // D365 전체 데이터 사용
-  const chartData = results.results.best.full_data.retention.map((_, i) => ({ day: i + 1, best: results.results.best.full_data.retention[i] * 100, normal: results.results.normal.full_data.retention[i] * 100, worst: results.results.worst.full_data.retention[i] * 100 }));
-  const tableData = results.results.best.full_data.retention.map((_, i) => ({ day: `D+${i + 1}`, best: (results.results.best.full_data.retention[i] * 100).toFixed(1), normal: (results.results.normal.full_data.retention[i] * 100).toFixed(1), worst: (results.results.worst.full_data.retention[i] * 100).toFixed(1) }));
-  return (
-    <div className="space-y-6">
-      {/* Retention 계산 방식 설명 */}
-      <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
-        <p className="text-sm font-semibold text-purple-800 mb-2">📊 Retention 계산 방식</p>
-        <div className="text-xs text-purple-700 space-y-1">
-          <p><strong>공식:</strong> Retention(day) = a × day<sup>b</sup> (Power Law 모델)</p>
-          <p><strong>계수 a:</strong> 표본 게임들의 D+1 Retention 평균값 기반 초기 계수</p>
-          <p><strong>계수 b:</strong> 리텐션 감소 기울기 (일반적으로 -0.3 ~ -0.7, 음수일수록 급격 감소)</p>
-          <p><strong>예시:</strong> D+30 Retention = 0.45 × 30<sup>-0.5</sup> ≈ 8.2%</p>
-        </div>
-      </div>
-      <div className="border rounded-lg overflow-hidden">
-        <div className="bg-gray-100 px-4 py-2 font-semibold">회귀분석 결과</div>
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left border-b">시나리오</th><th className="px-4 py-2 text-right border-b">D+1</th><th className="px-4 py-2 text-right border-b">a</th><th className="px-4 py-2 text-right border-b">b</th><th className="px-4 py-2 text-right border-b">D+7</th><th className="px-4 py-2 text-right border-b">D+30</th></tr></thead>
-          <tbody>
-            {(['best', 'normal', 'worst'] as const).map(s => (
-              <tr key={s} className={s === 'best' ? 'bg-green-50' : s === 'normal' ? 'bg-blue-50' : 'bg-red-50'}>
-                <td className="px-4 py-2 border-b font-medium">{s.charAt(0).toUpperCase() + s.slice(1)}</td>
-                <td className="px-4 py-2 border-b text-right">{formatPercent(results.results[s].retention.target_d1)}</td>
-                <td className="px-4 py-2 border-b text-right">{results.results[s].retention.coefficients.a.toFixed(4)}</td>
-                <td className="px-4 py-2 border-b text-right">{results.results[s].retention.coefficients.b.toFixed(4)}</td>
-                <td className="px-4 py-2 border-b text-right">{formatPercent(results.results[s].retention.curve[6])}</td>
-                <td className="px-4 py-2 border-b text-right">{formatPercent(results.results[s].retention.curve[29])}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="bg-white rounded-xl border p-6">
-        <h3 className="text-lg font-semibold mb-4">Retention Curve (D1~D365)</h3>
-        <div className="h-80">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="day" /><YAxis domain={[0, 60]} tickFormatter={(v) => `${v}%`} /><Tooltip formatter={(v: number) => `${v.toFixed(2)}%`} /><Legend />
-              <Line type="monotone" dataKey="best" stroke={COLORS.best} name="Best" dot={false} strokeWidth={2} />
-              <Line type="monotone" dataKey="normal" stroke={COLORS.normal} name="Normal" dot={false} strokeWidth={2} />
-              <Line type="monotone" dataKey="worst" stroke={COLORS.worst} name="Worst" dot={false} strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-      <div className="border rounded-lg overflow-hidden">
-        <div className="bg-gray-100 px-4 py-2 flex justify-between"><span className="font-semibold">상세 테이블</span><div className="flex gap-2"><button onClick={() => setShowTable(!showTable)} className="text-sm text-blue-600">{showTable ? '접기' : '펼치기'}</button><button onClick={() => downloadCSV(tableData, 'retention.csv', ['day', 'best', 'normal', 'worst'])} className="flex items-center gap-1 text-sm bg-green-600 text-white px-3 py-1 rounded"><Download className="w-4 h-4" />CSV</button></div></div>
-        {showTable && <div className="max-h-96 overflow-y-auto"><table className="w-full text-xs"><thead className="bg-gray-50 sticky top-0"><tr><th className="px-3 py-2 text-left border-b">Day</th><th className="px-3 py-2 text-right border-b bg-green-50">Best</th><th className="px-3 py-2 text-right border-b bg-blue-50">Normal</th><th className="px-3 py-2 text-right border-b bg-red-50">Worst</th></tr></thead><tbody>{tableData.slice(0, 365).map((r, i) => <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}><td className="px-3 py-1 border-b">{r.day}</td><td className="px-3 py-1 border-b text-right">{r.best}%</td><td className="px-3 py-1 border-b text-right">{r.normal}%</td><td className="px-3 py-1 border-b text-right">{r.worst}%</td></tr>)}</tbody></table></div>}
-      </div>
-    </div>
-  );
-};
-
-const NRUTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
-  const [showTable, setShowTable] = useState(false);
-  // D365 전체 데이터 사용
-  const chartData = results.results.best.full_data.nru.map((_, i) => ({ day: i + 1, best: results.results.best.full_data.nru[i], normal: results.results.normal.full_data.nru[i], worst: results.results.worst.full_data.nru[i] }));
-  const tableData = results.results.best.full_data.nru.map((_, i) => ({ day: `D+${i + 1}`, best: results.results.best.full_data.nru[i], normal: results.results.normal.full_data.nru[i], worst: results.results.worst.full_data.nru[i] }));
-  return (
-    <div className="space-y-6">
-      {/* NRU 계산 방식 설명 */}
-      <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-        <p className="text-sm font-semibold text-blue-800 mb-2">📊 NRU 계산 방식</p>
-        <div className="text-xs text-blue-700 space-y-1">
-          <p><strong>Paid NRU:</strong> UA 예산 ÷ CPA (CPA Saturation 적용: 예산↑ → 효율↓)</p>
-          <p><strong>Organic Boost:</strong> 1 + ln(1 + Brand예산/UA예산) × 0.7 (브랜드 마케팅 → 자연 유입 증가)</p>
-          <p><strong>총 NRU:</strong> Paid NRU × (1 + Organic Ratio × Organic Boost)</p>
-          <p><strong>일별 배분:</strong> 런칭 30일간 역삼각형 분포 (D1 피크 → D30 감소)</p>
-        </div>
-      </div>
-      <div className="border rounded-lg overflow-hidden">
-        <div className="bg-gray-100 px-4 py-2 font-semibold">NRU 요약</div>
-        <table className="w-full text-sm"><thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left border-b">시나리오</th><th className="px-4 py-2 text-right border-b">D1 NRU</th><th className="px-4 py-2 text-right border-b">총 NRU</th></tr></thead>
-          <tbody>{(['best', 'normal', 'worst'] as const).map(s => <tr key={s} className={s === 'best' ? 'bg-green-50' : s === 'normal' ? 'bg-blue-50' : 'bg-red-50'}><td className="px-4 py-2 border-b font-medium">{s.charAt(0).toUpperCase() + s.slice(1)}</td><td className="px-4 py-2 border-b text-right">{formatNumber(results.results[s].nru.d1_nru)}</td><td className="px-4 py-2 border-b text-right font-bold">{formatNumber(results.results[s].nru.total)}</td></tr>)}</tbody>
-        </table>
-      </div>
-      <div className="bg-white rounded-xl border p-6"><h3 className="text-lg font-semibold mb-4">NRU 추이 (D1~D365)</h3><div className="h-80"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="day" /><YAxis tickFormatter={(v) => formatCompactKorean(v)} width={80} /><Tooltip formatter={(v: number) => [formatNumber(v), '']} /><Legend /><Area type="monotone" dataKey="best" stroke={COLORS.best} fill={COLORS.best} fillOpacity={0.2} name="Best" /><Area type="monotone" dataKey="normal" stroke={COLORS.normal} fill={COLORS.normal} fillOpacity={0.2} name="Normal" /><Area type="monotone" dataKey="worst" stroke={COLORS.worst} fill={COLORS.worst} fillOpacity={0.2} name="Worst" /></AreaChart></ResponsiveContainer></div></div>
-      <div className="border rounded-lg overflow-hidden"><div className="bg-gray-100 px-4 py-2 flex justify-between"><span className="font-semibold">상세 테이블</span><div className="flex gap-2"><button onClick={() => setShowTable(!showTable)} className="text-sm text-blue-600">{showTable ? '접기' : '펼치기'}</button><button onClick={() => downloadCSV(tableData, 'nru.csv', ['day', 'best', 'normal', 'worst'])} className="flex items-center gap-1 text-sm bg-green-600 text-white px-3 py-1 rounded"><Download className="w-4 h-4" />CSV</button></div></div>{showTable && <div className="max-h-96 overflow-y-auto"><table className="w-full text-xs"><thead className="bg-gray-50 sticky top-0"><tr><th className="px-3 py-2 text-left border-b">Day</th><th className="px-3 py-2 text-right border-b bg-green-50">Best</th><th className="px-3 py-2 text-right border-b bg-blue-50">Normal</th><th className="px-3 py-2 text-right border-b bg-red-50">Worst</th></tr></thead><tbody>{tableData.slice(0, 365).map((r, i) => <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}><td className="px-3 py-1 border-b">{r.day}</td><td className="px-3 py-1 border-b text-right">{formatNumber(r.best)}</td><td className="px-3 py-1 border-b text-right">{formatNumber(r.normal)}</td><td className="px-3 py-1 border-b text-right">{formatNumber(r.worst)}</td></tr>)}</tbody></table></div>}</div>
-    </div>
-  );
-};
-
-const RevenueTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
-  const [showTable, setShowTable] = useState(false);
-  // D365 전체 데이터 사용
-  const chartData = results.results.best.full_data.revenue.map((_, i) => ({ day: i + 1, best: results.results.best.full_data.revenue[i], normal: results.results.normal.full_data.revenue[i], worst: results.results.worst.full_data.revenue[i] }));
-  const tableData = results.results.best.full_data.revenue.map((_, i) => ({ day: `D+${i + 1}`, best: Math.round(results.results.best.full_data.revenue[i]), normal: Math.round(results.results.normal.full_data.revenue[i]), worst: Math.round(results.results.worst.full_data.revenue[i]) }));
-  return (
-    <div className="space-y-6">
-      {/* Revenue 계산 방식 설명 */}
-      <div className="p-4 bg-amber-50 rounded-lg border border-amber-200">
-        <p className="text-sm font-semibold text-amber-800 mb-2">📊 Revenue 계산 방식</p>
-        <div className="text-xs text-amber-700 space-y-1">
-          <p><strong>공식:</strong> Daily Revenue = DAU × Payment Rate × ARPPU</p>
-          <p><strong>Payment Rate:</strong> 표본 게임 평균 × BM 타입 보정 (Hardcore 3% vs Casual 10%)</p>
-          <p><strong>ARPPU:</strong> 표본 게임 평균 × BM 타입 보정 (Hardcore $80 vs Casual $20)</p>
-          <p><strong>Net Revenue:</strong> Gross Revenue × (1 - 플랫폼 수수료 30% - VAT)</p>
-        </div>
-      </div>
-      <div className="border rounded-lg overflow-hidden">
-        <div className="bg-gray-100 px-4 py-2 font-semibold">Revenue 요약</div>
-        <table className="w-full text-sm"><thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left border-b">시나리오</th><th className="px-4 py-2 text-right border-b">총 Gross</th><th className="px-4 py-2 text-right border-b">일평균</th></tr></thead>
-          <tbody>{(['best', 'normal', 'worst'] as const).map(s => <tr key={s} className={s === 'best' ? 'bg-green-50' : s === 'normal' ? 'bg-blue-50' : 'bg-red-50'}><td className="px-4 py-2 border-b font-medium">{s.charAt(0).toUpperCase() + s.slice(1)}</td><td className="px-4 py-2 border-b text-right font-bold">{formatCurrency(results.results[s].revenue.total_gross)}</td><td className="px-4 py-2 border-b text-right">{formatCurrency(results.results[s].revenue.average_daily)}</td></tr>)}</tbody>
-        </table>
-      </div>
-      <div className="bg-white rounded-xl border p-6"><h3 className="text-lg font-semibold mb-4">일별 매출 (D1~D365)</h3><div className="h-80"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="day" /><YAxis tickFormatter={(v) => formatCompactKorean(v)} width={80} /><Tooltip formatter={(v: number) => [formatCurrency(v), '']} /><Legend /><Area type="monotone" dataKey="best" stroke={COLORS.best} fill={COLORS.best} fillOpacity={0.2} name="Best" /><Area type="monotone" dataKey="normal" stroke={COLORS.normal} fill={COLORS.normal} fillOpacity={0.2} name="Normal" /><Area type="monotone" dataKey="worst" stroke={COLORS.worst} fill={COLORS.worst} fillOpacity={0.2} name="Worst" /></AreaChart></ResponsiveContainer></div></div>
-      <div className="border rounded-lg overflow-hidden"><div className="bg-gray-100 px-4 py-2 flex justify-between"><span className="font-semibold">상세 테이블</span><div className="flex gap-2"><button onClick={() => setShowTable(!showTable)} className="text-sm text-blue-600">{showTable ? '접기' : '펼치기'}</button><button onClick={() => downloadCSV(tableData, 'revenue.csv', ['day', 'best', 'normal', 'worst'])} className="flex items-center gap-1 text-sm bg-green-600 text-white px-3 py-1 rounded"><Download className="w-4 h-4" />CSV</button></div></div>{showTable && <div className="max-h-96 overflow-y-auto"><table className="w-full text-xs"><thead className="bg-gray-50 sticky top-0"><tr><th className="px-3 py-2 text-left border-b">Day</th><th className="px-3 py-2 text-right border-b bg-green-50">Best</th><th className="px-3 py-2 text-right border-b bg-blue-50">Normal</th><th className="px-3 py-2 text-right border-b bg-red-50">Worst</th></tr></thead><tbody>{tableData.slice(0, 365).map((r, i) => <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}><td className="px-3 py-1 border-b">{r.day}</td><td className="px-3 py-1 border-b text-right">{formatCurrency(r.best)}</td><td className="px-3 py-1 border-b text-right">{formatCurrency(r.normal)}</td><td className="px-3 py-1 border-b text-right">{formatCurrency(r.worst)}</td></tr>)}</tbody></table></div>}</div>
-    </div>
-  );
-};
-
-const TotalTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
-  const [showTable, setShowTable] = useState(false);
-  // D365 전체 데이터 사용
-  const chartData = results.results.normal.full_data.dau.map((_, i) => ({ day: i + 1, dau_normal: results.results.normal.full_data.dau[i], revenue_best: results.results.best.full_data.revenue[i], revenue_normal: results.results.normal.full_data.revenue[i], revenue_worst: results.results.worst.full_data.revenue[i] }));
-  const tableData = results.results.normal.full_data.dau.map((_, i) => ({ day: `D+${i + 1}`, dau_best: results.results.best.full_data.dau[i], dau_normal: results.results.normal.full_data.dau[i], dau_worst: results.results.worst.full_data.dau[i], revenue_best: Math.round(results.results.best.full_data.revenue[i]), revenue_normal: Math.round(results.results.normal.full_data.revenue[i]), revenue_worst: Math.round(results.results.worst.full_data.revenue[i]) }));
-  return (
-    <div className="space-y-6">
-      {/* Total KPI 계산 방식 설명 */}
-      <div className="p-4 bg-slate-100 rounded-lg border border-slate-300">
-        <p className="text-sm font-semibold text-slate-800 mb-2">📊 통합 KPI 계산 흐름</p>
-        <div className="text-xs text-slate-700 space-y-1">
-          <p><strong>1. NRU:</strong> UA 예산 ÷ CPA × Organic Boost → 런칭 30일간 일별 유입</p>
-          <p><strong>2. DAU:</strong> Σ(과거 NRU × 해당일 Retention) → 일별 활성 유저</p>
-          <p><strong>3. Revenue:</strong> DAU × Payment Rate × ARPPU → 일별 매출</p>
-          <p><strong>4. Total:</strong> Σ(일별 매출) × 365일 → 연간 Gross/Net Revenue</p>
-        </div>
-      </div>
-      <div className="border rounded-lg overflow-hidden">
-        <div className="bg-gray-100 px-4 py-2 font-semibold">통합 KPI 요약</div>
-        <table className="w-full text-sm"><thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left border-b">지표</th><th className="px-4 py-2 text-right border-b bg-green-50">Best</th><th className="px-4 py-2 text-right border-b bg-blue-50">Normal</th><th className="px-4 py-2 text-right border-b bg-red-50">Worst</th></tr></thead>
-          <tbody>
-            <tr><td className="px-4 py-2 border-b">총 NRU</td><td className="px-4 py-2 border-b text-right bg-green-50">{formatNumber(results.summary.best.total_nru)}</td><td className="px-4 py-2 border-b text-right bg-blue-50">{formatNumber(results.summary.normal.total_nru)}</td><td className="px-4 py-2 border-b text-right bg-red-50">{formatNumber(results.summary.worst.total_nru)}</td></tr>
-            <tr><td className="px-4 py-2 border-b">Peak DAU</td><td className="px-4 py-2 border-b text-right bg-green-50">{formatNumber(results.summary.best.peak_dau)}</td><td className="px-4 py-2 border-b text-right bg-blue-50">{formatNumber(results.summary.normal.peak_dau)}</td><td className="px-4 py-2 border-b text-right bg-red-50">{formatNumber(results.summary.worst.peak_dau)}</td></tr>
-            <tr><td className="px-4 py-2 border-b font-bold">총 Gross Revenue</td><td className="px-4 py-2 border-b text-right bg-green-50 font-bold">{formatCurrency(results.summary.best.gross_revenue)}</td><td className="px-4 py-2 border-b text-right bg-blue-50 font-bold">{formatCurrency(results.summary.normal.gross_revenue)}</td><td className="px-4 py-2 border-b text-right bg-red-50 font-bold">{formatCurrency(results.summary.worst.gross_revenue)}</td></tr>
-            <tr><td className="px-4 py-2 font-bold">총 Net Revenue</td><td className="px-4 py-2 text-right bg-green-50 font-bold">{formatCurrency(results.summary.best.net_revenue)}</td><td className="px-4 py-2 text-right bg-blue-50 font-bold">{formatCurrency(results.summary.normal.net_revenue)}</td><td className="px-4 py-2 text-right bg-red-50 font-bold">{formatCurrency(results.summary.worst.net_revenue)}</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div className="bg-white rounded-xl border p-6"><h3 className="text-lg font-semibold mb-4">통합 KPI 추이 (D1~D365)</h3><div className="h-96"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="day" /><YAxis yAxisId="left" tickFormatter={(v) => formatCompactKorean(v)} width={80} /><YAxis yAxisId="right" orientation="right" tickFormatter={(v) => formatCompactKorean(v)} width={80} /><Tooltip /><Legend /><Bar yAxisId="left" dataKey="dau_normal" fill={COLORS.normal} name="DAU" opacity={0.7} /><Line yAxisId="right" type="monotone" dataKey="revenue_best" stroke={COLORS.best} name="Revenue (Best)" dot={false} /><Line yAxisId="right" type="monotone" dataKey="revenue_normal" stroke={COLORS.normal} name="Revenue (Normal)" dot={false} /><Line yAxisId="right" type="monotone" dataKey="revenue_worst" stroke={COLORS.worst} name="Revenue (Worst)" dot={false} /></ComposedChart></ResponsiveContainer></div></div>
-      <div className="border rounded-lg overflow-hidden"><div className="bg-gray-100 px-4 py-2 flex justify-between"><span className="font-semibold">상세 테이블</span><div className="flex gap-2"><button onClick={() => setShowTable(!showTable)} className="text-sm text-blue-600">{showTable ? '접기' : '펼치기'}</button><button onClick={() => downloadCSV(tableData, 'total_kpi.csv', ['day', 'dau_best', 'dau_normal', 'dau_worst', 'revenue_best', 'revenue_normal', 'revenue_worst'])} className="flex items-center gap-1 text-sm bg-green-600 text-white px-3 py-1 rounded"><Download className="w-4 h-4" />CSV</button></div></div>{showTable && <div className="max-h-96 overflow-x-auto overflow-y-auto"><table className="w-full text-xs whitespace-nowrap"><thead className="bg-gray-50 sticky top-0"><tr><th className="px-2 py-2 text-left border-b">Day</th><th className="px-2 py-2 text-right border-b text-green-600">DAU Best</th><th className="px-2 py-2 text-right border-b text-blue-600">Normal</th><th className="px-2 py-2 text-right border-b text-red-600">Worst</th><th className="px-2 py-2 text-right border-b text-green-600">Rev Best</th><th className="px-2 py-2 text-right border-b text-blue-600">Normal</th><th className="px-2 py-2 text-right border-b text-red-600">Worst</th></tr></thead><tbody>{tableData.slice(0, 365).map((r, i) => <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}><td className="px-2 py-1 border-b">{r.day}</td><td className="px-2 py-1 border-b text-right">{formatNumber(r.dau_best)}</td><td className="px-2 py-1 border-b text-right">{formatNumber(r.dau_normal)}</td><td className="px-2 py-1 border-b text-right">{formatNumber(r.dau_worst)}</td><td className="px-2 py-1 border-b text-right">{formatCurrency(r.revenue_best)}</td><td className="px-2 py-1 border-b text-right">{formatCurrency(r.revenue_normal)}</td><td className="px-2 py-1 border-b text-right">{formatCurrency(r.revenue_worst)}</td></tr>)}</tbody></table></div>}</div>
-    </div>
-  );
-};
-
-const DAUTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
-  const [showTable, setShowTable] = useState(false);
-  // D365 전체 데이터 사용
-  const chartData = results.results.best.full_data.dau.map((_, i) => ({ day: i + 1, best: results.results.best.full_data.dau[i], normal: results.results.normal.full_data.dau[i], worst: results.results.worst.full_data.dau[i] }));
-  const tableData = results.results.best.full_data.dau.map((_, i) => ({ day: `D+${i + 1}`, best: results.results.best.full_data.dau[i], normal: results.results.normal.full_data.dau[i], worst: results.results.worst.full_data.dau[i] }));
-  return (
-    <div className="space-y-6">
-      {/* DAU 계산 방식 설명 */}
-      <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200">
-        <p className="text-sm font-semibold text-emerald-800 mb-2">📊 DAU 계산 방식</p>
-        <div className="text-xs text-emerald-700 space-y-1">
-          <p><strong>공식:</strong> DAU(t) = Σ[ NRU(t-k) × Retention(k) ] for k = 0 to t</p>
-          <p><strong>해석:</strong> 특정일의 DAU는 과거에 유입된 모든 유저들이 해당일에 접속할 확률(리텐션)의 합계입니다.</p>
-          <p><strong>예시:</strong> D+30 DAU = (D+1 유입 × D30 리텐션) + (D+2 유입 × D29 리텐션) + ... + (D+30 유입 × D1 리텐션)</p>
-        </div>
-      </div>
-      <div className="border rounded-lg overflow-hidden">
-        <div className="bg-gray-100 px-4 py-2 font-semibold">DAU 상세 요약</div>
-        <div className="p-4 grid grid-cols-3 gap-4">
-          {(['best', 'normal', 'worst'] as const).map(s => (
-            <div key={s} className={`p-4 rounded-lg border-2 ${s === 'best' ? 'bg-green-50 border-green-300' : s === 'normal' ? 'bg-blue-50 border-blue-300' : 'bg-red-50 border-red-300'}`}>
-              <h4 className={`font-bold text-lg mb-3 ${s === 'best' ? 'text-green-700' : s === 'normal' ? 'text-blue-700' : 'text-red-700'}`}>{s.charAt(0).toUpperCase() + s.slice(1)}</h4>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between"><span>Peak DAU:</span><span className="font-bold">{formatNumber(results.results[s].dau.peak)}</span></div>
-                <div className="flex justify-between"><span>평균 DAU:</span><span className="font-bold">{formatNumber(results.results[s].dau.average)}</span></div>
-                <div className="flex justify-between"><span>D+1 DAU:</span><span>{formatNumber(results.results[s].dau.series[0])}</span></div>
-                <div className="flex justify-between"><span>D+30 DAU:</span><span>{formatNumber(results.results[s].dau.series[29])}</span></div>
-              </div>
-              <div className={`mt-3 pt-3 border-t text-xs text-gray-500 ${s === 'best' ? 'border-green-300' : s === 'normal' ? 'border-blue-300' : 'border-red-300'}`}>
-                {s === 'best' && '낙관적 시나리오'}
-                {s === 'normal' && '기준 시나리오'}
-                {s === 'worst' && '보수적 시나리오'}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="bg-white rounded-xl border p-6"><h3 className="text-lg font-semibold mb-4">DAU 추이 (D1~D365)</h3><div className="h-80"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="day" /><YAxis tickFormatter={(v) => formatCompactKorean(v)} width={80} /><Tooltip formatter={(v: number) => formatNumber(v)} /><Legend /><Area type="monotone" dataKey="best" stroke={COLORS.best} fill={COLORS.best} fillOpacity={0.2} name="Best" /><Area type="monotone" dataKey="normal" stroke={COLORS.normal} fill={COLORS.normal} fillOpacity={0.2} name="Normal" /><Area type="monotone" dataKey="worst" stroke={COLORS.worst} fill={COLORS.worst} fillOpacity={0.2} name="Worst" /></AreaChart></ResponsiveContainer></div></div>
-      <div className="border rounded-lg overflow-hidden"><div className="bg-gray-100 px-4 py-2 flex justify-between"><span className="font-semibold">상세 테이블</span><div className="flex gap-2"><button onClick={() => setShowTable(!showTable)} className="text-sm text-blue-600">{showTable ? '접기' : '펼치기'}</button><button onClick={() => downloadCSV(tableData, 'dau.csv', ['day', 'best', 'normal', 'worst'])} className="flex items-center gap-1 text-sm bg-green-600 text-white px-3 py-1 rounded"><Download className="w-4 h-4" />CSV</button></div></div>{showTable && <div className="max-h-96 overflow-y-auto"><table className="w-full text-xs"><thead className="bg-gray-50 sticky top-0"><tr><th className="px-3 py-2 text-left border-b">Day</th><th className="px-3 py-2 text-right border-b bg-green-50">Best</th><th className="px-3 py-2 text-right border-b bg-blue-50">Normal</th><th className="px-3 py-2 text-right border-b bg-red-50">Worst</th></tr></thead><tbody>{tableData.slice(0, 365).map((r, i) => <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}><td className="px-3 py-1 border-b">{r.day}</td><td className="px-3 py-1 border-b text-right">{formatNumber(r.best)}</td><td className="px-3 py-1 border-b text-right">{formatNumber(r.normal)}</td><td className="px-3 py-1 border-b text-right">{formatNumber(r.worst)}</td></tr>)}</tbody></table></div>}</div>
-    </div>
-  );
-};
-
-const RawDataTab: React.FC<{ games: GameListResponse | null }> = ({ games }) => {
-  const [uploading, setUploading] = useState(false);
-  const [downloading, setDownloading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  if (!games) return null;
-  
-  const API_BASE = import.meta.env.VITE_API_URL || 'https://game-kpi-projection.onrender.com/api';
-  
-  const handleExcelDownload = async () => {
-    setDownloading(true);
+  // 엑셀 다운로드 핸들러
+  const handleExport = async () => {
     try {
-      const response = await fetch(`${API_BASE}/raw-data/download`);
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`다운로드 실패: ${response.status} - ${errorText}`);
-      }
+      const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${API_BASE}/api/projection/export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(inputData)
+      });
+      
+      if (!response.ok) throw new Error("Export failed");
+
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'raw_game_data.xlsx';
+      a.download = `KPI_Projection_${inputData.genre}_${new Date().toISOString().slice(0,10)}.xlsx`;
       document.body.appendChild(a);
       a.click();
+      a.remove();
       window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (error: any) {
-      console.error('Excel download error:', error);
-      alert(`엑셀 다운로드 중 오류: ${error.message}`);
-    } finally {
-      setDownloading(false);
+    } catch (e) {
+      alert("엑셀 다운로드 실패: 백엔드 상태를 확인해주세요.");
+      console.error(e);
     }
   };
-  
-  const handleUploadClick = () => {
-    fileInputRef.current?.click();
-  };
-  
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    if (!file.name.endsWith('.csv')) {
-      alert('CSV 파일만 업로드 가능합니다. (.csv)');
-      return;
-    }
-    
-    const metric = prompt('업로드할 지표 유형을 입력하세요:\nretention, nru, payment_rate, arppu 중 하나', 'retention');
-    if (!metric || !['retention', 'nru', 'payment_rate', 'arppu'].includes(metric)) {
-      alert('올바른 지표 유형을 입력해주세요.');
-      return;
-    }
-    
-    setUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      
-      const response = await fetch(`${API_BASE}/raw-data/upload?metric=${metric}`, {
-        method: 'POST',
-        body: formData,
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || '업로드 실패');
-      }
-      
-      const result = await response.json();
-      alert(`업로드 성공: ${result.message}\n페이지를 새로고침하면 반영됩니다.`);
-      window.location.reload();
-    } catch (error: any) {
-      console.error('Upload error:', error);
-      alert(`업로드 중 오류: ${error.message}`);
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
-  
+
+  const s = summary[selectedScenario];
+
+  // 숫자 포맷팅 헬퍼
+  const formatBillion = (val: number) => `${(val / 100000000).toFixed(1)}억`;
+  const formatMillion = (val: number) => `${(val / 1000000).toFixed(0)}M`;
+
   return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-xl border p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-semibold">Raw Data 관리</h3>
-          <div className="flex gap-2">
-            <button 
-              onClick={handleExcelDownload} 
-              disabled={downloading}
-              className="flex items-center gap-1 text-sm bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
-            >
-              {downloading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-              {downloading ? '다운로드 중...' : '전체 엑셀 다운로드'}
-            </button>
-            <button 
-              onClick={handleUploadClick}
-              disabled={uploading}
-              className="flex items-center gap-1 text-sm bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
-            >
-              {uploading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
-              {uploading ? '업로드 중...' : '새 데이터 업로드 (CSV)'}
-            </button>
-            <input 
-              ref={fileInputRef}
-              type="file" 
-              accept=".csv" 
-              onChange={handleFileChange}
-              className="hidden"
-            />
+    <div className="space-y-6 animate-in fade-in duration-500">
+      {/* 1. Header & Summary Cards */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+            📊 KPI 프로젝션 결과 
+            <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">V10.0</span>
+          </h2>
+          <p className="text-sm text-gray-500 mt-1">
+            {inputData.projection_days || 365}일 기준 누적 성과 · {inputData.genre} · {inputData.platform}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          {/* 시나리오 선택 */}
+          <select 
+            value={selectedScenario}
+            onChange={(e) => setSelectedScenario(e.target.value as any)}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium"
+          >
+            <option value="best">🟢 Best</option>
+            <option value="normal">🔵 Normal</option>
+            <option value="worst">🔴 Worst</option>
+          </select>
+          <button 
+            onClick={handleExport}
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-lg shadow-md transition-all font-medium"
+          >
+            <Download className="w-4 h-4" />
+            <span>Excel 다운로드</span>
+          </button>
+        </div>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+          <div className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+            <DollarSign className="w-3 h-3" /> Total Revenue
+          </div>
+          <div className="text-xl font-bold text-gray-900">₩{formatBillion(s.total_revenue)}</div>
+          <div className="text-xs text-gray-400 mt-1">Net: ₩{formatBillion(s.net_profit)}</div>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+          <div className="text-xs text-gray-500 mb-1">Blended ROAS</div>
+          <div className={`text-xl font-bold ${s.blended_roas >= 100 ? 'text-green-600' : 'text-orange-500'}`}>
+            {s.blended_roas.toFixed(1)}%
+          </div>
+          <div className="text-xs text-gray-400 mt-1">Paid: {s.paid_roas.toFixed(1)}%</div>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+          <div className="text-xs text-gray-500 mb-1">ROI</div>
+          <div className={`text-xl font-bold ${s.roi >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+            {s.roi >= 0 ? '+' : ''}{s.roi.toFixed(1)}%
           </div>
         </div>
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-sm">
-          <p className="text-amber-800"><strong>📌 데이터 관리 안내:</strong></p>
-          <ul className="text-amber-700 mt-1 space-y-1">
-            <li>• <strong>다운로드:</strong> Raw_Retention, Raw_NRU, Raw_PR, Raw_ARPPU 시트가 포함된 엑셀 파일</li>
-            <li>• <strong>업로드:</strong> CSV 형식만 지원 (첫 열: 게임명, 이후 열: 일별 데이터)</li>
-            <li>• <strong>GitHub 업로드:</strong> data/raw_game_data.json 파일 직접 수정 후 커밋</li>
-          </ul>
+        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+          <div className="text-xs text-gray-500 mb-1">BEP (손익분기)</div>
+          <div className={`text-xl font-bold ${s.bep_day > 0 ? 'text-blue-600' : 'text-red-500'}`}>
+            {s.bep_day > 0 ? `D+${s.bep_day}` : "미달성"}
+          </div>
         </div>
-        <div className="grid grid-cols-2 gap-6">
-          {[{ key: 'retention', label: 'Retention', data: games.retention }, { key: 'nru', label: 'NRU', data: games.nru }, { key: 'payment_rate', label: 'Payment Rate', data: games.payment_rate }, { key: 'arppu', label: 'ARPPU', data: games.arppu }].map(({ key, label, data }) => (
-            <div key={key} className="border rounded-lg overflow-hidden">
-              <div className="bg-gray-100 px-3 py-2 flex justify-between"><span className="font-medium">{label} ({data.length}개)</span></div>
-              <div className="max-h-48 overflow-y-auto">{data.map((g, i) => <div key={g} className={`px-3 py-2 text-sm ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} border-b last:border-b-0`}>{g}</div>)}</div>
+        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+          <div className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+            <Users className="w-3 h-3" /> Total NRU
+          </div>
+          <div className="text-xl font-bold text-gray-700">{s.total_nru.toLocaleString()}</div>
+          <div className="text-xs text-gray-400 mt-1">
+            Paid: {s.total_nru_paid?.toLocaleString() || 0}
+          </div>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+          <div className="text-xs text-gray-500 mb-1">Paid CAC</div>
+          <div className="text-xl font-bold text-gray-700">₩{s.cac_paid.toLocaleString()}</div>
+          <div className="text-xs text-gray-400 mt-1">
+            Blended: ₩{s.cac_blended?.toLocaleString() || 0}
+          </div>
+        </div>
+      </div>
+
+      {/* 시나리오 비교 테이블 */}
+      <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+        <h3 className="text-lg font-bold text-gray-800 mb-4">📊 시나리오 비교</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b">
+                <th className="text-left py-2 px-3">지표</th>
+                <th className="text-right py-2 px-3 text-green-600">🟢 Best</th>
+                <th className="text-right py-2 px-3 text-blue-600">🔵 Normal</th>
+                <th className="text-right py-2 px-3 text-red-600">🔴 Worst</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b hover:bg-gray-50">
+                <td className="py-2 px-3 font-medium">Total Revenue</td>
+                <td className="text-right py-2 px-3">₩{formatBillion(summary.best.total_revenue)}</td>
+                <td className="text-right py-2 px-3">₩{formatBillion(summary.normal.total_revenue)}</td>
+                <td className="text-right py-2 px-3">₩{formatBillion(summary.worst.total_revenue)}</td>
+              </tr>
+              <tr className="border-b hover:bg-gray-50">
+                <td className="py-2 px-3 font-medium">Net Profit</td>
+                <td className="text-right py-2 px-3">₩{formatBillion(summary.best.net_profit)}</td>
+                <td className="text-right py-2 px-3">₩{formatBillion(summary.normal.net_profit)}</td>
+                <td className="text-right py-2 px-3">₩{formatBillion(summary.worst.net_profit)}</td>
+              </tr>
+              <tr className="border-b hover:bg-gray-50">
+                <td className="py-2 px-3 font-medium">ROI</td>
+                <td className="text-right py-2 px-3">{summary.best.roi.toFixed(1)}%</td>
+                <td className="text-right py-2 px-3">{summary.normal.roi.toFixed(1)}%</td>
+                <td className="text-right py-2 px-3">{summary.worst.roi.toFixed(1)}%</td>
+              </tr>
+              <tr className="border-b hover:bg-gray-50">
+                <td className="py-2 px-3 font-medium">BEP Day</td>
+                <td className="text-right py-2 px-3">{summary.best.bep_day > 0 ? `D+${summary.best.bep_day}` : '-'}</td>
+                <td className="text-right py-2 px-3">{summary.normal.bep_day > 0 ? `D+${summary.normal.bep_day}` : '-'}</td>
+                <td className="text-right py-2 px-3">{summary.worst.bep_day > 0 ? `D+${summary.worst.bep_day}` : '-'}</td>
+              </tr>
+              <tr className="hover:bg-gray-50">
+                <td className="py-2 px-3 font-medium">Total NRU</td>
+                <td className="text-right py-2 px-3">{summary.best.total_nru.toLocaleString()}</td>
+                <td className="text-right py-2 px-3">{summary.normal.total_nru.toLocaleString()}</td>
+                <td className="text-right py-2 px-3">{summary.worst.total_nru.toLocaleString()}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* 2. Charts Section */}
+      <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+        <div className="flex gap-4 mb-6 border-b">
+          <button 
+            onClick={() => setActiveTab('financial')}
+            className={`pb-3 px-1 font-medium transition-colors ${activeTab === 'financial' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            💰 매출 & 손익
+          </button>
+          <button 
+            onClick={() => setActiveTab('traffic')}
+            className={`pb-3 px-1 font-medium transition-colors ${activeTab === 'traffic' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            👥 DAU / NRU
+          </button>
+          <button 
+            onClick={() => setActiveTab('retention')}
+            className={`pb-3 px-1 font-medium transition-colors ${activeTab === 'retention' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            📈 누적 손익
+          </button>
+        </div>
+
+        <div className="h-[400px] w-full">
+          {activeTab === 'financial' && (
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="day" tick={{fontSize: 11}} tickFormatter={(val) => `D${val}`} />
+                <YAxis yAxisId="left" tickFormatter={(val) => formatBillion(val)} tick={{fontSize: 11}} />
+                <Tooltip 
+                  formatter={(val: number, name: string) => [`₩${val.toLocaleString()}`, name]}
+                  labelFormatter={(label) => `Day ${label}`}
+                />
+                <Legend />
+                <Bar yAxisId="left" dataKey="revenue" name="일매출" fill="#3b82f6" radius={[2, 2, 0, 0]} />
+                <Line yAxisId="left" type="monotone" dataKey="profit" name="일손익" stroke="#10b981" strokeWidth={2} dot={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          )}
+          
+          {activeTab === 'traffic' && (
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="day" tick={{fontSize: 11}} tickFormatter={(val) => `D${val}`} />
+                <YAxis tick={{fontSize: 11}} tickFormatter={(val) => val.toLocaleString()} />
+                <Tooltip formatter={(val: number) => [`${val.toLocaleString()}명`]} />
+                <Legend />
+                <Area type="monotone" dataKey="dau" name="DAU" stroke="#8b5cf6" fill="#8b5cf680" />
+                <Bar dataKey="nru_paid" name="Paid NRU" stackId="nru" fill="#3b82f6" />
+                <Bar dataKey="nru_organic" name="Organic NRU" stackId="nru" fill="#10b981" />
+              </ComposedChart>
+            </ResponsiveContainer>
+          )}
+          
+          {activeTab === 'retention' && (
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="day" tick={{fontSize: 11}} tickFormatter={(val) => `D${val}`} />
+                <YAxis tickFormatter={(val) => formatBillion(val)} tick={{fontSize: 11}} />
+                <Tooltip 
+                  formatter={(val: number) => [`₩${val.toLocaleString()}`]}
+                  labelFormatter={(label) => `Day ${label}`}
+                />
+                <Legend />
+                <Area 
+                  type="monotone" 
+                  dataKey="cum_profit" 
+                  name="누적 손익" 
+                  stroke="#10b981" 
+                  fill="#10b98140"
+                  strokeWidth={2}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+
+      {/* 3. AI Insight Section */}
+      {aiReport && (
+        <div className="bg-gradient-to-r from-slate-50 to-blue-50 p-6 rounded-xl border border-blue-100 shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <Activity className="w-5 h-5 text-blue-600" />
+            <h3 className="text-lg font-bold text-gray-800">🤖 AI Strategy Insight</h3>
+            <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">GPT-4o</span>
+          </div>
+          
+          <div className="grid md:grid-cols-3 gap-6">
+            <div className="bg-white/80 p-4 rounded-lg">
+              <h4 className="font-bold text-gray-700 mb-2">📊 Summary</h4>
+              <p className="text-sm text-gray-600 leading-relaxed">{aiReport.summary || "분석 결과가 없습니다."}</p>
+              {aiReport.evaluation && (
+                <p className="text-xs text-blue-600 mt-2 font-medium">{aiReport.evaluation}</p>
+              )}
             </div>
-          ))}
+            <div className="bg-white/80 p-4 rounded-lg">
+              <h4 className="font-bold text-red-600 mb-2 flex items-center gap-1">
+                <AlertTriangle className="w-4 h-4" /> Risks
+              </h4>
+              <ul className="text-sm text-gray-600 space-y-1 list-disc pl-4">
+                {aiReport.risks?.length > 0 ? (
+                  aiReport.risks.map((risk: string, i: number) => (
+                    <li key={i}>{risk}</li>
+                  ))
+                ) : (
+                  <li className="text-gray-400">분석된 리스크가 없습니다.</li>
+                )}
+              </ul>
+            </div>
+            <div className="bg-white/80 p-4 rounded-lg">
+              <h4 className="font-bold text-blue-600 mb-2 flex items-center gap-1">
+                <TrendingUp className="w-4 h-4" /> Strategy
+              </h4>
+              <ul className="text-sm text-gray-600 space-y-1 list-disc pl-4">
+                {aiReport.strategies?.length > 0 ? (
+                  aiReport.strategies.map((st: string, i: number) => (
+                    <li key={i}>{st}</li>
+                  ))
+                ) : (
+                  <li className="text-gray-400">제안된 전략이 없습니다.</li>
+                )}
+              </ul>
+            </div>
+          </div>
+          
+          {aiReport.recommendations && (
+            <div className="mt-4 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+              <p className="text-sm text-yellow-800">
+                <strong>💡 추가 권고:</strong> {aiReport.recommendations}
+              </p>
+            </div>
+          )}
         </div>
+      )}
+
+      {/* Footer */}
+      <div className="text-center text-xs text-gray-400 py-4">
+        Game KPI Projection Engine V10.0 · P0 Fixes Applied · OpenAI GPT-4o Integration
       </div>
     </div>
   );
-};
-
-const ResultsPanel: React.FC<ResultsPanelProps> = ({ results, activeTab, games, basicSettings }) => {
-  const renderContent = () => {
-    switch (activeTab) {
-      case 'overview': return <OverviewTab results={results} basicSettings={basicSettings} />;
-      case 'retention': return <RetentionTab results={results} />;
-      case 'nru': return <NRUTab results={results} />;
-      case 'revenue': return <RevenueTab results={results} />;
-      case 'projection-total': return <TotalTab results={results} />;
-      case 'projection-dau': return <DAUTab results={results} />;
-      case 'raw-data': return <RawDataTab games={games} />;
-      default: return <OverviewTab results={results} basicSettings={basicSettings} />;
-    }
-  };
-  return <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">{renderContent()}</div>;
 };
 
 export default ResultsPanel;
