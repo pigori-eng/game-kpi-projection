@@ -1,5 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware import Middleware
 from pydantic import BaseModel
 from typing import List, Dict, Optional, Any
 import numpy as np
@@ -10,12 +11,14 @@ import httpx
 
 app = FastAPI(title="Game KPI Projection API", version="2.0.0")
 
+# CORS 설정 - 모든 origin 허용
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Data paths
