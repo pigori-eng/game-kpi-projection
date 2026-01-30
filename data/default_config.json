@@ -1,6 +1,6 @@
 {
-  "version": "10.0",
-  "description": "V10.0 Default projection configuration - P0 Fixes Applied",
+  "version": "9.8-p0fix",
+  "description": "V9.8 + P0 Fixes (R1, R2, R5)",
   "basic_settings": {
     "launch_date": "2026-11-12",
     "infrastructure_cost_ratio": 0.03,
@@ -34,12 +34,12 @@
   },
   "revenue_settings": {
     "pr_adjustment": {
-      "best_vs_normal": 0.03,
-      "worst_vs_normal": -0.01
-    },
-    "arppu_adjustment": {
       "best_vs_normal": 0.05,
       "worst_vs_normal": -0.05
+    },
+    "arppu_adjustment": {
+      "best_vs_normal": 0.10,
+      "worst_vs_normal": -0.10
     }
   },
   "projection_days": 365

@@ -175,31 +175,6 @@ export interface ProjectionInput {
   quality_score?: string;  // S/A/B/C/D
   bm_type?: string;        // Hardcore/Midcore/Casual/F2P_Cosmetic/Gacha
   regions?: string[];      // korea/japan/china/global/sea/na/sa/eu
-  // V10.0 추가
-  region?: string;
-  genre?: string;
-  platform?: string;
-  marketing?: {
-    ua_budget: number;
-    brand_budget: number;
-    target_cpa: number;
-    base_organic_ratio: number;
-    pre_marketing_share: number;
-    wishlist_conversion_rate: number;
-    sustaining_cost_ratio: number;
-    paid_user_quality_ratio: number;
-  };
-  quality?: {
-    score: string;
-    benchmark_weight: number;
-  };
-  selected_games?: string[];
-  live_events?: Array<{
-    month: number;
-    name: string;
-    traffic_boost: number;
-    revenue_boost: number;
-  }>;
 }
 
 // Result Types
