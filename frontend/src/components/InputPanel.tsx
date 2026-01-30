@@ -138,8 +138,8 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
     genre: '', 
     platforms: [] as string[], 
     regions: [] as string[],
-    qualityScore: 'B',  // V7: 품질 등급
-    bmType: 'Midcore'   // V7: BM 모델 타입
+    qualityScore: 'B',  // 품질 등급
+    bmType: 'Midcore'   // BM 모델 타입
   });
   const [useAIRecommend, setUseAIRecommend] = useState(false);
   const [useBenchmark, setUseBenchmark] = useState(false);
@@ -675,7 +675,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                     ))}
                   </div>
                 </div>
-                {/* V7: Quality Score (FGT/CBT 결과) */}
+                {/* Quality Score (FGT/CBT 결과) */}
                 <div className="border border-amber-200 rounded-lg p-3 bg-amber-50/50">
                   <label className="block text-sm font-semibold text-amber-800 mb-2">⭐ 품질 등급 (내부 테스트 결과)</label>
                   <p className="text-xs text-amber-700 mb-3">
@@ -702,7 +702,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                     <strong>예시:</strong> 시장 평균 D30 리텐션 10% → S급 선택 시 <strong>12%</strong>로 상향 계산
                   </div>
                 </div>
-                {/* V7: BM Type */}
+                {/* BM Type */}
                 <div className="border border-indigo-200 rounded-lg p-3 bg-indigo-50/50">
                   <label className="block text-sm font-semibold text-indigo-800 mb-2">💰 BM 모델 타입</label>
                   <p className="text-xs text-indigo-700 mb-3">
@@ -863,7 +863,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                           const marketWeight = parseInt(e.target.value) / 100;
                           const internalWeight = 1 - marketWeight;
                           setBlendingWeight(internalWeight);
-                          // input.blending 업데이트 + V7: quality_score, bm_type, regions
+                          // input.blending 업데이트 + quality_score, bm_type, regions
                           setInput(prev => ({
                             ...prev,
                             blending: {
@@ -937,7 +937,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
         </button>
         {activeSection === 'mkt-calc' && (
           <div className="p-4 space-y-4">
-            <GuideBox title="마케팅 & UA 설정 가이드 (V8.5+)">
+            <GuideBox title="마케팅 & UA 설정 가이드">
               <div className="space-y-2 text-xs">
                 <p><strong>🎯 핵심 개념:</strong> 마케팅 예산을 UA(직접 유입)와 Brand(인지도)로 분리하여 현실적인 ROAS를 계산합니다.</p>
                 
@@ -969,8 +969,8 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                 {/* V8.5: UA/Brand 분리 */}
                 <div className="border border-orange-300 rounded-lg overflow-hidden">
                   <div className="bg-orange-100 px-3 py-2 border-b font-medium text-sm text-orange-800 flex items-center gap-2">
-                    <span>🎯 V8.5 마케팅 예산 (UA/Brand 분리)</span>
-                    <span className="text-xs bg-orange-200 text-orange-700 px-2 py-0.5 rounded-full">NEW</span>
+                    <span>🎯 마케팅 예산 (UA/Brand 분리)</span>
+                    
                   </div>
                   <table className="w-full text-sm table-fixed">
                     <tbody>
@@ -1111,11 +1111,11 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                   </div>
                 )}
 
-                {/* V8.5+ Pre-Launch & Advanced Settings */}
+                {/* Pre-Launch & Advanced Settings */}
                 <div className="border border-indigo-300 rounded-lg overflow-hidden">
                   <div className="bg-indigo-100 px-3 py-2 border-b font-medium text-sm text-indigo-800 flex items-center gap-2">
                     <span>🚀 Pre-Launch & 고급 설정</span>
-                    <span className="text-xs bg-indigo-200 text-indigo-700 px-2 py-0.5 rounded-full">V8.5+</span>
+                    
                   </div>
                   {/* Pre-Launch 가이드 */}
                   <div className="p-2 bg-indigo-50/50 border-b border-indigo-200">
@@ -1220,8 +1220,86 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+      </div>
 
-              {/* 오른쪽: NRU 자동 계산 */}
+      {/* 4. Retention 설정 */}
+      <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <button onClick={() => setActiveSection(activeSection === 'retention' ? null : 'retention')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'retention' ? 'bg-emerald-50 border-b border-emerald-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
+          <div className="flex items-center gap-2"><TrendingUp className="w-5 h-5 text-emerald-600" /><span className="font-medium">4. Retention 설정</span></div>
+          {activeSection === 'retention' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+        </button>
+        {activeSection === 'retention' && (
+          <div className="p-4 space-y-4">
+            <GuideBox title="Retention 설정 가이드">
+              <div className="space-y-2 text-xs">
+                <p><strong>🎯 작동 원리:</strong> 입력한 D+1 Retention을 기준으로 Power Law 곡선을 생성하여 D365까지 리텐션을 추정합니다.</p>
+                
+                <div className="mt-2 p-2 bg-white/50 rounded">
+                  <p className="font-semibold text-amber-800">📊 Retention Curve 공식:</p>
+                  <p className="font-mono text-[10px] mt-1">Retention(day) = a × day^b</p>
+                  <p className="mt-1">• <strong>a (초기 계수):</strong> 표본 게임들의 D+1 Retention 평균값 기반</p>
+                  <p>• <strong>b (감쇠 계수):</strong> 표본 게임들의 리텐션 감소 기울기 (일반적으로 -0.5 ~ -1.0)</p>
+                </div>
+                
+                <div className="mt-2 p-2 bg-white/50 rounded">
+                  <p className="font-semibold text-amber-800">💡 장르별 D+1 권장값:</p>
+                  <p>• <strong>MMORPG:</strong> Best 45~50%, Normal 35~40%, Worst 25~30%</p>
+                  <p>• <strong>캐주얼:</strong> Best 50~55%, Normal 40~45%, Worst 30~35%</p>
+                  <p>• <strong>FPS/Battle Royale:</strong> Best 40~45%, Normal 30~35%, Worst 20~25%</p>
+                </div>
+                
+                <div className="mt-2 p-2 bg-white/50 rounded">
+                  <p className="font-semibold text-amber-800">⚙️ 블렌딩 적용:</p>
+                  <p>• 내부 표본 커브와 시장 벤치마크 커브를 Time-Decay 방식으로 블렌딩</p>
+                  <p>• 초반(D1~D30): 내부 데이터 비중↑ / 후반(D90+): 벤치마크 비중↑</p>
+                </div>
+              </div>
+            </GuideBox>
+            <div className="p-3 bg-gray-50 rounded-lg border"><p className="text-sm text-gray-600"><strong>적용된 표본 게임:</strong> {selectedSampleGames.length > 0 ? selectedSampleGames.join(', ') : '(2. 표본 게임 선택에서 선택해주세요)'}</p></div>
+            <div>
+              <h4 className="font-medium text-gray-700 mb-2">예상 D+1 Retention 입력 (%)</h4>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="p-3 bg-green-50 rounded-lg border border-green-200"><label className="block text-xs font-medium text-green-700 mb-1">Best</label><div className="flex items-center"><input type="number" step="1" value={Math.round(input.retention.target_d1_retention.best * 100)} onChange={(e) => setInput(prev => ({ ...prev, retention: { ...prev.retention, target_d1_retention: { ...prev.retention.target_d1_retention, best: (parseFloat(e.target.value) || 0) / 100 } } }))} className="w-full px-2 py-1 border border-green-300 rounded text-right" /><span className="ml-1">%</span></div></div>
+                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200"><label className="block text-xs font-medium text-blue-700 mb-1">Normal</label><div className="flex items-center"><input type="number" step="1" value={Math.round(input.retention.target_d1_retention.normal * 100)} onChange={(e) => setInput(prev => ({ ...prev, retention: { ...prev.retention, target_d1_retention: { ...prev.retention.target_d1_retention, normal: (parseFloat(e.target.value) || 0) / 100 } } }))} className="w-full px-2 py-1 border border-blue-300 rounded text-right" /><span className="ml-1">%</span></div></div>
+                <div className="p-3 bg-red-50 rounded-lg border border-red-200"><label className="block text-xs font-medium text-red-700 mb-1">Worst</label><div className="flex items-center"><input type="number" step="1" value={Math.round(input.retention.target_d1_retention.worst * 100)} onChange={(e) => setInput(prev => ({ ...prev, retention: { ...prev.retention, target_d1_retention: { ...prev.retention.target_d1_retention, worst: (parseFloat(e.target.value) || 0) / 100 } } }))} className="w-full px-2 py-1 border border-red-300 rounded text-right" /><span className="ml-1">%</span></div></div>
+              </div>
+            </div>
+            <RegressionResultTable selectedGames={selectedSampleGames} d1Retention={input.retention.target_d1_retention} />
+          </div>
+        )}
+      </div>
+
+      {/* 5. NRU (MKT에서 자동 계산됨) */}
+      <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <button onClick={() => setActiveSection(activeSection === 'nru' ? null : 'nru')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'nru' ? 'bg-blue-50 border-b border-blue-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
+          <div className="flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /><span className="font-medium">5. NRU 설정 (자동계산)</span></div>
+          {activeSection === 'nru' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+        </button>
+        {activeSection === 'nru' && (
+          <div className="p-4 space-y-4">
+            <GuideBox title="NRU 설정 가이드">
+              <div className="space-y-2 text-xs">
+                <p><strong>🎯 작동 원리:</strong> 입력한 총 NRU가 30일 런칭 기간에 분산 배분됩니다 (D1 최고점 → Power Law 감소).</p>
+                
+                <div className="mt-2 p-2 bg-white/50 rounded">
+                  <p className="font-semibold text-amber-800">📊 NRU 분배 공식 (Area Normalization):</p>
+                  <p className="font-mono text-[10px] mt-1">Daily NRU = (Total NRU ÷ Pattern Area) × (1 / day^0.8)</p>
+                  <p className="mt-1">• D1: 최고점 | D7: D1의 ~30% | D30: D1의 ~10%</p>
+                </div>
+                
+                <div className="mt-2 p-2 bg-white/50 rounded">
+                  <p className="font-semibold text-amber-800">💡 자동 계산 모드:</p>
+                  <p>• <strong>자동 계산 (권장):</strong> "3. 마케팅 설정"에서 UA/Brand 예산 입력 → NRU 자동 반영</p>
+                  <p className="text-[10px] text-gray-600 mt-1">* UA 예산이 설정되면 자동 계산이 활성화됩니다</p>
+                </div>
+              </div>
+            </GuideBox>
+            
+            {/* NRU 자동 계산 (마케팅 예산 기반) */}
+            {(input.nru.ua_budget || 0) > 0 && (
               <div className="space-y-4">
                 <div className="flex items-center gap-3 p-3 bg-orange-50 rounded-lg border border-orange-200">
                   <input 
@@ -1238,11 +1316,11 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                     className="w-4 h-4 text-orange-600"
                   />
                   <label htmlFor="nru-auto-calc" className="text-sm font-medium text-orange-800">
-                    🔄 총 NRU 자동 계산 (5. NRU 설정에 반영)
+                    🔄 총 NRU 자동 계산 (마케팅 예산 기반)
                   </label>
                 </div>
                 <div className="border border-orange-300 rounded-lg overflow-hidden">
-                  <div className="bg-orange-100 px-3 py-2 border-b font-medium text-sm text-orange-800">📊 자동 계산 결과 (V8.5+ 공식)</div>
+                  <div className="bg-orange-100 px-3 py-2 border-b font-medium text-sm text-orange-800">📊 자동 계산 결과</div>
                   <div className="p-3 bg-orange-50/30 space-y-2">
                     <div className="text-xs text-gray-600">
                       <p><strong>계산 공식:</strong></p>
@@ -1330,124 +1408,9 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                   </table>
                 </div>
               </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* 4. Retention 설정 */}
-      <div className="border border-gray-200 rounded-lg overflow-hidden">
-        <button onClick={() => setActiveSection(activeSection === 'retention' ? null : 'retention')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'retention' ? 'bg-emerald-50 border-b border-emerald-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
-          <div className="flex items-center gap-2"><TrendingUp className="w-5 h-5 text-emerald-600" /><span className="font-medium">4. Retention 설정</span></div>
-          {activeSection === 'retention' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-        </button>
-        {activeSection === 'retention' && (
-          <div className="p-4 space-y-4">
-            <GuideBox title="Retention 설정 가이드">
-              <div className="space-y-2 text-xs">
-                <p><strong>🎯 작동 원리:</strong> 입력한 D+1 Retention을 기준으로 Power Law 곡선을 생성하여 D365까지 리텐션을 추정합니다.</p>
-                
-                <div className="mt-2 p-2 bg-white/50 rounded">
-                  <p className="font-semibold text-amber-800">📊 Retention Curve 공식:</p>
-                  <p className="font-mono text-[10px] mt-1">Retention(day) = a × day^b</p>
-                  <p className="mt-1">• <strong>a (초기 계수):</strong> 표본 게임들의 D+1 Retention 평균값 기반</p>
-                  <p>• <strong>b (감쇠 계수):</strong> 표본 게임들의 리텐션 감소 기울기 (일반적으로 -0.5 ~ -1.0)</p>
-                </div>
-                
-                <div className="mt-2 p-2 bg-white/50 rounded">
-                  <p className="font-semibold text-amber-800">💡 장르별 D+1 권장값:</p>
-                  <p>• <strong>MMORPG:</strong> Best 45~50%, Normal 35~40%, Worst 25~30%</p>
-                  <p>• <strong>캐주얼:</strong> Best 50~55%, Normal 40~45%, Worst 30~35%</p>
-                  <p>• <strong>FPS/Battle Royale:</strong> Best 40~45%, Normal 30~35%, Worst 20~25%</p>
-                </div>
-                
-                <div className="mt-2 p-2 bg-white/50 rounded">
-                  <p className="font-semibold text-amber-800">⚙️ 블렌딩 적용:</p>
-                  <p>• 내부 표본 커브와 시장 벤치마크 커브를 Time-Decay 방식으로 블렌딩</p>
-                  <p>• 초반(D1~D30): 내부 데이터 비중↑ / 후반(D90+): 벤치마크 비중↑</p>
-                </div>
-              </div>
-            </GuideBox>
-            <div className="p-3 bg-gray-50 rounded-lg border"><p className="text-sm text-gray-600"><strong>적용된 표본 게임:</strong> {selectedSampleGames.length > 0 ? selectedSampleGames.join(', ') : '(2. 표본 게임 선택에서 선택해주세요)'}</p></div>
-            <div>
-              <h4 className="font-medium text-gray-700 mb-2">예상 D+1 Retention 입력 (%)</h4>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="p-3 bg-green-50 rounded-lg border border-green-200"><label className="block text-xs font-medium text-green-700 mb-1">Best</label><div className="flex items-center"><input type="number" step="1" value={Math.round(input.retention.target_d1_retention.best * 100)} onChange={(e) => setInput(prev => ({ ...prev, retention: { ...prev.retention, target_d1_retention: { ...prev.retention.target_d1_retention, best: (parseFloat(e.target.value) || 0) / 100 } } }))} className="w-full px-2 py-1 border border-green-300 rounded text-right" /><span className="ml-1">%</span></div></div>
-                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200"><label className="block text-xs font-medium text-blue-700 mb-1">Normal</label><div className="flex items-center"><input type="number" step="1" value={Math.round(input.retention.target_d1_retention.normal * 100)} onChange={(e) => setInput(prev => ({ ...prev, retention: { ...prev.retention, target_d1_retention: { ...prev.retention.target_d1_retention, normal: (parseFloat(e.target.value) || 0) / 100 } } }))} className="w-full px-2 py-1 border border-blue-300 rounded text-right" /><span className="ml-1">%</span></div></div>
-                <div className="p-3 bg-red-50 rounded-lg border border-red-200"><label className="block text-xs font-medium text-red-700 mb-1">Worst</label><div className="flex items-center"><input type="number" step="1" value={Math.round(input.retention.target_d1_retention.worst * 100)} onChange={(e) => setInput(prev => ({ ...prev, retention: { ...prev.retention, target_d1_retention: { ...prev.retention.target_d1_retention, worst: (parseFloat(e.target.value) || 0) / 100 } } }))} className="w-full px-2 py-1 border border-red-300 rounded text-right" /><span className="ml-1">%</span></div></div>
-              </div>
-            </div>
-            <RegressionResultTable selectedGames={selectedSampleGames} d1Retention={input.retention.target_d1_retention} />
-          </div>
-        )}
-      </div>
-
-      {/* 5. NRU (MKT에서 자동 계산됨) */}
-      <div className="border border-gray-200 rounded-lg overflow-hidden">
-        <button onClick={() => setActiveSection(activeSection === 'nru' ? null : 'nru')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'nru' ? 'bg-blue-50 border-b border-blue-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
-          <div className="flex items-center gap-2"><Users className="w-5 h-5 text-blue-600" /><span className="font-medium">5. NRU 설정 (자동계산)</span></div>
-          {activeSection === 'nru' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-        </button>
-        {activeSection === 'nru' && (
-          <div className="p-4 space-y-4">
-            <GuideBox title="NRU 설정 가이드">
-              <div className="space-y-2 text-xs">
-                <p><strong>🎯 작동 원리:</strong> 입력한 총 NRU가 30일 런칭 기간에 분산 배분됩니다 (D1 최고점 → Power Law 감소).</p>
-                
-                <div className="mt-2 p-2 bg-white/50 rounded">
-                  <p className="font-semibold text-amber-800">📊 NRU 분배 공식 (Area Normalization):</p>
-                  <p className="font-mono text-[10px] mt-1">Daily NRU = (Total NRU ÷ Pattern Area) × (1 / day^0.8)</p>
-                  <p className="mt-1">• D1: 최고점 | D7: D1의 ~30% | D30: D1의 ~10%</p>
-                </div>
-                
-                <div className="mt-2 p-2 bg-white/50 rounded">
-                  <p className="font-semibold text-amber-800">💡 V8.5 모드 vs 레거시 모드:</p>
-                  <p>• <strong>V8.5 모드 (권장):</strong> "3. 마케팅 설정"에서 UA/Brand 예산 입력 → 5. NRU에 자동 반영</p>
-                  <p>• <strong>레거시 모드:</strong> 아래에서 총 NRU 직접 입력</p>
-                  <p className="text-[10px] text-gray-600 mt-1">* UA 예산이 설정되면 V8.5 모드가 우선 적용됩니다</p>
-                </div>
-              </div>
-            </GuideBox>
-            
-            {/* V9.7: 마케팅 연동 NRU 미리보기 (자동계산) */}
-            {(input.nru.ua_budget || 0) > 0 && (
-              <div className="p-4 bg-gradient-to-r from-blue-100 to-purple-100 rounded-lg border border-blue-300">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-bold text-blue-800">🔗 마케팅 예산 기반 자동계산</span>
-                  <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded">V9.7 실시간 동기화</span>
-                </div>
-                <div className="text-3xl font-bold text-blue-700">
-                  {(input.nru.d1_nru?.normal || 0).toLocaleString()} 명
-                </div>
-                <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                  <div className="bg-white/70 rounded p-2">
-                    <span className="text-gray-600">Best</span>
-                    <p className="font-semibold text-green-700">{(input.nru.d1_nru?.best || 0).toLocaleString()}</p>
-                  </div>
-                  <div className="bg-white/70 rounded p-2">
-                    <span className="text-gray-600">Normal</span>
-                    <p className="font-semibold text-blue-700">{(input.nru.d1_nru?.normal || 0).toLocaleString()}</p>
-                  </div>
-                  <div className="bg-white/70 rounded p-2">
-                    <span className="text-gray-600">Worst</span>
-                    <p className="font-semibold text-red-700">{(input.nru.d1_nru?.worst || 0).toLocaleString()}</p>
-                  </div>
-                </div>
-                <p className="text-xs text-blue-600 mt-2">
-                  * Section 3 마케팅 설정 변경 시 즉시 반영됩니다
-                </p>
-              </div>
             )}
             
             <div className="p-3 bg-gray-50 rounded-lg border"><p className="text-sm text-gray-600"><strong>적용된 표본 게임:</strong> {selectedSampleGames.join(', ') || '(선택 필요)'}</p></div>
-            <div>
-              <h4 className="font-medium text-gray-700 mb-2">런칭 기간 총 NRU (30일간 분산 배분)</h4>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="p-3 bg-green-50 rounded-lg border border-green-200"><label className="block text-xs font-medium text-green-700 mb-1">Best</label><input type="text" value={(input.nru.d1_nru.best || 0).toLocaleString()} onChange={(e) => { const v = parseInt(e.target.value.replace(/,/g, '')) || 0; setInput(prev => ({ ...prev, nru: { ...prev.nru, d1_nru: { ...prev.nru.d1_nru, best: v } } })); }} className="w-full px-2 py-1 border border-green-300 rounded text-right" /></div>
-                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200"><label className="block text-xs font-medium text-blue-700 mb-1">Normal</label><input type="text" value={(input.nru.d1_nru.normal || 0).toLocaleString()} onChange={(e) => { const v = parseInt(e.target.value.replace(/,/g, '')) || 0; setInput(prev => ({ ...prev, nru: { ...prev.nru, d1_nru: { ...prev.nru.d1_nru, normal: v } } })); }} className="w-full px-2 py-1 border border-blue-300 rounded text-right" /></div>
-                <div className="p-3 bg-red-50 rounded-lg border border-red-200"><label className="block text-xs font-medium text-red-700 mb-1">Worst</label><input type="text" value={(input.nru.d1_nru.worst || 0).toLocaleString()} onChange={(e) => { const v = parseInt(e.target.value.replace(/,/g, '')) || 0; setInput(prev => ({ ...prev, nru: { ...prev.nru, d1_nru: { ...prev.nru.d1_nru, worst: v } } })); }} className="w-full px-2 py-1 border border-red-300 rounded text-right" /></div>
-              </div>
-            </div>
             <div className="border border-gray-300 rounded-lg overflow-hidden">
               <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">노말 대비 보정 수치 (%)</div>
               <table className="w-full text-sm">

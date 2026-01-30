@@ -23,10 +23,10 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 RAW_DATA_PATH = os.path.join(DATA_DIR, "raw_game_data.json")
 CONFIG_PATH = os.path.join(DATA_DIR, "default_config.json")
 
-# Claude API Configuration
+# OpenAI API Configuration
 # API Keys (환경변수에서만 읽어옴 - 코드에 키 포함 금지!)
-CLAUDE_API_KEY = os.environ.get("CLAUDE_API_KEY", "")
-CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 
 def load_raw_data():
     with open(RAW_DATA_PATH, 'r', encoding='utf-8') as f:
@@ -792,39 +792,37 @@ def calculate_revenue(dau: List[float], pr: List[float], arppu: List[float]):
     
     return revenue
 
-# Claude AI Integration
-# V9.8: 안전한 모델명 설정 (실제 존재하는 모델)
-CURRENT_MODEL = "claude-3-5-sonnet-20240620"  # ✅ 실제 작동하는 최신 모델
+# OpenAI AI Integration
+CURRENT_MODEL = "gpt-4o"
 
-async def get_claude_insight(prompt: str) -> str:
-    """Call Claude API for AI insights with Mock Fallback"""
-    if not CLAUDE_API_KEY:
+async def get_ai_insight(prompt: str) -> str:
+    """Call OpenAI API for AI insights with Mock Fallback"""
+    if not OPENAI_API_KEY:
         print("💡 API Key가 없습니다. Mock 데이터를 반환합니다.")
-        return None  # Mock으로 폴백
+        return None
     
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
-                CLAUDE_API_URL,
+                OPENAI_API_URL,
                 headers={
-                    "x-api-key": CLAUDE_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json"
+                    "Authorization": f"Bearer {OPENAI_API_KEY}",
+                    "Content-Type": "application/json"
                 },
                 json={
-                    "model": CURRENT_MODEL,  # ✅ 올바른 모델명 사용
+                    "model": CURRENT_MODEL,
                     "max_tokens": 2000,
                     "messages": [
+                        {"role": "system", "content": "You are a game industry expert analyst."},
                         {"role": "user", "content": prompt}
                     ]
                 }
             )
             
-            # API 호출 실패 시 예외 발생
             response.raise_for_status()
             
             data = response.json()
-            return data["content"][0]["text"]
+            return data["choices"][0]["message"]["content"]
                 
     except httpx.HTTPStatusError as e:
         print(f"❌ API HTTP 에러: {e.response.status_code}")
@@ -835,7 +833,7 @@ async def get_claude_insight(prompt: str) -> str:
         return None
 
 def create_insight_prompt(summary: Dict[str, Any], analysis_type: str) -> str:
-    """Create prompt for Claude based on analysis type with Multi-Persona approach"""
+    """Create prompt for AI based on analysis type with Multi-Persona approach"""
     
     # V7 설정 정보 추출
     v7_settings = summary.get('v7_settings', {})
@@ -1040,7 +1038,7 @@ UA&브랜딩 마케터, 퍼블리싱, 데이터 사이언스, 라이브 서비�
 # API Endpoints
 @app.get("/")
 async def root():
-    return {"message": "Game KPI Projection API", "version": "2.0.0", "ai_enabled": bool(CLAUDE_API_KEY)}
+    return {"message": "Game KPI Projection API", "version": "2.0.0", "ai_enabled": bool(OPENAI_API_KEY)}
 
 @app.get("/api/games")
 async def get_available_games():
@@ -1421,7 +1419,7 @@ Normal 시나리오 기준 총 매출 {normal_revenue:,.0f}원이 예상됩니�
 async def get_ai_insight_endpoint(request: AIInsightRequest):
     """Get AI-powered insights for projection results with Mock Fallback"""
     prompt = create_insight_prompt(request.projection_summary, request.analysis_type)
-    insight = await get_claude_insight(prompt)
+    insight = await get_ai_insight(prompt)
     
     # V9.8: Mock Fallback
     if insight is None:
@@ -1442,7 +1440,7 @@ async def get_ai_insight_endpoint(request: AIInsightRequest):
 async def get_ai_status():
     """Check AI integration status"""
     return {
-        "enabled": bool(CLAUDE_API_KEY),
+        "enabled": bool(OPENAI_API_KEY),
         "model": CURRENT_MODEL,
         "available_types": ["general", "reliability", "retention", "revenue", "risk", "competitive"]
     }
