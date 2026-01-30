@@ -1110,7 +1110,10 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                     <p className="text-xs text-gray-500 mt-1">Brand 예산이 클수록 자연 유입이 증폭됩니다</p>
                   </div>
                 )}
+              </div>
 
+              {/* 오른쪽: Pre-Launch & 고급 설정 */}
+              <div className="space-y-4">
                 {/* Pre-Launch & Advanced Settings */}
                 <div className="border border-indigo-300 rounded-lg overflow-hidden">
                   <div className="bg-indigo-100 px-3 py-2 border-b font-medium text-sm text-indigo-800 flex items-center gap-2">
