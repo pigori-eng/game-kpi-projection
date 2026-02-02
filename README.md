@@ -1,253 +1,370 @@
-# Game KPI Projection Tool V8.5+
+# Game KPI Projection Tool
 
-게임 지표 프로젝션 분석 도구 - 과거 게임 데이터를 기반으로 신규 게임의 KPI를 예측합니다.
-
-## 🎯 주요 기능
-
-### Core Features
-- **Retention 분석**: 표본 게임의 리텐션 곡선을 회귀분석하여 예상 리텐션 추정
-- **NRU 예측**: 신규 유저 유입 패턴 분석 및 예측
-- **Revenue 추정**: DAU × P.Rate × ARPPU 기반 매출 예측
-- **시나리오 분석**: Best / Normal / Worst 3가지 시나리오 동시 분석
-
-### V8.5+ 신규 기능 ⭐
-
-#### 1. 마케팅 예산 분리 (UA/Brand Split)
-| 항목 | 설명 | 용도 |
-|------|------|------|
-| **UA 예산** | 퍼포먼스 마케팅 (FB, Google UAC 등) | 직접 유저 획득 |
-| **Brand 예산** | 브랜딩 (TVC, 인플루언서, 옥외광고) | Organic 유입 증폭 |
-| **Sustaining** | 런칭 후 유지 마케팅 | 장기 유입 유지 |
-
-#### 2. ROAS 이원화
-- **Paid ROAS**: `총매출 / UA 예산` - 마케터용 KPI (매체 효율)
-- **Blended ROAS**: `총매출 / 전체 MKT 예산` - 경영진용 KPI (사업 효율)
-
-#### 3. Pre-Launch Logic (사전예약/위시리스트) 🚀
-PC/콘솔 및 대작 모바일 게임의 핵심 로직!
-
-```
-[저수지 모델]
-마케팅비 투입 → 위시리스트/사전예약 모수 축적 → 런칭 D1에 폭발적 유입
-```
-
-| 파라미터 | 설명 | 권장값 |
-|----------|------|--------|
-| `pre_marketing_ratio` | 사전 마케팅 비중 | PC: 30~50%, Mobile: 10~20% |
-| `wishlist_conversion_rate` | 위시리스트 전환율 | Steam: 10~20%, Mobile: 15~25% |
-
-**효과**: D1 트래픽이 10~20배 폭발하는 현실적인 런칭 그래프 구현
-
-#### 4. CPA Saturation Effect (시장 포화) 📉
-예산이 커질수록 효율 좋은 유저가 고갈되어 CPA가 상승하는 현실 반영
-
-```
-Effective CPA = Target CPA × (1 + (Budget / 5억) × 0.05)
-```
-
-| 예산 | CPA 상승률 | 예시 (기준 CPA 2,000원) |
-|------|-----------|------------------------|
-| 5억 | +5% | 2,100원 |
-| 10억 | +10% | 2,200원 |
-| 50억 | +50% | 3,000원 |
-
-#### 5. Brand Time-Lag Effect (브랜딩 지연 효과) ⏳
-브랜딩 광고는 즉시 효과가 나타나지 않고, Bell Curve로 서서히 발현 후 잔존
-
-```
-효과 분포: D1~D60 구간에 정규분포 (피크: D15)
-- D1~D7: 효과 상승 중
-- D15: 최대 효과
-- D30~D60: 잔존 효과
-```
-
-#### 6. Organic Boost Formula
-브랜딩 예산에 따른 자연 유입 증폭 (수확체감 반영)
-
-```
-Organic Boost = 1 + ln(1 + Brand/UA) × 0.7
-```
-
-| Brand/UA 비율 | Organic Boost |
-|---------------|---------------|
-| 0% | 1.00x |
-| 50% | 1.28x |
-| 100% | 1.49x |
-| 200% | 1.77x |
+게임 출시 전 **매출/DAU/BEP**를 시뮬레이션하는 비즈니스 프로젝션 툴입니다.
 
 ---
 
-## 🖥️ 플랫폼별 사용 가이드
+## 📖 목차
 
-### Mobile 게임
-```yaml
-설정 권장값:
-  - CPI: 2,500~3,500원 (한국 RPG 기준)
-  - Organic Ratio: 20~30%
-  - Pre-marketing: 10~20%
-  - Wishlist 전환율: 15~25%
+1. [개요](#개요)
+2. [핵심 계산 로직](#핵심-계산-로직)
+3. [V12.2 주요 개선사항](#v122-주요-개선사항)
+4. [입력 파라미터](#입력-파라미터)
+5. [Debug Report 해석](#debug-report-해석)
+6. [배포 가이드](#배포-가이드)
+
+---
+
+## 개요
+
+### 프로젝션 공식 요약
+
+```
+Daily Revenue = DAU × PR × ARPPU × Seasonality
+
+DAU(d) = Σ[i=0 to d] NRU(i) × Retention(d-i)
+
+BEP Days = min(d) where Cumulative Revenue(d) ≥ Cumulative Cost(d)
 ```
 
-### PC 게임 (Steam)
-```yaml
-설정 권장값:
-  - CPA: 5,000~10,000원
-  - Organic Ratio: 30~50% (커뮤니티 효과)
-  - Pre-marketing: 30~50% (위시리스트 중요)
-  - Wishlist 전환율: 10~20%
-  
-⚠️ 주의: Paid ROAS보다 Blended ROAS가 더 중요!
-(Steam은 Attribution 추적 불가)
-```
+### 시스템 아키텍처
 
-### Console 게임
-```yaml
-설정 권장값:
-  - CPA: 8,000~15,000원
-  - Organic Ratio: 40~60% (플랫폼 추천 효과)
-  - Pre-marketing: 40~60%
-  - Wishlist 전환율: 15~25%
+```
+Frontend (Vercel)          Backend (Render)
+┌─────────────────┐       ┌─────────────────┐
+│ React + TS      │──────▶│ FastAPI + NumPy │
+│ InputPanel.tsx  │ POST  │ main.py         │
+│ ResultsPanel.tsx│◀──────│ Projection API  │
+└─────────────────┘ JSON  └─────────────────┘
 ```
 
 ---
 
-## 📊 결과 해석 가이드
+## 핵심 계산 로직
 
-### LTV & ROAS 테이블
-| 지표 | 설명 | 좋은 기준 |
-|------|------|----------|
-| LTV | 유저당 생애 수익 | CAC의 3배 이상 |
-| CAC (UA 기준) | UA 예산 기준 획득 비용 | LTV의 1/3 이하 |
-| CAC (전체 기준) | 전체 MKT 기준 획득 비용 | LTV의 1/2 이하 |
-| Paid ROAS | UA 광고 수익률 | 100% 이상 |
-| Blended ROAS | 전체 마케팅 수익률 | 80% 이상 |
-| BEP | 손익분기점 도달일 | D180 이내 |
+### 1. Retention Curve (리텐션 커브)
 
-### 시나리오 해석
-- **Best**: 모든 지표가 상위 수준일 때
-- **Normal**: 벤치마크 평균 수준
-- **Worst**: 하위 수준 또는 시장 악화 시
+#### Power Law 모델
 
----
+```python
+Retention(d) = a × d^b
 
-## 🛠️ 기술 스택
+# a: 초기 계수 (표본 게임 평균)
+# b: 감쇠 계수 (-0.5 ~ -1.0)
+```
 
-### Frontend
-- React 18 + TypeScript
-- Tailwind CSS
-- Recharts (차트 라이브러리)
-- Vite
+#### [V12.2] D30 앵커 강력 보정
 
-### Backend
-- Python FastAPI
-- NumPy, SciPy (통계 분석)
-- Pandas (데이터 처리)
+기존 문제: D1만으로 Power Law 생성 시, b가 가파르면 D30이 벤치마크 대비 2~3배 낮게 나옴
 
----
+```python
+# 예: b=-0.818, D1=50% → D30 ≈ 4% (벤치마크 10~13% 대비 매우 낮음)
 
-## 📁 프로젝트 구조
+# V12.2 해결책: b값 역산으로 강제 보정
+threshold_ratio = 0.7   # 벤치마크의 70% 미만이면 문제
+target_ratio = 0.85     # 85% 수준까지 강제 보정
+
+if calculated_d30 < benchmark_d30 * threshold_ratio:
+    target_d30 = benchmark_d30 * target_ratio
+    # b값 역산: target = d1 * 30^b → b = log(target/d1) / log(30)
+    new_b = log(target_d30 / d1) / log(30)
+    adjusted_b = min(new_b, -0.15)  # 너무 평평해지지 않게 제한
+```
+
+#### [V12.2] 2-Stage Retention
 
 ```
-game-kpi-projection/
-├── frontend/           # React 프론트엔드
-│   ├── src/
-│   │   ├── components/ # UI 컴포넌트
-│   │   │   ├── InputPanel.tsx    # 입력 패널 (마케팅 설정 등)
-│   │   │   └── ResultsPanel.tsx  # 결과 패널 (ROAS 등)
-│   │   ├── types/      # TypeScript 타입 정의
-│   │   └── utils/      # 유틸리티 함수
-│   └── package.json
-├── backend/            # FastAPI 백엔드
-│   ├── main.py         # 핵심 로직 (V8.5+ 포함)
-│   └── requirements.txt
-├── data/               # 데이터 파일
-│   ├── raw_game_data.json    # 내부 게임 데이터
-│   └── default_config.json   # 기본 설정
-└── docs/               # 문서
-    └── MARKETING_GUIDE.md    # 마케팅 설정 상세 가이드
+Stage 1 (D1~D30): Power Law (D30 앵커 보정 적용)
+Stage 2 (D31~D365): LiveOps 강도별 완만한 Decay
+
+LiveOps 강도:
+- Strong: decay=-0.3, D30의 40% 유지
+- Medium: decay=-0.5, D30의 20% 유지  
+- Weak: decay=-0.8, D30의 5% 유지
 ```
 
 ---
 
-## 🚀 로컬 실행
+### 2. NRU (신규 유저 유입)
 
-### Backend
+#### 전체 구조
+
+```
+Total NRU = Pre-Launch Burst + Post-Launch Paid + Organic + Sustaining
+
+D1~D3:   Pre-Launch (위시리스트 전환)
+D1~D30:  Post-Launch Paid + Organic
+D31~365: Sustaining (LiveOps 강도에 따라)
+```
+
+#### Pre-Launch 계산 (CPW 기반)
+
+```python
+# CPW = Cost Per Wishlist
+# [V12.2] 플랫폼별 차등
+CPW_RATIO = {
+    "Mobile": 0.2,    # 사전예약 모으기 쉬움
+    "PC": 0.3,        # 위시리스트 모으기 어려움
+    "Console": 0.3
+}
+
+cpw = effective_cpa * CPW_RATIO[platform]
+wishlist_pool = pre_launch_budget / cpw
+d1_burst = wishlist_pool * conversion_rate
+```
+
+#### [V12.2] Sustaining NRU 절대 하한선
+
+기존 문제: D30 NRU × 5%가 너무 작으면 Sustaining이 사실상 0
+
+```python
+# V12.2 해결책: 플랫폼별 절대 하한선
+MIN_SUSTAINING_NRU = {
+    "PC": 300,      # 최소 일 300명
+    "Mobile": 500,  # 최소 일 500명
+    "Console": 200  # 최소 일 200명
+}
+
+ratio_based_floor = d30_nru * floor_ratio * 0.5
+final_floor = max(ratio_based_floor, MIN_SUSTAINING_NRU[platform])
+```
+
+---
+
+### 3. DAU (일간 활성 유저)
+
+#### Cohort Matrix 방식
+
+```python
+# DAU(d) = 모든 코호트의 잔존 유저 합계
+DAU(d) = Σ[i=0 to d] NRU(i) × Retention(d-i)
+
+# 매일 새 NRU가 들어오고, 각 코호트는 Retention 커브에 따라 감소
+```
+
+---
+
+### 4. Revenue (매출)
+
+#### 기본 공식
+
+```python
+Daily Revenue = DAU × PR × Daily_ARPPU × Seasonality
+```
+
+#### [V12.2] ARPPU 단위 변환
+
+```python
+if arppu_unit == "daily":
+    daily_arppu = arppu       # 일간이면 그대로
+else:
+    daily_arppu = arppu / 30  # 월간이면 ÷30
+
+# 주의: 단위 실수 시 매출이 30배 차이!
+```
+
+#### [V12.2] PC 패키지 매출
+
+```python
+# PC/Console에서 Package Price 입력 시
+if is_pc_console and package_price > 0:
+    for day in range(30):
+        iap_revenue = dau[day] * pr * daily_arppu
+        pkg_revenue = nru[day] * package_price  # 초기 구매
+        total_revenue[day] = iap_revenue + pkg_revenue
+```
+
+---
+
+### 5. BEP (손익분기점)
+
+#### 비용 구조
+
+```python
+# 고정비
+hr_cost = (direct_hr × 15M + indirect_hr × 14M) × 12
+
+# 변동비
+platform_fee = gross_revenue × 0.30  # 스토어 수수료
+vat = gross_revenue × 0.10
+infra = gross_revenue × 0.03
+
+# 마케팅
+marketing = ua_budget + brand_budget + (sustaining_monthly × 12)
+```
+
+#### [V12.2] BEP 역산 (필요 DAU)
+
+```python
+# 필요 DAU = 연간 비용 / 365 / Daily ARPU
+# Daily ARPU = Daily_ARPPU × PR
+
+required_dau = total_cost / 365 / (daily_arppu * pr)
+
+# Debug Report에서 현재 DAU vs 필요 DAU 갭 표시
+dau_gap_ratio = required_dau / current_avg_dau
+```
+
+---
+
+## V12.2 주요 개선사항
+
+### 1. D30 앵커 강력 보정
+
+| 항목 | Before | After |
+|------|--------|-------|
+| 보정 임계값 | 벤치마크의 50% | 70% |
+| 보정 목표 | 70% | 85% |
+| 방식 | D7~D30 점진 보정 | **b값 역산** |
+
+### 2. Sustaining NRU 절대 하한선
+
+| 플랫폼 | 최소 일간 NRU |
+|--------|--------------|
+| PC | 300명 |
+| Mobile | 500명 |
+| Console | 200명 |
+
+### 3. NRU Gap 분석
+
+```
+UI 예상 NRU = UA Budget / Target CPA
+실제 NRU = CPA Saturation + CPW 전환 적용 후
+
+Gap = (예상 - 실제) / 예상 × 100%
+```
+
+### 4. BEP 역산 표시
+
+```
+필요 DAU = 총 비용 / 365 / (ARPPU × PR)
+현재 DAU = 시뮬레이션 결과
+Gap 배율 = 필요 / 현재
+```
+
+---
+
+## 입력 파라미터
+
+### 기본 정보
+
+| 파라미터 | 설명 | 기본값 |
+|---------|------|--------|
+| launch_date | 런칭 예정일 | - |
+| projection_days | 프로젝션 기간 | 365 |
+| direct_hr | 직접 인건비 인원 | 50 |
+| indirect_hr | 간접 인건비 인원 | 20 |
+
+### 프로젝트 정보
+
+| 파라미터 | 옵션 |
+|---------|------|
+| genre | MMORPG, Action RPG, Extraction Shooter, FPS/TPS, Battle Royale, Strategy, Casual, Sports |
+| platforms | PC, Mobile, Console (복수 선택) |
+| quality_score | S (+20%), A (+10%), B (기본), C (-10%), D (-20%) |
+
+### 마케팅 설정
+
+| 파라미터 | 설명 |
+|---------|------|
+| ua_budget | UA 예산 (Performance) |
+| brand_budget | 브랜드 예산 (Organic Boost) |
+| target_cpa | 목표 CPA |
+| pre_marketing_ratio | 사전 마케팅 비중 (0~1) |
+| wishlist_conversion_rate | 위시리스트 전환율 |
+
+### Revenue 설정 (V12.2)
+
+| 파라미터 | 설명 |
+|---------|------|
+| custom_pr | 사용자 입력 PR (벤치마크 대신 적용) |
+| custom_arppu | 사용자 입력 ARPPU |
+| package_price | PC/Console 패키지 가격 |
+| arppu_unit | "monthly" 또는 "daily" |
+
+### 고급 옵션
+
+| 파라미터 | 설명 |
+|---------|------|
+| liveops_intensity | Strong / Medium / Weak |
+| two_stage_retention | D31 이후 완만한 decay 적용 |
+| seasonality_regions | 계절성 적용 지역 |
+
+---
+
+## Debug Report 해석
+
+### Unit Check
+- **월간 (÷30)**: 월간 ARPPU를 일간으로 변환
+- **일간 (원본)**: 입력값 그대로 사용
+
+### D30 Retention
+- **계산값**: Power Law로 계산된 D30
+- **벤치마크**: 장르/플랫폼 시장 평균
+- **b값 보정**: original_b → adjusted_b (차이가 크면 보정됨)
+
+### NRU 누수 분석
+- **예상**: UA Budget / Target CPA
+- **실제**: CPA Saturation + CPW 적용 후
+- **차이**: 포화/전환 손실 비율
+
+### BEP 달성 목표
+- **현재 DAU**: 시뮬레이션 평균 DAU
+- **필요 DAU**: BEP 달성에 필요한 DAU
+- **갭**: 몇 배 부족/초과
+
+---
+
+## 배포 가이드
+
+### Backend (Render)
+
 ```bash
-cd backend
+# Build Command
 pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+
+# Start Command
+uvicorn main:app --host 0.0.0.0 --port $PORT
+
+# Environment Variables
+OPENAI_API_KEY=sk-...  # Optional
 ```
 
-### Frontend
+### Frontend (Vercel)
+
 ```bash
-cd frontend
-npm install
-npm run dev
+# Build Command
+npm run build
+
+# Output Directory
+dist
+
+# Environment Variables
+VITE_API_URL=https://your-backend.onrender.com
+```
+
+### vercel.json
+
+```json
+{
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://your-backend.onrender.com/api/:path*" }
+  ]
+}
 ```
 
 ---
 
-## 📊 API 엔드포인트
+## 변경 이력
 
-| 엔드포인트 | 메서드 | 설명 |
-|------------|--------|------|
-| `/api/games` | GET | 사용 가능한 게임 목록 |
-| `/api/config` | GET | 기본 설정값 |
-| `/api/projection` | POST | KPI 프로젝션 계산 |
-| `/api/raw-data` | GET | 원본 게임 데이터 |
-| `/api/raw-data/upload` | POST | 새 게임 데이터 업로드 (CSV) |
-| `/api/raw-data/{metric}/{game}` | DELETE | 게임 데이터 삭제 |
-| `/api/games/metadata` | GET | 게임 메타데이터 (장르, 출시일 등) |
+- **V12.2 (2026-02-02)**: D30 앵커 강력 보정, Sustaining 절대 하한선, NRU Gap 분석, BEP 역산
+- **V12.1**: 2-Stage Retention, ARPPU 단위 변환, PR/ARPPU 직접 입력, PC 패키지 매출
+- **V11.0**: Pre-launch CPW 기반 변경, CPA Saturation, Brand Time-Lag
+- **V8.5**: UA/Brand 분리, Organic Boost
 
 ---
 
-## 📈 핵심 수식
+## 라이선스
 
-### Retention Curve
-```
-Retention(day) = a × day^b
-```
+Internal Use Only - Bluehole Studio
 
-### DAU 계산 (Cohort Matrix)
-```
-DAU(d) = Σ(NRU(i) × Retention(d-i)) for all i ≤ d
-```
-
-### Revenue 계산
-```
-Revenue = DAU × P.Rate × ARPPU × Seasonality
-```
-
-### NRU 계산 (V8.5+)
-```
-Paid NRU = UA Budget / Effective CPA
-Organic NRU = Paid NRU × Organic Ratio × Organic Boost
-D1 Burst = Wishlist Users × Conversion Rate × 0.8
-```
-
----
-
-## ⚠️ 주의사항
-
-1. **PC/Console 게임**: Blended ROAS를 주요 지표로 사용하세요
-2. **대작 게임**: Pre-marketing ratio를 반드시 설정하세요
-3. **예산 100억 이상**: CPA Saturation 효과를 고려하세요
-4. **데이터 부족 시**: 벤치마크 가중치를 높이세요
-
----
-
-## 📝 버전 히스토리
-
-| 버전 | 주요 변경사항 |
-|------|--------------|
-| v8.5+ | Pre-Launch, CPA Saturation, Brand Time-Lag |
-| v8.5 | UA/Brand 분리, Paid/Blended ROAS |
-| v8.4 | 계절성 강화, D365 차트 확장 |
-| v8.3 | NRU 정규화 수정, 내부 게임 데이터 |
-| v8.2 | 마케팅 설정, 코호트 분석, Excel 내보내기 |
-
----
-
-## 📝 License
-
-Proprietary - Internal Use Only

@@ -107,17 +107,59 @@ export interface GenreGuideline {
 
 // V12: Debug 정보
 export interface DebugInfo {
+  // 단위 정보
   unit_conversion: string;
-  floor_activated: boolean;
-  floor_value: number;
-  prelaunch_mode: string;
+  arppu_unit: string;
+  
+  // 사용자 직접 입력 여부
+  custom_pr_used: boolean;
+  custom_arppu_used: boolean;
+  custom_pr_value: number | null;
+  custom_arppu_value: number | null;
+  package_price: number;
+  
+  // LiveOps 설정
   liveops_intensity: string;
   liveops_decay_rate: number;
+  liveops_floor_ratio: number;
   liveops_cost_multiplier: number;
-  seasonality_applied: boolean;
-  seasonality_regions: string[];
+  
+  // Floor 정보
+  floor_activated: boolean;
+  floor_value: number;
+  min_sustaining_nru: number;
+  
+  // Pre-launch 정보
+  prelaunch_mode: string;
+  cpw_ratio: number;
+  
+  // Retention 정보
   two_stage_retention: boolean;
   stage2_decay_rate: number;
+  calculated_d30_retention: number;
+  benchmark_d30_retention: number;
+  d30_vs_benchmark: string;
+  original_b: number;
+  adjusted_b: number;
+  b_was_adjusted: boolean;
+  
+  // 계절성 정보
+  seasonality_applied: boolean;
+  seasonality_regions: string[];
+  
+  // 플랫폼 정보
+  platforms: string[];
+  primary_platform: string;
+  
+  // V12.2: NRU Gap 분석
+  ui_expected_paid_nru: number;
+  actual_paid_nru: number;
+  nru_gap_percent: number;
+  
+  // V12.2: BEP 역산
+  required_dau_for_bep: number;
+  current_avg_dau: number;
+  dau_gap_ratio: number;
 }
 
 // Phase 3: 프로젝트 정보 (유사도 추천용)
@@ -194,6 +236,10 @@ export interface RevenueInput {
     best_vs_normal: number;
     worst_vs_normal: number;
   };
+  // V12.1: 사용자 직접 입력 필드
+  custom_pr?: number;       // 사용자 입력 PR (0~1)
+  custom_arppu?: number;    // 사용자 입력 ARPPU (원화)
+  package_price?: number;   // PC/Console 패키지 가격 (원화)
 }
 
 // Phase 4: 블렌딩 설정

@@ -66,6 +66,10 @@ class RevenueInput(BaseModel):
     selected_games_arppu: List[str] = []
     pr_adjustment: Dict[str, float] = {"best_vs_normal": 0.05, "worst_vs_normal": -0.05}
     arppu_adjustment: Dict[str, float] = {"best_vs_normal": 0.05, "worst_vs_normal": -0.05}
+    # V12.1: 사용자 직접 입력 필드 (None이면 벤치마크 사용)
+    custom_pr: Optional[float] = None           # 사용자 입력 PR (0~1, 예: 0.05 = 5%)
+    custom_arppu: Optional[float] = None        # 사용자 입력 ARPPU (원화)
+    package_price: Optional[float] = None       # PC/Console 패키지 가격 (원화)
 
 class ProjectionInput(BaseModel):
     launch_date: str
@@ -88,6 +92,36 @@ LIVEOPS_CONFIG = {
     "Strong": {"decay_rate": -0.3, "floor_ratio": 0.40, "cost_multiplier": 1.20},
     "Medium": {"decay_rate": -0.5, "floor_ratio": 0.20, "cost_multiplier": 1.00},
     "Weak": {"decay_rate": -0.8, "floor_ratio": 0.05, "cost_multiplier": 0.85}
+}
+
+# V12.1: 장르/플랫폼별 벤치마크 D30 Retention (%)
+BENCHMARK_D30_RETENTION = {
+    "MMORPG": {"Mobile": 0.08, "PC": 0.12, "Console": 0.10},
+    "Action RPG": {"Mobile": 0.07, "PC": 0.10, "Console": 0.09},
+    "Extraction Shooter": {"Mobile": 0.06, "PC": 0.11, "Console": 0.10},
+    "FPS": {"Mobile": 0.06, "PC": 0.09, "Console": 0.08},
+    "FPS/TPS": {"Mobile": 0.06, "PC": 0.09, "Console": 0.08},
+    "Battle Royale": {"Mobile": 0.07, "PC": 0.08, "Console": 0.07},
+    "Strategy": {"Mobile": 0.10, "PC": 0.12, "Console": 0.10},
+    "Casual": {"Mobile": 0.12, "PC": 0.08, "Console": 0.06},
+    "Puzzle": {"Mobile": 0.15, "PC": 0.10, "Console": 0.08},
+    "Sports": {"Mobile": 0.06, "PC": 0.08, "Console": 0.09},
+    "Racing": {"Mobile": 0.05, "PC": 0.07, "Console": 0.08},
+    "Default": {"Mobile": 0.07, "PC": 0.10, "Console": 0.08}
+}
+
+# V12.1: 플랫폼별 CPW 가중치 (Pre-launch 계산용)
+PLATFORM_CPW_RATIO = {
+    "Mobile": 0.2,      # 사전예약 모으기 쉬움
+    "PC": 0.3,          # 위시리스트 모으기 어려움
+    "Console": 0.3      # 위시리스트 모으기 어려움
+}
+
+# V12.2: 플랫폼별 Sustaining NRU 절대 하한선
+MIN_SUSTAINING_NRU = {
+    "PC": 300,          # PC는 최소 일 300명
+    "Mobile": 500,      # 모바일은 최소 일 500명
+    "Console": 200      # 콘솔은 최소 일 200명
 }
 
 # ============================================
@@ -440,6 +474,77 @@ def generate_retention_curve(a: float, b: float, target_d1: float, days: int = 3
     
     return curve
 
+
+def generate_retention_curve_v12(
+    a: float, b: float, target_d1: float, days: int = 365,
+    two_stage_enabled: bool = False, liveops_intensity: str = "Medium",
+    genre: str = "Default", platform: str = "Mobile"
+) -> List[float]:
+    """
+    V12.2: 2-Stage Retention + D30 앵커 강력 보정
+    
+    Stage 1 (D1~D30): Power Law (D30 앵커 보정 적용)
+    Stage 2 (D31~D365): LiveOps 강도별 완만한 Decay
+    
+    [V12.2 Fix] D30 앵커 강화:
+    - 벤치마크의 70% 미만이면 문제로 판단
+    - 85% 수준까지 b값 역산으로 강제 보정
+    """
+    import math
+    
+    # 벤치마크 D30 가져오기
+    benchmark_d30 = BENCHMARK_D30_RETENTION.get(genre, BENCHMARK_D30_RETENTION["Default"]).get(platform, 0.08)
+    
+    # 기본 Power Law로 D30 계산
+    calculated_d30 = target_d1 * (30 ** b) if b < 0 else target_d1 * 0.1
+    
+    # [V12.2 Fix] 강력 D30 앵커 보정
+    threshold_ratio = 0.7   # 벤치마크의 70% 미만이면 문제
+    target_ratio = 0.85     # 85% 수준까지 강제 보정
+    
+    adjusted_b = b
+    if calculated_d30 < benchmark_d30 * threshold_ratio:
+        target_d30 = benchmark_d30 * target_ratio
+        # b값 역산: target = d1 * 30^b  ->  b = log(target/d1) / log(30)
+        if target_d1 > 0.001:
+            new_b = math.log(target_d30 / target_d1) / math.log(30)
+            # 기울기 제한 (너무 평평해지지 않도록, 최소 -0.15)
+            adjusted_b = min(new_b, -0.15)
+    
+    # 기본 커브 생성 (Stage 1) - 조정된 b 사용
+    base_d1 = retention_curve(1, a, adjusted_b)
+    scale_factor = target_d1 / base_d1 if base_d1 > 0 else 1.0
+    
+    curve = []
+    for day in range(1, days + 1):
+        ret = retention_curve(day, a, adjusted_b) * scale_factor
+        curve.append(min(max(ret, 0.001), 1))
+    
+    # D0 = 1.0 보장 (첫날 리텐션)
+    if len(curve) > 0:
+        curve[0] = target_d1
+    
+    # 2-Stage Retention 적용 (D31~D365)
+    if two_stage_enabled and len(curve) > 30:
+        d30_retention = curve[29]
+        liveops_config = LIVEOPS_CONFIG.get(liveops_intensity, LIVEOPS_CONFIG["Medium"])
+        stage2_decay = liveops_config["decay_rate"]
+        floor_ratio = liveops_config["floor_ratio"]
+        
+        # D30 기준 Floor 값
+        retention_floor = d30_retention * floor_ratio
+        
+        for day in range(30, days):
+            months_after_d30 = (day - 30) / 30
+            # Stage 2: 완만한 Decay (LiveOps 강도에 따라)
+            decay = math.exp(stage2_decay * months_after_d30)
+            new_ret = d30_retention * decay
+            
+            # Floor 보장
+            curve[day] = max(new_ret, retention_floor, 0.001)
+    
+    return curve, adjusted_b  # 조정된 b값도 반환
+
 def calculate_nru_pattern(selected_games: List[str], raw_data: dict):
     nru_games = raw_data['games']['nru']
     
@@ -634,11 +739,12 @@ def generate_nru_series_v85(
     # 기존: wishlist = paid_nru / conversion_rate → d1 = wishlist * conversion_rate (상쇄됨!)
     # 수정: wishlist = budget / cpw → d1 = wishlist * conversion_rate (정상 작동)
     
-    # CPW 플랫폼별 차등 적용 (PC/Console은 위시리스트 확보가 더 비쌈)
+    # V12.1: CPW 플랫폼별 차등 적용 (상수 활용)
     if platforms is None:
         platforms = ["PC"]
     is_pc_console = any(p in ["PC", "Console"] for p in platforms)
-    cpw_ratio = 0.3 if is_pc_console else 0.2  # PC/Console: CPA의 30%, Mobile: 20%
+    primary_platform = "PC" if "PC" in platforms else ("Console" if "Console" in platforms else "Mobile")
+    cpw_ratio = PLATFORM_CPW_RATIO.get(primary_platform, 0.2)  # 상수에서 가져옴
     cpw = effective_cpa * cpw_ratio
     
     # 1. 예산 기반 위시리스트 모수 산출 (상쇄 버그 해결!)
@@ -705,19 +811,28 @@ def generate_nru_series_v85(
     floor_ratio = liveops_config["floor_ratio"]
     decay_rate = abs(liveops_config["decay_rate"]) / 10  # 월간 decay rate로 변환
     
+    # [V12.2 Fix] 절대 하한선 적용
+    primary_platform = "PC" if platforms and any(p in ["PC", "Console"] for p in platforms) else "Mobile"
+    if platforms and "Console" in platforms and "PC" not in platforms:
+        primary_platform = "Console"
+    min_absolute_nru = MIN_SUSTAINING_NRU.get(primary_platform, 300)
+    
     # Sustaining NRU는 D30의 floor_ratio% 수준에서 Floor 유지
     base_sustaining_nru = int(d30_nru * floor_ratio)
-    floor_nru = int(d30_nru * floor_ratio * 0.5)  # 절대 최소값
+    ratio_based_floor = int(d30_nru * floor_ratio * 0.5)
+    
+    # [V12.2] 비율 기반 Floor와 절대값 Floor 중 큰 값 선택
+    floor_nru = max(ratio_based_floor, min_absolute_nru)
     
     for day in range(launch_period, days):
         months_after_launch = (day - launch_period) / 30
         # [V12] LiveOps 강도별 Decay 적용
         decay = np.exp(-decay_rate * months_after_launch)
         daily_nru = int(base_sustaining_nru * decay)
-        nru_series[day] += max(daily_nru, floor_nru, 5)
+        nru_series[day] += max(daily_nru, floor_nru)
     
-    # 최소값 보장
-    nru_series = [max(nru, 5) for nru in nru_series]
+    # 최소값 보장 (절대 하한선 적용)
+    nru_series = [max(nru, min_absolute_nru) for nru in nru_series]
     
     # ============================================
     # 6. 메타 정보 반환
@@ -808,25 +923,52 @@ def calculate_dau_matrix(nru_series: List[int], retention_curve: List[float], da
     
     return daily_dau
 
-def calculate_revenue(dau: List[float], pr: List[float], arppu: List[float]):
+def calculate_revenue(dau: List[float], pr: List[float], arppu: List[float], 
+                      arppu_unit: str = "monthly", nru: List[float] = None, 
+                      package_price: float = 0, platforms: List[str] = None):
     """
-    일별 매출 계산
+    일별 매출 계산 (V12.1)
     
-    Revenue = DAU × PR × (ARPPU / 30)
+    IAP Revenue = DAU × PR × Daily_ARPPU
+    Package Revenue = NRU × Package_Price (PC/Console only)
+    Total Revenue = IAP + Package
     
-    주의: ARPPU는 '월간' 결제자당 평균 결제액이므로,
-          일별 계산 시 30으로 나눠야 함
+    Args:
+        dau: 일별 DAU
+        pr: 일별 결제율
+        arppu: ARPPU (월간 또는 일간)
+        arppu_unit: "monthly" 또는 "daily"
+        nru: 일별 NRU (패키지 매출 계산용)
+        package_price: 패키지 가격 (PC/Console)
+        platforms: 플랫폼 리스트
     """
     revenue = []
+    package_revenue_total = 0
+    
+    # PC/Console 플랫폼 체크
+    is_pc_console = platforms and any(p in ["PC", "Console"] for p in platforms)
+    
     for i in range(len(dau)):
         pr_val = pr[i] if i < len(pr) else pr[-1]
         arppu_val = arppu[i] if i < len(arppu) else arppu[-1]
         
-        # ARPPU를 일별로 환산 (월간 ARPPU / 30)
-        daily_arppu = arppu_val / 30
+        # V12.1: ARPPU 단위 변환
+        if arppu_unit == "daily":
+            daily_arppu = arppu_val  # 일간이면 그대로
+        else:
+            daily_arppu = arppu_val / 30  # 월간이면 /30
         
-        # 일별 매출 = DAU × PR × 일별 ARPPU
-        daily_revenue = dau[i] * pr_val * daily_arppu
+        # IAP 매출 = DAU × PR × 일별 ARPPU
+        iap_revenue = dau[i] * pr_val * daily_arppu
+        
+        # V12.1: 패키지 매출 (PC/Console, 런칭 30일 이내)
+        pkg_revenue = 0
+        if is_pc_console and package_price > 0 and nru and i < 30:
+            nru_val = nru[i] if i < len(nru) else 0
+            pkg_revenue = nru_val * package_price
+            package_revenue_total += pkg_revenue
+        
+        daily_revenue = iap_revenue + pkg_revenue
         revenue.append(daily_revenue)
     
     return revenue
@@ -1159,11 +1301,45 @@ async def calculate_projection(input_data: ProjectionInput):
     pr_pattern = calculate_pr_pattern(input_data.revenue.selected_games_pr, raw_data)
     arppu_pattern = calculate_arppu_pattern(input_data.revenue.selected_games_arppu, raw_data)
     
+    # V12.1: 고급 옵션 추출
+    advanced = input_data.advanced or {}
+    two_stage_enabled = advanced.get("two_stage_retention", False)
+    liveops_intensity = advanced.get("liveops_intensity", "Medium")
+    arppu_unit = advanced.get("arppu_unit", "monthly")
+    seasonality_regions = advanced.get("seasonality_regions", [])
+    
+    # V12.1: 사용자 직접 입력값 확인 (우선순위: 사용자 > 벤치마크)
+    custom_pr = input_data.revenue.custom_pr
+    custom_arppu = input_data.revenue.custom_arppu
+    package_price = input_data.revenue.package_price or 0
+    
+    # 플랫폼에서 주요 플랫폼 추출 (첫 번째 또는 PC 우선)
+    primary_platform = "PC" if "PC" in platforms else (platforms[0] if platforms else "Mobile")
+    
+    # V12.2: 조정된 b값 추적용
+    adjusted_b_value = b
+    
     for scenario in ["best", "normal", "worst"]:
         target_d1 = input_data.retention.target_d1_retention[scenario]
         
-        # 내부 표본 기반 리텐션 커브
-        internal_ret_curve = generate_retention_curve(a, b, target_d1, days)
+        # V12.2: 2-Stage Retention + D30 앵커 강력 보정
+        if two_stage_enabled:
+            internal_ret_curve, adjusted_b_value = generate_retention_curve_v12(
+                a, b, target_d1, days,
+                two_stage_enabled=True,
+                liveops_intensity=liveops_intensity,
+                genre=genre,
+                platform=primary_platform
+            )
+        else:
+            # D30 앵커 보정만 적용
+            internal_ret_curve, adjusted_b_value = generate_retention_curve_v12(
+                a, b, target_d1, days,
+                two_stage_enabled=False,
+                liveops_intensity=liveops_intensity,
+                genre=genre,
+                platform=primary_platform
+            )
         
         # V7: Time-Decay 블렌딩 적용
         if use_time_decay and not use_benchmark_only:
@@ -1267,6 +1443,10 @@ async def calculate_projection(input_data: ProjectionInput):
             pr_series = [benchmark["pr"] * quality_multiplier] * days
         pr_series = [p * (1 + pr_adj) for p in pr_series]
         
+        # V12.1: 사용자 직접 PR 입력값 우선 적용
+        if custom_pr is not None and custom_pr > 0:
+            pr_series = [custom_pr * (1 + pr_adj)] * days
+        
         # ARPPU 보정
         arppu_adj = input_data.revenue.arppu_adjustment.get("best_vs_normal", 0) if scenario == "best" else \
                     input_data.revenue.arppu_adjustment.get("worst_vs_normal", 0) if scenario == "worst" else 0
@@ -1281,11 +1461,21 @@ async def calculate_projection(input_data: ProjectionInput):
             arppu_series = [benchmark["arppu"] * quality_multiplier] * days
         arppu_series = [a * (1 + arppu_adj) for a in arppu_series]
         
+        # V12.1: 사용자 직접 ARPPU 입력값 우선 적용
+        if custom_arppu is not None and custom_arppu > 0:
+            arppu_series = [custom_arppu * (1 + arppu_adj)] * days
+        
         # V7: 계절성을 ARPPU에도 반영
         arppu_series = [arppu * sf for arppu, sf in zip(arppu_series, seasonality_factors)]
         
-        # Revenue 계산 (일별 ARPPU 환산 적용됨)
-        revenue_series = calculate_revenue(dau_series, pr_series, arppu_series)
+        # V12.1: Revenue 계산 (ARPPU 단위 + 패키지 매출 적용)
+        revenue_series = calculate_revenue(
+            dau_series, pr_series, arppu_series,
+            arppu_unit=arppu_unit,
+            nru=nru_series,
+            package_price=package_price,
+            platforms=platforms
+        )
         
         results[scenario] = {
             "retention": {
@@ -1395,21 +1585,103 @@ async def calculate_projection(input_data: ProjectionInput):
         "nru_analysis": v85_nru_meta if 'v85_nru_meta' in dir() and v85_nru_meta else None
     }
     
-    # V12: Debug 정보 생성
+    # V12.1: Debug 정보 생성 (더 상세하게)
     advanced = input_data.advanced or {}
+    liveops_intensity_val = advanced.get("liveops_intensity", "Medium")
+    liveops_config = LIVEOPS_CONFIG.get(liveops_intensity_val, LIVEOPS_CONFIG["Medium"])
+    
+    # D30 Retention 계산 (Normal 시나리오 기준)
+    normal_d30_retention = results.get("normal", {}).get("retention", {}).get("curve", [0]*30)
+    d30_ret_value = normal_d30_retention[29] if len(normal_d30_retention) > 29 else 0
+    
+    # 벤치마크 D30 가져오기
+    benchmark_d30 = BENCHMARK_D30_RETENTION.get(genre, BENCHMARK_D30_RETENTION["Default"]).get(
+        "PC" if "PC" in platforms else "Mobile", 0.08
+    )
+    
     debug_info = {
-        "unit_conversion": "monthly_arppu_divided_by_30" if advanced.get("arppu_unit", "monthly") == "monthly" else "daily_arppu_raw",
+        # 단위 정보
+        "unit_conversion": "daily_arppu_raw" if advanced.get("arppu_unit", "monthly") == "daily" else "monthly_arppu_divided_by_30",
+        "arppu_unit": advanced.get("arppu_unit", "monthly"),
+        
+        # 사용자 직접 입력 여부
+        "custom_pr_used": input_data.revenue.custom_pr is not None and input_data.revenue.custom_pr > 0,
+        "custom_arppu_used": input_data.revenue.custom_arppu is not None and input_data.revenue.custom_arppu > 0,
+        "custom_pr_value": input_data.revenue.custom_pr,
+        "custom_arppu_value": input_data.revenue.custom_arppu,
+        "package_price": input_data.revenue.package_price or 0,
+        
+        # LiveOps 설정
+        "liveops_intensity": liveops_intensity_val,
+        "liveops_decay_rate": liveops_config["decay_rate"],
+        "liveops_floor_ratio": liveops_config["floor_ratio"],
+        "liveops_cost_multiplier": liveops_config["cost_multiplier"],
+        
+        # Floor 정보
         "floor_activated": True,
-        "floor_value": LIVEOPS_CONFIG.get(advanced.get("liveops_intensity", "Medium"), {}).get("floor_ratio", 0.2),
+        "floor_value": liveops_config["floor_ratio"],
+        "min_sustaining_nru": MIN_SUSTAINING_NRU.get("PC" if "PC" in platforms else "Mobile", 300),
+        
+        # Pre-launch 정보
         "prelaunch_mode": "cpw_based",
-        "liveops_intensity": advanced.get("liveops_intensity", "Medium"),
-        "liveops_decay_rate": LIVEOPS_CONFIG.get(advanced.get("liveops_intensity", "Medium"), {}).get("decay_rate", -0.5),
-        "liveops_cost_multiplier": LIVEOPS_CONFIG.get(advanced.get("liveops_intensity", "Medium"), {}).get("cost_multiplier", 1.0),
+        "cpw_ratio": PLATFORM_CPW_RATIO.get("PC" if "PC" in platforms else "Mobile", 0.2),
+        
+        # Retention 정보
+        "two_stage_retention": advanced.get("two_stage_retention", False),
+        "stage2_decay_rate": liveops_config["decay_rate"] if advanced.get("two_stage_retention", False) else 0,
+        "calculated_d30_retention": round(d30_ret_value * 100, 2),
+        "benchmark_d30_retention": round(benchmark_d30 * 100, 2),
+        "d30_vs_benchmark": "OK" if d30_ret_value >= benchmark_d30 * 0.7 else "LOW (adjusted)",
+        "original_b": round(b, 4),
+        "adjusted_b": round(adjusted_b_value, 4),
+        "b_was_adjusted": abs(b - adjusted_b_value) > 0.01,
+        
+        # 계절성 정보
         "seasonality_applied": len(advanced.get("seasonality_regions", [])) > 0,
         "seasonality_regions": advanced.get("seasonality_regions", []),
-        "two_stage_retention": advanced.get("two_stage_retention", False),
-        "stage2_decay_rate": LIVEOPS_CONFIG.get(advanced.get("liveops_intensity", "Medium"), {}).get("decay_rate", -0.5) if advanced.get("two_stage_retention", False) else 0,
+        
+        # 플랫폼 정보
+        "platforms": platforms,
+        "primary_platform": "PC" if "PC" in platforms else (platforms[0] if platforms else "Mobile"),
     }
+    
+    # V12.2: NRU Gap 계산
+    ua_budget_val = input_data.nru.ua_budget or 0
+    target_cpa_val = input_data.nru.target_cpa or 2000
+    ui_expected_paid_nru = ua_budget_val / max(1, target_cpa_val)
+    actual_paid_nru = v85_nru_meta.get("post_launch_paid_nru", 0) if v85_nru_meta else 0
+    nru_gap_pct = (1 - (actual_paid_nru / max(1, ui_expected_paid_nru))) * 100 if ui_expected_paid_nru > 0 else 0
+    
+    debug_info["ui_expected_paid_nru"] = int(ui_expected_paid_nru)
+    debug_info["actual_paid_nru"] = int(actual_paid_nru)
+    debug_info["nru_gap_percent"] = round(nru_gap_pct, 1)
+    
+    # V12.2: BEP 역산 (필요 DAU 계산)
+    total_cost = summary.get("normal", {}).get("total_cost", 0)
+    avg_dau = results.get("normal", {}).get("dau", {}).get("average", 1)
+    
+    # 평균 PR, ARPPU 계산
+    normal_pr_series = results.get("normal", {}).get("revenue", {}).get("pr_series", [0.05])
+    normal_arppu_series = results.get("normal", {}).get("revenue", {}).get("arppu_series", [50000])
+    avg_pr = np.mean(normal_pr_series) if normal_pr_series else 0.05
+    avg_arppu = np.mean(normal_arppu_series) if normal_arppu_series else 50000
+    
+    # 일간 ARPPU (단위 변환 고려)
+    if arppu_unit == "daily":
+        daily_arppu = avg_arppu
+    else:
+        daily_arppu = avg_arppu / 30
+    
+    # Daily ARPU = ARPPU × PR
+    daily_arpu = daily_arppu * avg_pr
+    
+    # 필요 DAU = 연간 비용 / 365 / Daily ARPU
+    required_daily_revenue = total_cost / days if total_cost > 0 else 0
+    required_dau = int(required_daily_revenue / daily_arpu) if daily_arpu > 0 else 0
+    
+    debug_info["required_dau_for_bep"] = required_dau
+    debug_info["current_avg_dau"] = int(avg_dau)
+    debug_info["dau_gap_ratio"] = round(required_dau / max(1, avg_dau), 1)
     
     return {
         "status": "success",

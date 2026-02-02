@@ -1511,6 +1511,77 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
               </div>
             </GuideBox>
             <div className="p-3 bg-gray-50 rounded-lg border"><p className="text-sm text-gray-600"><strong>적용된 표본 게임:</strong> {selectedSampleGames.join(', ') || '(선택 필요)'}</p></div>
+            
+            {/* PR/ARPPU 직접 입력 (선택사항) */}
+            <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+              <p className="text-sm font-medium text-amber-800 mb-2">💡 직접 입력 (선택사항) - 입력 시 벤치마크 대신 적용</p>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="text-xs text-gray-600">P.Rate (결제율)</label>
+                  <div className="flex items-center mt-1">
+                    <input 
+                      type="number" 
+                      step="0.1"
+                      placeholder="예: 5" 
+                      value={input.revenue.custom_pr ? (input.revenue.custom_pr * 100).toFixed(1) : ''}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        setInput(prev => ({ 
+                          ...prev, 
+                          revenue: { ...prev.revenue, custom_pr: val > 0 ? val / 100 : undefined } 
+                        }));
+                      }}
+                      className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                    />
+                    <span className="ml-1 text-gray-500">%</span>
+                  </div>
+                  <p className="text-[10px] text-gray-400 mt-1">힌트: 장르 평균 3~7%</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-600">ARPPU (월간)</label>
+                  <div className="flex items-center mt-1">
+                    <input 
+                      type="number" 
+                      step="1000"
+                      placeholder="예: 50000" 
+                      value={input.revenue.custom_arppu || ''}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        setInput(prev => ({ 
+                          ...prev, 
+                          revenue: { ...prev.revenue, custom_arppu: val > 0 ? val : undefined } 
+                        }));
+                      }}
+                      className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                    />
+                    <span className="ml-1 text-gray-500">원</span>
+                  </div>
+                  <p className="text-[10px] text-gray-400 mt-1">힌트: 장르 평균 ₩40K~80K</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-600">패키지 가격 (PC/Console)</label>
+                  <div className="flex items-center mt-1">
+                    <input 
+                      type="number" 
+                      step="1000"
+                      placeholder="예: 45000" 
+                      value={input.revenue.package_price || ''}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        setInput(prev => ({ 
+                          ...prev, 
+                          revenue: { ...prev.revenue, package_price: val > 0 ? val : undefined } 
+                        }));
+                      }}
+                      className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                    />
+                    <span className="ml-1 text-gray-500">원</span>
+                  </div>
+                  <p className="text-[10px] text-gray-400 mt-1">B2P 게임만 입력</p>
+                </div>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-6">
               <div className="border border-gray-300 rounded-lg overflow-hidden">
                 <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">P.Rate (결제율) 보정 (%)</div>
@@ -1537,12 +1608,12 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
       </div>
 
 
-      {/* V12: 고급 옵션 (LiveOps, 2-Stage Retention, 계절성 지역) */}
+      {/* 고급 옵션 (LiveOps, 2-Stage Retention, 계절성 지역) */}
       <div className="border border-violet-200 rounded-lg overflow-hidden">
         <button onClick={() => setActiveSection(activeSection === 'seasonality' ? null : 'seasonality')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'seasonality' ? 'bg-violet-50 border-b border-violet-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
           <div className="flex items-center gap-2">
             <Sliders className="w-5 h-5 text-violet-600" />
-            <span className="font-medium">7. 고급 옵션 (V12)</span>
+            <span className="font-medium">7. 고급 옵션</span>
             <span className="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full">LiveOps · Retention · 계절성</span>
           </div>
           {activeSection === 'seasonality' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
@@ -1550,7 +1621,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
         {activeSection === 'seasonality' && (
           <div className="p-4 space-y-4">
             {/* 가이드 */}
-            <GuideBox title="고급 옵션 가이드 (V12)">
+            <GuideBox title="고급 옵션 가이드">
               <div className="space-y-2 text-xs">
                 <p><strong>🎮 LiveOps 강도:</strong> D30 이후 리텐션/트래픽 유지율에 영향을 미칩니다. Strong 선택 시 운영비가 자동 증가합니다.</p>
                 <p><strong>📈 2-Stage Retention:</strong> D1~D30은 기존 Power Law, D31~D365는 LiveOps 강도에 따른 별도 Decay를 적용합니다.</p>

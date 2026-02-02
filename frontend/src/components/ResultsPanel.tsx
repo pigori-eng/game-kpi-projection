@@ -17,7 +17,7 @@ interface ResultsPanelProps {
 
 const COLORS = { best: '#22c55e', normal: '#3b82f6', worst: '#ef4444' };
 
-// V12: Debug Report 접이식 패널
+// Debug Report 접이식 패널
 const DebugReportPanel: React.FC<{ debugInfo?: DebugInfo }> = ({ debugInfo }) => {
   const [isOpen, setIsOpen] = useState(false);
   
@@ -38,95 +38,135 @@ const DebugReportPanel: React.FC<{ debugInfo?: DebugInfo }> = ({ debugInfo }) =>
       
       {isOpen && (
         <div className="p-4 bg-gray-50 border-t border-gray-200">
-          <div className="grid grid-cols-2 gap-4 text-xs">
+          <div className="grid grid-cols-3 gap-3 text-xs">
             {/* Unit Check */}
             <div className="bg-white p-3 rounded border">
               <h4 className="font-medium text-gray-700 mb-2">💰 Unit Check</h4>
               <p className="text-gray-600">
-                ARPPU 변환: <span className={`font-mono ${debugInfo.unit_conversion.includes('divided') ? 'text-blue-600' : 'text-green-600'}`}>
-                  {debugInfo.unit_conversion === 'monthly_arppu_divided_by_30' ? '월간 ARPPU ÷ 30 적용' : '일간 ARPPU 원본 사용'}
+                ARPPU: <span className={`font-mono ${debugInfo.arppu_unit === 'daily' ? 'text-green-600' : 'text-blue-600'}`}>
+                  {debugInfo.arppu_unit === 'daily' ? '일간 (원본)' : '월간 (÷30)'}
                 </span>
               </p>
+              {debugInfo.custom_arppu_used && (
+                <p className="text-green-600 mt-1">✓ 사용자 입력값 적용</p>
+              )}
             </div>
             
             {/* LiveOps Check */}
             <div className="bg-white p-3 rounded border">
-              <h4 className="font-medium text-gray-700 mb-2">🎮 LiveOps Check</h4>
+              <h4 className="font-medium text-gray-700 mb-2">🎮 LiveOps</h4>
               <p className="text-gray-600">
                 강도: <span className={`font-medium ${
                   debugInfo.liveops_intensity === 'Strong' ? 'text-green-600' :
                   debugInfo.liveops_intensity === 'Medium' ? 'text-blue-600' : 'text-red-600'
                 }`}>{debugInfo.liveops_intensity}</span>
               </p>
-              <p className="text-gray-600">
-                Decay Rate: <span className="font-mono">{debugInfo.liveops_decay_rate}</span>
-              </p>
-              <p className="text-gray-600">
-                비용 승수: <span className="font-mono">{debugInfo.liveops_cost_multiplier}x</span>
-              </p>
+              <p className="text-gray-500">Floor: {(debugInfo.floor_value * 100).toFixed(0)}% / 최소 {debugInfo.min_sustaining_nru}명</p>
             </div>
             
-            {/* Floor Check */}
+            {/* D30 Retention Check */}
             <div className="bg-white p-3 rounded border">
-              <h4 className="font-medium text-gray-700 mb-2">📊 Floor Check</h4>
+              <h4 className="font-medium text-gray-700 mb-2">📈 D30 Retention</h4>
               <p className="text-gray-600">
-                Floor 활성화: <span className={debugInfo.floor_activated ? 'text-green-600' : 'text-gray-400'}>
-                  {debugInfo.floor_activated ? '✓ Yes' : '✗ No'}
-                </span>
+                계산값: <span className="font-mono">{debugInfo.calculated_d30_retention}%</span>
+                {debugInfo.b_was_adjusted && <span className="text-orange-500 ml-1">(보정됨)</span>}
               </p>
               <p className="text-gray-600">
-                Floor 비율: <span className="font-mono">{(debugInfo.floor_value * 100).toFixed(0)}%</span> (D30 기준)
+                벤치마크: <span className="font-mono">{debugInfo.benchmark_d30_retention}%</span>
+              </p>
+              <p className="text-gray-500 text-[10px]">
+                b값: {debugInfo.original_b} → {debugInfo.adjusted_b}
               </p>
             </div>
             
             {/* Pre-launch Check */}
             <div className="bg-white p-3 rounded border">
-              <h4 className="font-medium text-gray-700 mb-2">🚀 Pre-launch Check</h4>
+              <h4 className="font-medium text-gray-700 mb-2">🚀 Pre-launch</h4>
               <p className="text-gray-600">
-                모드: <span className="font-mono text-blue-600">{debugInfo.prelaunch_mode}</span>
+                CPW Ratio: <span className="font-mono">{(debugInfo.cpw_ratio * 100).toFixed(0)}%</span>
               </p>
               <p className="text-gray-500 text-[10px]">
-                CPW 기반 = 전환율 상쇄 없음 ✓
+                {debugInfo.cpw_ratio >= 0.3 ? 'PC/Console (위시리스트)' : 'Mobile (사전예약)'}
               </p>
             </div>
             
-            {/* 2-Stage Retention Check */}
+            {/* 2-Stage & Custom Input */}
             <div className="bg-white p-3 rounded border">
-              <h4 className="font-medium text-gray-700 mb-2">📈 2-Stage Retention</h4>
+              <h4 className="font-medium text-gray-700 mb-2">⚙️ 설정</h4>
               <p className="text-gray-600">
-                활성화: <span className={debugInfo.two_stage_retention ? 'text-green-600' : 'text-gray-400'}>
-                  {debugInfo.two_stage_retention ? '✓ Yes' : '✗ No'}
+                2-Stage: <span className={debugInfo.two_stage_retention ? 'text-green-600' : 'text-gray-400'}>
+                  {debugInfo.two_stage_retention ? '✓ ON' : '✗ OFF'}
                 </span>
               </p>
-              {debugInfo.two_stage_retention && (
-                <p className="text-gray-600">
-                  Stage2 Decay: <span className="font-mono">{debugInfo.stage2_decay_rate}</span>
-                </p>
-              )}
+              <p className="text-gray-600">
+                Custom PR: <span className={debugInfo.custom_pr_used ? 'text-green-600' : 'text-gray-400'}>
+                  {debugInfo.custom_pr_used ? '✓ 적용' : '벤치마크'}
+                </span>
+              </p>
             </div>
             
-            {/* Seasonality Check */}
+            {/* Package & Platform */}
             <div className="bg-white p-3 rounded border">
-              <h4 className="font-medium text-gray-700 mb-2">🌍 Seasonality Check</h4>
+              <h4 className="font-medium text-gray-700 mb-2">🎯 Platform</h4>
               <p className="text-gray-600">
-                적용: <span className={debugInfo.seasonality_applied ? 'text-green-600' : 'text-gray-400'}>
-                  {debugInfo.seasonality_applied ? '✓ Yes' : '✗ No'}
-                </span>
+                {debugInfo.platforms?.join(', ') || 'N/A'}
               </p>
-              {debugInfo.seasonality_regions && debugInfo.seasonality_regions.length > 0 && (
-                <p className="text-gray-600">
-                  지역: <span className="font-mono">
-                    {debugInfo.seasonality_regions.map(r => 
-                      r === 'korea' ? '🇰🇷' : r === 'china' ? '🇨🇳' : r === 'japan' ? '🇯🇵' : '🌐'
-                    ).join(' ')}
-                  </span>
+              {debugInfo.package_price > 0 && (
+                <p className="text-green-600 mt-1">
+                  패키지: ₩{debugInfo.package_price.toLocaleString()}
                 </p>
               )}
             </div>
           </div>
           
+          {/* V12.2: NRU Gap & BEP 역산 */}
+          <div className="grid grid-cols-2 gap-4 mt-4 border-t pt-4">
+            {/* NRU Gap 분석 */}
+            <div className="bg-orange-50 p-3 rounded border border-orange-200">
+              <div className="font-bold text-orange-800 mb-2 text-xs">📉 NRU 누수 분석</div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">예상 (Budget/CPA):</span>
+                <span className="font-mono">{debugInfo.ui_expected_paid_nru?.toLocaleString()}명</span>
+              </div>
+              <div className="flex justify-between text-xs font-bold mt-1">
+                <span className="text-gray-700">실제 (엔진반영):</span>
+                <span className="font-mono">{debugInfo.actual_paid_nru?.toLocaleString()}명</span>
+              </div>
+              <div className="text-right text-red-600 mt-2 text-xs font-medium">
+                차이: -{debugInfo.nru_gap_percent}% (포화/전환손실)
+              </div>
+            </div>
+            
+            {/* BEP 역산 분석 */}
+            <div className="bg-blue-50 p-3 rounded border border-blue-200">
+              <div className="font-bold text-blue-800 mb-2 text-xs">🎯 BEP 달성 목표</div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">현재 예상 DAU:</span>
+                <span className="font-mono">{debugInfo.current_avg_dau?.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between text-xs font-bold mt-1">
+                <span className="text-red-700">필요 목표 DAU:</span>
+                <span className="font-mono text-red-600">{debugInfo.required_dau_for_bep?.toLocaleString()}</span>
+              </div>
+              <div className="text-right text-gray-600 mt-2 text-xs">
+                갭: <span className={`font-bold ${debugInfo.dau_gap_ratio > 2 ? 'text-red-600' : 'text-orange-600'}`}>
+                  {debugInfo.dau_gap_ratio}배 {debugInfo.dau_gap_ratio > 1 ? '부족' : '초과'}
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          {/* Seasonality */}
+          {debugInfo.seasonality_applied && (
+            <div className="mt-3 p-2 bg-purple-50 rounded text-xs">
+              🌍 계절성: {debugInfo.seasonality_regions?.map(r => 
+                r === 'korea' ? '🇰🇷 한국' : r === 'china' ? '🇨🇳 중국' : r === 'japan' ? '🇯🇵 일본' : '🌐 글로벌'
+              ).join(', ')}
+            </div>
+          )}
+          
           <div className="mt-3 p-2 bg-blue-50 rounded text-xs text-blue-700">
-            💡 <strong>Tip:</strong> 매출이 예상보다 낮다면 (1) ARPPU 단위 확인, (2) LiveOps 강도 상향, (3) 2-Stage Retention 활성화를 검토해보세요.
+            💡 <strong>Tip:</strong> DAU 갭이 크다면 → (1) 마케팅 예산 증액 (2) 2-Stage Retention ON (3) LiveOps Strong (4) PR/ARPPU 상향
           </div>
         </div>
       )}
