@@ -1,7 +1,36 @@
 import { useState, useEffect } from 'react';
-import { TrendingUp, Users, DollarSign, ChevronDown, ChevronUp, HelpCircle, Building, Gamepad2, Info, Sliders } from 'lucide-react';
-import type { ProjectionInput, GameListResponse } from '../types';
+import { TrendingUp, Users, DollarSign, ChevronDown, ChevronUp, HelpCircle, Building, Gamepad2, Info, Sliders, AlertTriangle } from 'lucide-react';
+import type { ProjectionInput, GameListResponse, LiveOpsIntensity, ARPPUUnit, GenreGuideline } from '../types';
 import { getGamesMetadata } from '../utils/api';
+
+// V12: 장르별 권장 범위 데이터 (프론트엔드 상수)
+const GENRE_GUIDELINES: Record<string, GenreGuideline> = {
+  'RPG': { d1_retention: [35, 45], d7_retention: [18, 25], d30_retention: [8, 12], arppu_monthly: [40, 80], payment_rate: [3, 7], cpi: [2, 5] },
+  'MMORPG': { d1_retention: [40, 50], d7_retention: [25, 35], d30_retention: [12, 18], arppu_monthly: [50, 100], payment_rate: [5, 10], cpi: [3, 8] },
+  'Strategy': { d1_retention: [30, 40], d7_retention: [15, 22], d30_retention: [6, 10], arppu_monthly: [40, 100], payment_rate: [2, 5], cpi: [1.5, 4] },
+  'Casual': { d1_retention: [40, 55], d7_retention: [20, 30], d30_retention: [8, 15], arppu_monthly: [10, 30], payment_rate: [2, 5], cpi: [0.5, 2] },
+  'Puzzle': { d1_retention: [45, 60], d7_retention: [25, 35], d30_retention: [10, 18], arppu_monthly: [15, 35], payment_rate: [3, 6], cpi: [0.5, 1.5] },
+  'Action': { d1_retention: [35, 45], d7_retention: [18, 25], d30_retention: [7, 12], arppu_monthly: [30, 60], payment_rate: [3, 6], cpi: [1.5, 4] },
+  'Shooter': { d1_retention: [35, 45], d7_retention: [20, 28], d30_retention: [8, 14], arppu_monthly: [25, 50], payment_rate: [4, 8], cpi: [2, 5] },
+  'Sports': { d1_retention: [30, 40], d7_retention: [15, 22], d30_retention: [5, 10], arppu_monthly: [30, 70], payment_rate: [3, 7], cpi: [1.5, 4] },
+  'Simulation': { d1_retention: [35, 50], d7_retention: [20, 30], d30_retention: [8, 15], arppu_monthly: [20, 50], payment_rate: [3, 6], cpi: [1, 3] },
+  'Default': { d1_retention: [35, 45], d7_retention: [18, 25], d30_retention: [7, 12], arppu_monthly: [30, 60], payment_rate: [3, 6], cpi: [1.5, 4] }
+};
+
+// V12: 지역별 월간 계절성 계수
+const SEASONALITY_BY_REGION: Record<string, Record<number, number>> = {
+  'korea': { 1: 1.15, 2: 1.25, 3: 0.85, 4: 0.95, 5: 1.10, 6: 0.90, 7: 1.15, 8: 1.20, 9: 1.10, 10: 1.05, 11: 1.10, 12: 1.25 },
+  'china': { 1: 1.10, 2: 1.30, 3: 0.95, 4: 1.05, 5: 1.20, 6: 1.00, 7: 1.10, 8: 1.15, 9: 1.10, 10: 1.25, 11: 1.20, 12: 1.15 },
+  'japan': { 1: 1.05, 2: 1.10, 3: 1.00, 4: 1.00, 5: 1.25, 6: 0.95, 7: 1.10, 8: 1.15, 9: 1.05, 10: 1.05, 11: 1.05, 12: 1.15 },
+  'global': { 1: 1.10, 2: 1.05, 3: 1.00, 4: 1.00, 5: 1.00, 6: 0.85, 7: 1.05, 8: 1.10, 9: 1.00, 10: 1.05, 11: 1.15, 12: 1.25 }
+};
+
+// V12: LiveOps 강도별 설정
+const LIVEOPS_CONFIG: Record<LiveOpsIntensity, { decay_rate: number; floor_ratio: number; cost_multiplier: number; description: string }> = {
+  'Strong': { decay_rate: -0.3, floor_ratio: 0.40, cost_multiplier: 1.20, description: '적극적 운영 (운영비 +20%)' },
+  'Medium': { decay_rate: -0.5, floor_ratio: 0.20, cost_multiplier: 1.00, description: '일반 운영' },
+  'Weak': { decay_rate: -0.8, floor_ratio: 0.05, cost_multiplier: 0.85, description: '최소 운영 (운영비 -15%)' }
+};
 
 interface InputPanelProps {
   games: GameListResponse;
@@ -132,6 +161,12 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
   const [gameMetadata, setGameMetadata] = useState<Record<string, GameMetadata>>({});
   const [nruAutoCalc, setNruAutoCalc] = useState(false);
   const [seasonalityEnabled, setSeasonalityEnabled] = useState(false);
+  
+  // V12: 고급 옵션 state
+  const [liveOpsIntensity, setLiveOpsIntensity] = useState<LiveOpsIntensity>('Medium');
+  const [arppuUnit, setArppuUnit] = useState<ARPPUUnit>('monthly');
+  const [twoStageRetention, setTwoStageRetention] = useState(false);
+  const [seasonalityRegions, setSeasonalityRegions] = useState<string[]>(['korea']);
   
   // Phase 3: 프로젝트 정보 및 유사도 추천 (다중선택 지원)
   const [projectInfo, setProjectInfo] = useState({ 
@@ -352,6 +387,19 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
     };
     loadMetadata();
   }, []);
+
+  // V12: 고급 옵션 state를 input에 동기화
+  useEffect(() => {
+    setInput(prev => ({
+      ...prev,
+      advanced: {
+        liveops_intensity: liveOpsIntensity,
+        arppu_unit: arppuUnit,
+        two_stage_retention: twoStageRetention,
+        seasonality_regions: seasonalityRegions,
+      }
+    }));
+  }, [liveOpsIntensity, arppuUnit, twoStageRetention, seasonalityRegions, setInput]);
 
   const handleSampleGameSelect = (selectedGames: string[]) => {
     setInput(prev => ({
@@ -1489,163 +1537,251 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
       </div>
 
 
-      {/* 7. 계절성 팩터 */}
-      <div className="border border-teal-200 rounded-lg overflow-hidden">
-        <button onClick={() => setActiveSection(activeSection === 'seasonality' ? null : 'seasonality')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'seasonality' ? 'bg-teal-50 border-b border-teal-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
+      {/* V12: 고급 옵션 (LiveOps, 2-Stage Retention, 계절성 지역) */}
+      <div className="border border-violet-200 rounded-lg overflow-hidden">
+        <button onClick={() => setActiveSection(activeSection === 'seasonality' ? null : 'seasonality')} className={`w-full flex items-center justify-between px-4 py-3 ${activeSection === 'seasonality' ? 'bg-violet-50 border-b border-violet-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
           <div className="flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-teal-600" />
-            <span className="font-medium">7. 계절성 팩터 (Seasonality)</span>
-            <span className="text-xs bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full">선택</span>
+            <Sliders className="w-5 h-5 text-violet-600" />
+            <span className="font-medium">7. 고급 옵션 (V12)</span>
+            <span className="text-xs bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full">LiveOps · Retention · 계절성</span>
           </div>
           {activeSection === 'seasonality' ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
         </button>
         {activeSection === 'seasonality' && (
           <div className="p-4 space-y-4">
-            <GuideBox title="계절성 팩터 가이드">
+            {/* 가이드 */}
+            <GuideBox title="고급 옵션 가이드 (V12)">
               <div className="space-y-2 text-xs">
-                <p><strong>🎯 작동 원리:</strong> NRU와 매출에 요일/월별 가중치를 곱하여 현실적인 변동을 시뮬레이션합니다.</p>
-                
-                <div className="mt-2 p-2 bg-white/50 rounded">
-                  <p className="font-semibold text-amber-800">📊 계절성 공식:</p>
-                  <p className="font-mono text-[10px] mt-1">Adjusted Value = Base Value × Day Factor × Month Factor × Event Factor</p>
-                </div>
-                
-                <div className="mt-2 p-2 bg-white/50 rounded">
-                  <p className="font-semibold text-amber-800">📅 주요 시즌 효과:</p>
-                  <p>• <strong>주말 효과:</strong> 금(+5%), 토(+25%), 일(+15%) / 평일(-15%)</p>
-                  <p>• <strong>여름방학:</strong> 7~8월 +20% (학생 유저 증가)</p>
-                  <p>• <strong>연말/설연휴:</strong> 12월 +10%, 1월 +15%</p>
-                  <p>• <strong>비수기:</strong> 3~4월, 9~11월 -5% (신학기, 명절 피로)</p>
-                </div>
-                
-                <div className="mt-2 p-2 bg-white/50 rounded">
-                  <p className="font-semibold text-amber-800">🌏 지역별 차이:</p>
-                  <p>• <strong>한국:</strong> 설날(1~2월), 추석(9월), 가정의 달(5월) 효과</p>
-                  <p>• <strong>북미:</strong> 추수감사절(11월), 크리스마스(12월), 여름(7월) 효과</p>
-                  <p>• <strong>일본:</strong> 골든위크(5월), 오봉(8월), 연말(12월) 효과</p>
-                </div>
+                <p><strong>🎮 LiveOps 강도:</strong> D30 이후 리텐션/트래픽 유지율에 영향을 미칩니다. Strong 선택 시 운영비가 자동 증가합니다.</p>
+                <p><strong>📈 2-Stage Retention:</strong> D1~D30은 기존 Power Law, D31~D365는 LiveOps 강도에 따른 별도 Decay를 적용합니다.</p>
+                <p><strong>🌍 계절성 지역:</strong> 선택한 지역의 성수기/비수기 패턴이 NRU에 반영됩니다. 복수 선택 시 평균 적용.</p>
               </div>
             </GuideBox>
 
-            <div className="flex items-center gap-3 p-3 bg-teal-50 rounded-lg border border-teal-200">
-              <input 
-                type="checkbox" 
-                id="seasonality-enabled" 
-                checked={seasonalityEnabled}
-                onChange={(e) => setSeasonalityEnabled(e.target.checked)}
-                className="w-4 h-4 text-teal-600"
-              />
-              <label htmlFor="seasonality-enabled" className="text-sm font-medium text-teal-800">
-                계절성 팩터 적용 (프로젝션에 반영)
-              </label>
-            </div>
-
-            {/* 지역 선택 (계절성에 영향) - 다중선택 가능 */}
-            <div className="border border-teal-300 rounded-lg p-3 bg-teal-50/50">
-              <label className="block text-sm font-semibold text-teal-800 mb-2">🌏 타겟 지역 선택 (다중 선택 가능)</label>
-              <p className="text-xs text-teal-700 mb-2">선택한 지역들의 계절성 팩터가 평균으로 적용됩니다. (예: 한국+북미 동시 론칭)</p>
-              <div className="grid grid-cols-4 gap-2">
-                {[
-                  {v:'korea', l:'🇰🇷 한국', d:'설날/추석 효과'},
-                  {v:'japan', l:'🇯🇵 일본', d:'골든위크/오봉'},
-                  {v:'na', l:'🇺🇸 북미', d:'추수감사절/크리스마스'},
-                  {v:'global', l:'🌍 글로벌', d:'연말/여름'}
-                ].map(({v, l, d}) => {
-                  const isSelected = (input.regions || ['global']).includes(v);
-                  return (
-                    <label key={v} className={`flex flex-col items-center px-2 py-2 rounded border cursor-pointer text-xs transition-colors ${isSelected ? 'bg-teal-100 border-teal-500 text-teal-800 font-bold ring-2 ring-teal-400' : 'bg-white border-gray-300 hover:bg-gray-50'}`}>
-                      <input 
-                        type="checkbox" 
-                        value={v} 
-                        checked={isSelected}
-                        onChange={(e) => {
-                          const currentRegions = input.regions || ['global'];
-                          let newRegions: string[];
-                          if (e.target.checked) {
-                            // 'global'이 선택되면 다른 지역 제거, 아니면 global 제거하고 추가
-                            if (v === 'global') {
-                              newRegions = ['global'];
-                            } else {
-                              newRegions = [...currentRegions.filter(r => r !== 'global'), v];
-                            }
-                          } else {
-                            newRegions = currentRegions.filter(r => r !== v);
-                            // 아무것도 선택 안되면 global로
-                            if (newRegions.length === 0) newRegions = ['global'];
-                          }
-                          setInput(prev => ({...prev, regions: newRegions}));
-                        }} 
-                        className="sr-only" 
-                      />
-                      <span className="font-bold">{l}</span>
-                      <span className="text-[10px] text-gray-500">{d}</span>
-                      {isSelected && <span className="text-[10px] text-teal-600 mt-1">✓</span>}
-                    </label>
-                  );
-                })}
-              </div>
-              {(input.regions || ['global']).length > 1 && (
-                <p className="text-xs text-teal-600 mt-2">📍 선택된 지역: {(input.regions || ['global']).join(' + ')}</p>
-              )}
-            </div>
-
             <div className="grid grid-cols-2 gap-4">
-              <div className="border border-gray-300 rounded-lg overflow-hidden">
-                <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">요일별 가중치</div>
-                <table className="w-full text-sm">
-                  <tbody>
-                    {[
-                      { day: '월요일', key: 'mon', value: 0.85 },
-                      { day: '화요일', key: 'tue', value: 0.85 },
-                      { day: '수요일', key: 'wed', value: 0.85 },
-                      { day: '목요일', key: 'thu', value: 0.85 },
-                      { day: '금요일', key: 'fri', value: 1.05 },
-                      { day: '토요일', key: 'sat', value: 1.25 },
-                      { day: '일요일', key: 'sun', value: 1.15 },
-                    ].map(({ day, value }, i) => (
-                      <tr key={day} className={i === 6 ? '' : 'border-b'}>
-                        <td className="px-3 py-1.5 bg-gray-50 w-1/2 text-xs">{day}</td>
-                        <td className={`px-3 py-1.5 text-right text-xs ${value > 1 ? 'bg-green-50 text-green-700' : 'bg-gray-50'}`}>
-                          ×{value.toFixed(2)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              {/* 왼쪽: LiveOps & 2-Stage */}
+              <div className="space-y-4">
+                {/* LiveOps 강도 */}
+                <div className="border border-violet-200 rounded-lg overflow-hidden">
+                  <div className="bg-violet-100 px-3 py-2 border-b font-medium text-sm text-violet-800">
+                    🎮 LiveOps 강도
+                  </div>
+                  <div className="p-3 space-y-2">
+                    {(['Strong', 'Medium', 'Weak'] as LiveOpsIntensity[]).map((intensity) => {
+                      const config = LIVEOPS_CONFIG[intensity];
+                      const isSelected = liveOpsIntensity === intensity;
+                      return (
+                        <label 
+                          key={intensity}
+                          className={`flex items-center justify-between p-2 rounded-lg cursor-pointer border transition-colors ${
+                            isSelected 
+                              ? 'bg-violet-100 border-violet-400' 
+                              : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="radio"
+                              name="liveops"
+                              checked={isSelected}
+                              onChange={() => setLiveOpsIntensity(intensity)}
+                              className="text-violet-600"
+                            />
+                            <div>
+                              <span className={`font-medium ${isSelected ? 'text-violet-800' : 'text-gray-700'}`}>
+                                {intensity}
+                              </span>
+                              <p className="text-xs text-gray-500">{config.description}</p>
+                            </div>
+                          </div>
+                          <div className="text-right text-xs">
+                            <div className="text-violet-600">Decay: {config.decay_rate}</div>
+                            <div className="text-gray-500">Floor: {(config.floor_ratio * 100).toFixed(0)}%</div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                    {liveOpsIntensity === 'Strong' && (
+                      <div className="p-2 bg-amber-50 rounded border border-amber-200 text-xs text-amber-700 flex items-center gap-1">
+                        <AlertTriangle className="w-4 h-4" />
+                        Strong 선택 시 운영비 +20% 자동 반영됩니다
+                      </div>
+                    )}
+                  </div>
+                </div>
 
-              <div className="border border-gray-300 rounded-lg overflow-hidden">
-                <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm">월별 가중치</div>
-                <div className="max-h-48 overflow-y-auto">
-                  <table className="w-full text-sm">
-                    <tbody>
-                      {[
-                        { month: '1월 (설연휴)', value: 1.15 },
-                        { month: '2월', value: 1.00 },
-                        { month: '3월', value: 0.95 },
-                        { month: '4월', value: 0.95 },
-                        { month: '5월', value: 1.00 },
-                        { month: '6월', value: 1.00 },
-                        { month: '7월 (여름방학)', value: 1.20 },
-                        { month: '8월 (여름방학)', value: 1.20 },
-                        { month: '9월', value: 0.95 },
-                        { month: '10월', value: 0.95 },
-                        { month: '11월', value: 0.95 },
-                        { month: '12월 (연말)', value: 1.10 },
-                      ].map(({ month, value }, i) => (
-                        <tr key={month} className={i === 11 ? '' : 'border-b'}>
-                          <td className="px-3 py-1.5 bg-gray-50 w-1/2 text-xs">{month}</td>
-                          <td className={`px-3 py-1.5 text-right text-xs ${value > 1 ? 'bg-green-50 text-green-700' : value < 1 ? 'bg-red-50 text-red-700' : 'bg-gray-50'}`}>
-                            ×{value.toFixed(2)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                {/* 2-Stage Retention */}
+                <div className="border border-indigo-200 rounded-lg overflow-hidden">
+                  <div className="bg-indigo-100 px-3 py-2 border-b font-medium text-sm text-indigo-800 flex items-center justify-between">
+                    <span>📈 2-Stage Retention</span>
+                    <span className="text-xs bg-indigo-200 px-2 py-0.5 rounded">고급</span>
+                  </div>
+                  <div className="p-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={twoStageRetention}
+                        onChange={(e) => setTwoStageRetention(e.target.checked)}
+                        className="rounded text-indigo-600"
+                      />
+                      <span className="text-sm">2-Stage Retention 모델 활성화</span>
+                    </label>
+                    {twoStageRetention && (
+                      <div className="mt-2 p-2 bg-indigo-50 rounded text-xs space-y-1">
+                        <p><strong>Stage 1 (D1~D30):</strong> 기존 Power Law (D1 Retention 기준)</p>
+                        <p><strong>Stage 2 (D31~D365):</strong> LiveOps 강도별 Decay</p>
+                        <div className="mt-1 p-1.5 bg-white rounded border">
+                          <p className="text-indigo-700">
+                            현재 설정: <strong>{liveOpsIntensity}</strong> → 
+                            D31+ Decay Rate: <strong>{LIVEOPS_CONFIG[liveOpsIntensity].decay_rate}</strong>
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
+
+              {/* 오른쪽: 계절성 & ARPPU 단위 */}
+              <div className="space-y-4">
+                {/* 계절성 지역 선택 */}
+                <div className="border border-teal-200 rounded-lg overflow-hidden">
+                  <div className="bg-teal-100 px-3 py-2 border-b font-medium text-sm text-teal-800 flex items-center justify-between">
+                    <span>🌍 계절성 지역</span>
+                    <label className="flex items-center gap-1 text-xs">
+                      <input
+                        type="checkbox"
+                        checked={seasonalityEnabled}
+                        onChange={(e) => setSeasonalityEnabled(e.target.checked)}
+                        className="rounded text-teal-600"
+                      />
+                      활성화
+                    </label>
+                  </div>
+                  <div className={`p-3 ${!seasonalityEnabled ? 'opacity-50' : ''}`}>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { id: 'korea', label: '🇰🇷 한국', peak: '2월(설날), 8월, 12월' },
+                        { id: 'china', label: '🇨🇳 중국', peak: '2월(춘절), 5월, 10월' },
+                        { id: 'japan', label: '🇯🇵 일본', peak: '5월(GW), 8월, 12월' },
+                        { id: 'global', label: '🌐 글로벌', peak: '6월↓, 11-12월' },
+                      ].map(({ id, label, peak }) => (
+                        <label
+                          key={id}
+                          className={`flex flex-col p-2 rounded border cursor-pointer transition-colors ${
+                            seasonalityRegions.includes(id)
+                              ? 'bg-teal-100 border-teal-400'
+                              : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                          } ${!seasonalityEnabled ? 'cursor-not-allowed' : ''}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={seasonalityRegions.includes(id)}
+                              disabled={!seasonalityEnabled}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSeasonalityRegions([...seasonalityRegions, id]);
+                                } else {
+                                  setSeasonalityRegions(seasonalityRegions.filter(r => r !== id));
+                                }
+                              }}
+                              className="rounded text-teal-600"
+                            />
+                            <span className="text-sm font-medium">{label}</span>
+                          </div>
+                          <span className="text-[10px] text-gray-500 mt-1">성수기: {peak}</span>
+                        </label>
+                      ))}
+                    </div>
+                    {seasonalityEnabled && seasonalityRegions.length > 0 && (
+                      <div className="mt-2 p-2 bg-teal-50 rounded text-xs">
+                        <p className="text-teal-700">
+                          <strong>적용 지역:</strong> {seasonalityRegions.map(r => 
+                            r === 'korea' ? '한국' : r === 'china' ? '중국' : r === 'japan' ? '일본' : '글로벌'
+                          ).join(', ')}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ARPPU 단위 */}
+                <div className="border border-amber-200 rounded-lg overflow-hidden">
+                  <div className="bg-amber-100 px-3 py-2 border-b font-medium text-sm text-amber-800">
+                    💰 ARPPU 단위 설정
+                  </div>
+                  <div className="p-3">
+                    <div className="flex gap-2">
+                      {(['monthly', 'daily'] as ARPPUUnit[]).map((unit) => (
+                        <label
+                          key={unit}
+                          className={`flex-1 p-2 rounded border cursor-pointer text-center transition-colors ${
+                            arppuUnit === unit
+                              ? 'bg-amber-100 border-amber-400 text-amber-800'
+                              : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="arppu-unit"
+                            checked={arppuUnit === unit}
+                            onChange={() => setArppuUnit(unit)}
+                            className="sr-only"
+                          />
+                          <span className="font-medium">{unit === 'monthly' ? '월간 ARPPU' : '일간 ARPPU'}</span>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {unit === 'monthly' ? '(÷30 자동 적용)' : '(원본 그대로)'}
+                          </p>
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      * 입력한 ARPPU가 월간인지 일간인지 선택하세요. 잘못된 단위 선택 시 매출이 30배 차이날 수 있습니다.
+                    </p>
+                  </div>
+                </div>
+
+                {/* 장르별 권장 범위 표시 */}
+                {projectInfo.genre && GENRE_GUIDELINES[projectInfo.genre] && (
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="bg-gray-100 px-3 py-2 border-b font-medium text-sm text-gray-700">
+                      📊 {projectInfo.genre} 권장 범위
+                    </div>
+                    <div className="p-2 text-xs">
+                      <table className="w-full">
+                        <tbody>
+                          <tr className="border-b">
+                            <td className="py-1 text-gray-600">D1 Retention</td>
+                            <td className="py-1 text-right font-medium">
+                              {GENRE_GUIDELINES[projectInfo.genre].d1_retention[0]}% ~ {GENRE_GUIDELINES[projectInfo.genre].d1_retention[1]}%
+                            </td>
+                          </tr>
+                          <tr className="border-b">
+                            <td className="py-1 text-gray-600">월간 ARPPU</td>
+                            <td className="py-1 text-right font-medium">
+                              ${GENRE_GUIDELINES[projectInfo.genre].arppu_monthly[0]} ~ ${GENRE_GUIDELINES[projectInfo.genre].arppu_monthly[1]}
+                            </td>
+                          </tr>
+                          <tr className="border-b">
+                            <td className="py-1 text-gray-600">결제율</td>
+                            <td className="py-1 text-right font-medium">
+                              {GENRE_GUIDELINES[projectInfo.genre].payment_rate[0]}% ~ {GENRE_GUIDELINES[projectInfo.genre].payment_rate[1]}%
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="py-1 text-gray-600">CPI</td>
+                            <td className="py-1 text-right font-medium">
+                              ${GENRE_GUIDELINES[projectInfo.genre].cpi[0]} ~ ${GENRE_GUIDELINES[projectInfo.genre].cpi[1]}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="text-xs text-gray-500">* 현재 버전에서는 가중치 값이 고정되어 있습니다. 향후 커스텀 설정 기능이 추가될 예정입니다.</div>
           </div>
         )}
       </div>

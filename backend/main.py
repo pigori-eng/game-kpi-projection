@@ -80,19 +80,28 @@ class ProjectionInput(BaseModel):
     quality_score: Optional[str] = "B"  # S/A/B/C/D
     bm_type: Optional[str] = "Midcore"  # Hardcore/Midcore/Casual/F2P_Cosmetic/Gacha
     regions: Optional[List[str]] = None  # ["korea", "japan", "global", ...]
+    # V12 추가: 고급 옵션
+    advanced: Optional[Dict[str, Any]] = None  # { liveops_intensity, arppu_unit, two_stage_retention, seasonality_regions }
+
+# V12: LiveOps 강도별 설정
+LIVEOPS_CONFIG = {
+    "Strong": {"decay_rate": -0.3, "floor_ratio": 0.40, "cost_multiplier": 1.20},
+    "Medium": {"decay_rate": -0.5, "floor_ratio": 0.20, "cost_multiplier": 1.00},
+    "Weak": {"decay_rate": -0.8, "floor_ratio": 0.05, "cost_multiplier": 0.85}
+}
 
 # ============================================
-# 글로벌 계절성 팩터 (지역별 월간 가중치)
+# V12: 글로벌 계절성 팩터 (지역별 월간 가중치) - 2026 캘린더 기반
 # ============================================
 SEASONALITY_BY_REGION = {
-    "korea": {1: 1.15, 2: 1.20, 3: 1.00, 4: 0.95, 5: 1.00, 6: 0.95, 7: 1.05, 8: 1.10, 9: 1.00, 10: 1.05, 11: 1.10, 12: 1.15},
-    "japan": {1: 1.10, 2: 1.05, 3: 1.05, 4: 1.10, 5: 1.15, 6: 0.95, 7: 1.00, 8: 1.05, 9: 1.00, 10: 1.00, 11: 1.05, 12: 1.20},
-    "china": {1: 1.10, 2: 1.25, 3: 1.00, 4: 0.95, 5: 1.05, 6: 1.10, 7: 1.05, 8: 1.00, 9: 1.00, 10: 1.20, 11: 1.15, 12: 1.05},
-    "global": {1: 0.95, 2: 0.90, 3: 0.95, 4: 1.00, 5: 1.00, 6: 1.00, 7: 1.05, 8: 1.00, 9: 1.00, 10: 1.05, 11: 1.15, 12: 1.25},
+    "korea": {1: 1.15, 2: 1.25, 3: 0.85, 4: 0.95, 5: 1.10, 6: 0.90, 7: 1.15, 8: 1.20, 9: 1.10, 10: 1.05, 11: 1.10, 12: 1.25},
+    "china": {1: 1.10, 2: 1.30, 3: 0.95, 4: 1.05, 5: 1.20, 6: 1.00, 7: 1.10, 8: 1.15, 9: 1.10, 10: 1.25, 11: 1.20, 12: 1.15},
+    "japan": {1: 1.05, 2: 1.10, 3: 1.00, 4: 1.00, 5: 1.25, 6: 0.95, 7: 1.10, 8: 1.15, 9: 1.05, 10: 1.05, 11: 1.05, 12: 1.15},
+    "global": {1: 1.10, 2: 1.05, 3: 1.00, 4: 1.00, 5: 1.00, 6: 0.85, 7: 1.05, 8: 1.10, 9: 1.00, 10: 1.05, 11: 1.15, 12: 1.25},
     "sea": {1: 1.05, 2: 1.10, 3: 1.00, 4: 1.00, 5: 1.00, 6: 1.05, 7: 1.05, 8: 1.00, 9: 1.00, 10: 1.00, 11: 1.05, 12: 1.15},
-    "na": {1: 0.90, 2: 0.90, 3: 0.95, 4: 1.00, 5: 1.00, 6: 1.05, 7: 1.05, 8: 1.00, 9: 0.95, 10: 1.05, 11: 1.20, 12: 1.25},
+    "na": {1: 0.90, 2: 0.90, 3: 0.95, 4: 1.00, 5: 1.00, 6: 0.85, 7: 1.05, 8: 1.10, 9: 0.95, 10: 1.05, 11: 1.15, 12: 1.25},
     "sa": {1: 1.10, 2: 1.05, 3: 1.00, 4: 0.95, 5: 0.95, 6: 1.00, 7: 1.05, 8: 1.00, 9: 1.00, 10: 1.05, 11: 1.10, 12: 1.15},
-    "eu": {1: 0.90, 2: 0.90, 3: 0.95, 4: 1.05, 5: 1.00, 6: 1.00, 7: 1.00, 8: 0.95, 9: 1.00, 10: 1.05, 11: 1.15, 12: 1.25},
+    "eu": {1: 0.90, 2: 0.90, 3: 0.95, 4: 1.05, 5: 1.00, 6: 0.85, 7: 1.00, 8: 0.95, 9: 1.00, 10: 1.05, 11: 1.15, 12: 1.25},
 }
 
 def calculate_seasonality(regions: List[str], launch_date: str, days: int = 365) -> List[float]:
@@ -555,7 +564,8 @@ def generate_nru_series_v85(
     wishlist_conversion_rate: float = 0.15,  # 위시리스트 전환율
     cpa_saturation_enabled: bool = True,     # CPA 포화 효과
     brand_time_lag_enabled: bool = True,     # 브랜딩 지연 효과
-    platforms: List[str] = None              # [V11.0] 플랫폼 정보 추가
+    platforms: List[str] = None,             # [V11.0] 플랫폼 정보 추가
+    liveops_intensity: str = "Medium"        # [V12.0] LiveOps 강도
 ) -> tuple:
     """
     V8.5+ NRU 시리즈 생성 - UA/Brand 분리 + Pre-Launch + CPA Saturation
@@ -564,6 +574,7 @@ def generate_nru_series_v85(
     1. CPA Saturation: 예산 규모에 따라 CPA 상승 (시장 포화 효과)
     2. Pre-Launch Reservoir: 사전예약/위시리스트 유저를 D1에 폭발적 유입
     3. Brand Time-Lag: 브랜딩 효과가 서서히 나타나고 잔존
+    4. [V12] LiveOps 강도별 Sustaining Decay
     
     Args:
         ua_budget: 퍼포먼스 마케팅 예산 (직접 유입)
@@ -578,6 +589,7 @@ def generate_nru_series_v85(
         cpa_saturation_enabled: CPA 상승 계수 활성화
         brand_time_lag_enabled: 브랜딩 지연 효과 활성화
         platforms: 플랫폼 리스트 (CPW 계산에 사용)
+        liveops_intensity: LiveOps 강도 (Strong/Medium/Weak)
     
     Returns:
         (nru_series, paid_nru_total, organic_nru_total, organic_boost, meta_info)
@@ -685,22 +697,26 @@ def generate_nru_series_v85(
         nru_series[day] += organic_daily
     
     # 5-4. Sustaining 기간 (D31~D365)
-    # [FIX] Sustaining은 비용으로만 처리, NRU는 최소한으로 유지
-    # 월 매출의 7%를 Sustaining에 쓰지만, 이는 ROAS 계산에만 반영
-    # 실제 NRU는 자연 감쇠 (D30 대비 급격히 감소)
+    # [V12] LiveOps 강도별 Decay Rate 및 Floor 적용
     d30_nru = nru_series[29] if len(nru_series) > 29 else 100
     
-    # Sustaining NRU는 D30의 5% 수준에서 시작, 빠르게 감쇠
-    base_sustaining_nru = int(d30_nru * 0.05)  # D30의 5% (기존 20%에서 크게 축소)
+    # V12: LiveOps 강도별 설정 적용
+    liveops_config = LIVEOPS_CONFIG.get(liveops_intensity, LIVEOPS_CONFIG["Medium"])
+    floor_ratio = liveops_config["floor_ratio"]
+    decay_rate = abs(liveops_config["decay_rate"]) / 10  # 월간 decay rate로 변환
+    
+    # Sustaining NRU는 D30의 floor_ratio% 수준에서 Floor 유지
+    base_sustaining_nru = int(d30_nru * floor_ratio)
+    floor_nru = int(d30_nru * floor_ratio * 0.5)  # 절대 최소값
     
     for day in range(launch_period, days):
         months_after_launch = (day - launch_period) / 30
-        # [FIX] 더 가파른 감쇠율 적용 (월 10% 감소 → 6개월 후 ~53%, 12개월 후 ~28%)
-        decay = np.exp(-0.1 * months_after_launch)
+        # [V12] LiveOps 강도별 Decay 적용
+        decay = np.exp(-decay_rate * months_after_launch)
         daily_nru = int(base_sustaining_nru * decay)
-        nru_series[day] += max(daily_nru, 5)  # 최소값 10 → 5로 축소
+        nru_series[day] += max(daily_nru, floor_nru, 5)
     
-    # 최소값 보장 (5명 이하로 떨어지지 않음)
+    # 최소값 보장
     nru_series = [max(nru, 5) for nru in nru_series]
     
     # ============================================
@@ -714,7 +730,11 @@ def generate_nru_series_v85(
         "d1_burst_users": d1_burst_users,
         "post_launch_paid_nru": post_launch_paid_nru,
         "organic_boost_factor": round(organic_boost, 2),
-        "brand_time_lag_peak_day": 15 if brand_time_lag_enabled else 1
+        "brand_time_lag_peak_day": 15 if brand_time_lag_enabled else 1,
+        # V12: LiveOps 정보
+        "liveops_intensity": liveops_intensity,
+        "liveops_decay_rate": liveops_config["decay_rate"],
+        "liveops_floor_ratio": floor_ratio,
     }
     
     return nru_series[:days], total_paid_nru, organic_nru_total, organic_boost, meta_info
@@ -1195,10 +1215,15 @@ async def calculate_projection(input_data: ProjectionInput):
             # [V11.0] 플랫폼 정보 추출
             platforms = input_data.blending.get("platforms", ["PC"]) if input_data.blending else ["PC"]
             
+            # [V12.0] LiveOps 강도 추출
+            liveops_intensity = "Medium"
+            if input_data.advanced:
+                liveops_intensity = input_data.advanced.get("liveops_intensity", "Medium")
+            
             nru_series, paid_nru, organic_nru, organic_boost, nru_meta = generate_nru_series_v85(
                 adj_ua, adj_brand, target_cpa, base_organic_ratio, days, 30, sustaining_monthly,
                 pre_marketing_ratio, wishlist_conversion_rate, cpa_saturation_enabled, brand_time_lag_enabled,
-                platforms
+                platforms, liveops_intensity
             )
             
             # 시나리오별 메타 정보 저장
@@ -1370,6 +1395,22 @@ async def calculate_projection(input_data: ProjectionInput):
         "nru_analysis": v85_nru_meta if 'v85_nru_meta' in dir() and v85_nru_meta else None
     }
     
+    # V12: Debug 정보 생성
+    advanced = input_data.advanced or {}
+    debug_info = {
+        "unit_conversion": "monthly_arppu_divided_by_30" if advanced.get("arppu_unit", "monthly") == "monthly" else "daily_arppu_raw",
+        "floor_activated": True,
+        "floor_value": LIVEOPS_CONFIG.get(advanced.get("liveops_intensity", "Medium"), {}).get("floor_ratio", 0.2),
+        "prelaunch_mode": "cpw_based",
+        "liveops_intensity": advanced.get("liveops_intensity", "Medium"),
+        "liveops_decay_rate": LIVEOPS_CONFIG.get(advanced.get("liveops_intensity", "Medium"), {}).get("decay_rate", -0.5),
+        "liveops_cost_multiplier": LIVEOPS_CONFIG.get(advanced.get("liveops_intensity", "Medium"), {}).get("cost_multiplier", 1.0),
+        "seasonality_applied": len(advanced.get("seasonality_regions", [])) > 0,
+        "seasonality_regions": advanced.get("seasonality_regions", []),
+        "two_stage_retention": advanced.get("two_stage_retention", False),
+        "stage2_decay_rate": LIVEOPS_CONFIG.get(advanced.get("liveops_intensity", "Medium"), {}).get("decay_rate", -0.5) if advanced.get("two_stage_retention", False) else 0,
+    }
+    
     return {
         "status": "success",
         "input": {
@@ -1398,6 +1439,7 @@ async def calculate_projection(input_data: ProjectionInput):
             "seasonality_applied": True
         },
         "v85_marketing": v85_marketing_analysis,  # V8.5: 마케팅 분석 추가
+        "debug_info": debug_info,  # V12: Debug 정보 추가
         "summary": summary,
         "results": results
     }

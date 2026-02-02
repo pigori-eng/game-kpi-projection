@@ -1,10 +1,10 @@
 import { useState, useRef } from 'react';
-import { Download, FileSpreadsheet, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Download, FileSpreadsheet, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, Bug } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, AreaChart, Area, ComposedChart, Bar
 } from 'recharts';
-import type { ProjectionResult, TabType, GameListResponse, BasicSettings } from '../types';
+import type { ProjectionResult, TabType, GameListResponse, BasicSettings, DebugInfo } from '../types';
 import { formatNumber, formatCurrency, formatPercent, formatCompactNumber, formatCompactKorean } from '../utils/format';
 import AIInsightPanel from './AIInsightPanel';
 
@@ -16,6 +16,123 @@ interface ResultsPanelProps {
 }
 
 const COLORS = { best: '#22c55e', normal: '#3b82f6', worst: '#ef4444' };
+
+// V12: Debug Report 접이식 패널
+const DebugReportPanel: React.FC<{ debugInfo?: DebugInfo }> = ({ debugInfo }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  
+  if (!debugInfo) return null;
+  
+  return (
+    <div className="mt-4 border border-gray-200 rounded-lg overflow-hidden">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <Bug className="w-4 h-4 text-gray-500" />
+          <span className="text-sm font-medium text-gray-700">📉 Debug Report (왜 매출이 낮은가요?)</span>
+        </div>
+        {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+      </button>
+      
+      {isOpen && (
+        <div className="p-4 bg-gray-50 border-t border-gray-200">
+          <div className="grid grid-cols-2 gap-4 text-xs">
+            {/* Unit Check */}
+            <div className="bg-white p-3 rounded border">
+              <h4 className="font-medium text-gray-700 mb-2">💰 Unit Check</h4>
+              <p className="text-gray-600">
+                ARPPU 변환: <span className={`font-mono ${debugInfo.unit_conversion.includes('divided') ? 'text-blue-600' : 'text-green-600'}`}>
+                  {debugInfo.unit_conversion === 'monthly_arppu_divided_by_30' ? '월간 ARPPU ÷ 30 적용' : '일간 ARPPU 원본 사용'}
+                </span>
+              </p>
+            </div>
+            
+            {/* LiveOps Check */}
+            <div className="bg-white p-3 rounded border">
+              <h4 className="font-medium text-gray-700 mb-2">🎮 LiveOps Check</h4>
+              <p className="text-gray-600">
+                강도: <span className={`font-medium ${
+                  debugInfo.liveops_intensity === 'Strong' ? 'text-green-600' :
+                  debugInfo.liveops_intensity === 'Medium' ? 'text-blue-600' : 'text-red-600'
+                }`}>{debugInfo.liveops_intensity}</span>
+              </p>
+              <p className="text-gray-600">
+                Decay Rate: <span className="font-mono">{debugInfo.liveops_decay_rate}</span>
+              </p>
+              <p className="text-gray-600">
+                비용 승수: <span className="font-mono">{debugInfo.liveops_cost_multiplier}x</span>
+              </p>
+            </div>
+            
+            {/* Floor Check */}
+            <div className="bg-white p-3 rounded border">
+              <h4 className="font-medium text-gray-700 mb-2">📊 Floor Check</h4>
+              <p className="text-gray-600">
+                Floor 활성화: <span className={debugInfo.floor_activated ? 'text-green-600' : 'text-gray-400'}>
+                  {debugInfo.floor_activated ? '✓ Yes' : '✗ No'}
+                </span>
+              </p>
+              <p className="text-gray-600">
+                Floor 비율: <span className="font-mono">{(debugInfo.floor_value * 100).toFixed(0)}%</span> (D30 기준)
+              </p>
+            </div>
+            
+            {/* Pre-launch Check */}
+            <div className="bg-white p-3 rounded border">
+              <h4 className="font-medium text-gray-700 mb-2">🚀 Pre-launch Check</h4>
+              <p className="text-gray-600">
+                모드: <span className="font-mono text-blue-600">{debugInfo.prelaunch_mode}</span>
+              </p>
+              <p className="text-gray-500 text-[10px]">
+                CPW 기반 = 전환율 상쇄 없음 ✓
+              </p>
+            </div>
+            
+            {/* 2-Stage Retention Check */}
+            <div className="bg-white p-3 rounded border">
+              <h4 className="font-medium text-gray-700 mb-2">📈 2-Stage Retention</h4>
+              <p className="text-gray-600">
+                활성화: <span className={debugInfo.two_stage_retention ? 'text-green-600' : 'text-gray-400'}>
+                  {debugInfo.two_stage_retention ? '✓ Yes' : '✗ No'}
+                </span>
+              </p>
+              {debugInfo.two_stage_retention && (
+                <p className="text-gray-600">
+                  Stage2 Decay: <span className="font-mono">{debugInfo.stage2_decay_rate}</span>
+                </p>
+              )}
+            </div>
+            
+            {/* Seasonality Check */}
+            <div className="bg-white p-3 rounded border">
+              <h4 className="font-medium text-gray-700 mb-2">🌍 Seasonality Check</h4>
+              <p className="text-gray-600">
+                적용: <span className={debugInfo.seasonality_applied ? 'text-green-600' : 'text-gray-400'}>
+                  {debugInfo.seasonality_applied ? '✓ Yes' : '✗ No'}
+                </span>
+              </p>
+              {debugInfo.seasonality_regions && debugInfo.seasonality_regions.length > 0 && (
+                <p className="text-gray-600">
+                  지역: <span className="font-mono">
+                    {debugInfo.seasonality_regions.map(r => 
+                      r === 'korea' ? '🇰🇷' : r === 'china' ? '🇨🇳' : r === 'japan' ? '🇯🇵' : '🌐'
+                    ).join(' ')}
+                  </span>
+                </p>
+              )}
+            </div>
+          </div>
+          
+          <div className="mt-3 p-2 bg-blue-50 rounded text-xs text-blue-700">
+            💡 <strong>Tip:</strong> 매출이 예상보다 낮다면 (1) ARPPU 단위 확인, (2) LiveOps 강도 상향, (3) 2-Stage Retention 활성화를 검토해보세요.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const downloadCSV = (data: any[], filename: string, headers: string[]) => {
   const csvContent = [headers.join(','), ...data.map(row => headers.map(h => row[h] ?? '').join(','))].join('\n');
@@ -460,6 +577,9 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
           </div>
         </div>
       )}
+
+      {/* V12: Debug Report (접이식) */}
+      <DebugReportPanel debugInfo={results.debug_info} />
     </div>
   );
 };

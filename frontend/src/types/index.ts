@@ -77,6 +77,47 @@ export interface SeasonalitySettings {
   monthly_weights: {
     [month: number]: number;
   };
+  // V12: 지역별 계절성
+  regions?: string[];  // korea, china, japan, global
+}
+
+// V12: LiveOps 강도 타입
+export type LiveOpsIntensity = 'Strong' | 'Medium' | 'Weak';
+
+// V12: ARPPU 단위 타입
+export type ARPPUUnit = 'daily' | 'monthly';
+
+// V12: 고급 옵션 설정
+export interface AdvancedSettings {
+  liveops_intensity: LiveOpsIntensity;
+  arppu_unit: ARPPUUnit;
+  two_stage_retention: boolean;  // 2-Stage Retention ON/OFF
+  seasonality_regions: string[];  // 복수 선택 가능
+}
+
+// V12: 장르별 권장 범위
+export interface GenreGuideline {
+  d1_retention: [number, number];  // [min, max]
+  d7_retention: [number, number];
+  d30_retention: [number, number];
+  arppu_monthly: [number, number];  // USD
+  payment_rate: [number, number];   // %
+  cpi: [number, number];            // USD
+}
+
+// V12: Debug 정보
+export interface DebugInfo {
+  unit_conversion: string;
+  floor_activated: boolean;
+  floor_value: number;
+  prelaunch_mode: string;
+  liveops_intensity: string;
+  liveops_decay_rate: number;
+  liveops_cost_multiplier: number;
+  seasonality_applied: boolean;
+  seasonality_regions: string[];
+  two_stage_retention: boolean;
+  stage2_decay_rate: number;
 }
 
 // Phase 3: 프로젝트 정보 (유사도 추천용)
@@ -175,6 +216,8 @@ export interface ProjectionInput {
   quality_score?: string;  // S/A/B/C/D
   bm_type?: string;        // Hardcore/Midcore/Casual/F2P_Cosmetic/Gacha
   regions?: string[];      // korea/japan/china/global/sea/na/sa/eu
+  // V12 추가
+  advanced?: AdvancedSettings;
 }
 
 // Result Types
@@ -307,6 +350,8 @@ export interface ProjectionResult {
       brand_time_lag_peak_day: number;
     } | null;
   };
+  // V12: Debug 정보
+  debug_info?: DebugInfo;
   summary: {
     best: SummaryResult;
     normal: SummaryResult;
