@@ -661,7 +661,7 @@ const RawDataTab: React.FC<{ games: GameListResponse | null }> = ({ games }) => 
   
   if (!games) return null;
   
-  const API_BASE = import.meta.env.VITE_API_URL || 'https://game-kpi-projection.onrender.com/api';
+  const API_BASE = import.meta.env.VITE_API_URL || '/api';
   
   const handleExcelDownload = async () => {
     setDownloading(true);

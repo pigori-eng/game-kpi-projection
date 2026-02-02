@@ -5,7 +5,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://game-kpi-api.onrender.com/api/:path*"
+      "destination": "https://game-kpi-projection.onrender.com/api/:path*"
     }
   ]
 }

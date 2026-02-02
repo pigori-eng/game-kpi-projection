@@ -554,7 +554,8 @@ def generate_nru_series_v85(
     pre_marketing_ratio: float = 0.0,        # 사전 마케팅 비중
     wishlist_conversion_rate: float = 0.15,  # 위시리스트 전환율
     cpa_saturation_enabled: bool = True,     # CPA 포화 효과
-    brand_time_lag_enabled: bool = True      # 브랜딩 지연 효과
+    brand_time_lag_enabled: bool = True,     # 브랜딩 지연 효과
+    platforms: List[str] = None              # [V11.0] 플랫폼 정보 추가
 ) -> tuple:
     """
     V8.5+ NRU 시리즈 생성 - UA/Brand 분리 + Pre-Launch + CPA Saturation
@@ -576,6 +577,7 @@ def generate_nru_series_v85(
         wishlist_conversion_rate: 위시리스트/사전예약 전환율
         cpa_saturation_enabled: CPA 상승 계수 활성화
         brand_time_lag_enabled: 브랜딩 지연 효과 활성화
+        platforms: 플랫폼 리스트 (CPW 계산에 사용)
     
     Returns:
         (nru_series, paid_nru_total, organic_nru_total, organic_boost, meta_info)
@@ -616,10 +618,24 @@ def generate_nru_series_v85(
     # ============================================
     # 3. Pre-Launch Reservoir (사전예약/위시리스트)
     # ============================================
-    # 사전 마케팅으로 모은 유저 = "저수지"에 담아뒀다가 D1에 터뜨림
-    # 위시리스트 전환율 적용 (PC: 10~20%, Mobile: 15~25%)
-    wishlist_users = int(pre_launch_paid_nru / wishlist_conversion_rate) if wishlist_conversion_rate > 0 else 0
-    d1_burst_users = int(wishlist_users * wishlist_conversion_rate)  # 실제 D1 유입
+    # [V11.0 Fix] 상쇄 버그 제거 - CPW(Cost Per Wishlist) 기반으로 변경
+    # 기존: wishlist = paid_nru / conversion_rate → d1 = wishlist * conversion_rate (상쇄됨!)
+    # 수정: wishlist = budget / cpw → d1 = wishlist * conversion_rate (정상 작동)
+    
+    # CPW 플랫폼별 차등 적용 (PC/Console은 위시리스트 확보가 더 비쌈)
+    if platforms is None:
+        platforms = ["PC"]
+    is_pc_console = any(p in ["PC", "Console"] for p in platforms)
+    cpw_ratio = 0.3 if is_pc_console else 0.2  # PC/Console: CPA의 30%, Mobile: 20%
+    cpw = effective_cpa * cpw_ratio
+    
+    # 1. 예산 기반 위시리스트 모수 산출 (상쇄 버그 해결!)
+    wishlist_pool_paid = int(pre_launch_ua / cpw) if cpw > 0 else 0
+    wishlist_pool_organic = int(wishlist_pool_paid * effective_organic_ratio * 1.5)  # 위시리스트 단계 바이럴
+    wishlist_users = wishlist_pool_paid + wishlist_pool_organic
+    
+    # 2. 전환율 적용 (이제 전환율을 높이면 D1이 증가함!)
+    d1_burst_users = int(wishlist_users * wishlist_conversion_rate)
     
     # D1~D3 버스트 분배: D1=80%, D2=10%, D3=10%
     burst_distribution = [0.80, 0.10, 0.10]
@@ -1176,9 +1192,13 @@ async def calculate_projection(input_data: ProjectionInput):
             cpa_saturation_enabled = input_data.nru.cpa_saturation_enabled if input_data.nru.cpa_saturation_enabled is not None else True
             brand_time_lag_enabled = input_data.nru.brand_time_lag_enabled if input_data.nru.brand_time_lag_enabled is not None else True
             
+            # [V11.0] 플랫폼 정보 추출
+            platforms = input_data.blending.get("platforms", ["PC"]) if input_data.blending else ["PC"]
+            
             nru_series, paid_nru, organic_nru, organic_boost, nru_meta = generate_nru_series_v85(
                 adj_ua, adj_brand, target_cpa, base_organic_ratio, days, 30, sustaining_monthly,
-                pre_marketing_ratio, wishlist_conversion_rate, cpa_saturation_enabled, brand_time_lag_enabled
+                pre_marketing_ratio, wishlist_conversion_rate, cpa_saturation_enabled, brand_time_lag_enabled,
+                platforms
             )
             
             # 시나리오별 메타 정보 저장
