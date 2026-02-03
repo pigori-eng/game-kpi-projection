@@ -1152,6 +1152,11 @@ def create_insight_prompt(summary: Dict[str, Any], analysis_type: str) -> str:
     v7_settings = summary.get('v7_settings', {})
     blending = summary.get('blending', {})
     
+    # V12.3.1: Best-Worst 편차 미리 계산 (f-string 내 dict 오류 방지)
+    best_revenue = summary.get('best', {}).get('gross_revenue', 1)
+    worst_revenue = summary.get('worst', {}).get('gross_revenue', 1)
+    best_worst_variance = ((best_revenue / max(worst_revenue, 1)) - 1) * 100
+    
     # V9.2: 플랫폼별 용어 동적 설정
     platforms = blending.get('platforms', ['PC'])
     cost_metric = "CPI" if "Mobile" in platforms else "CPA"
@@ -1248,7 +1253,7 @@ Normal 시나리오 기준 1년 예상 매출과 핵심 지표를 한 문장으�
 UA&브랜딩 마케터, 퍼블리싱, 데이터 사이언스, 라이브 서비스 4명의 전문가 관점을 종합하여 다음 사항을 하나의 통합된 분석으로 작성:
 - 모객 효율 및 {'Organic 중심 마케팅 전략' if any(p in ['PC', 'Console'] for p in blending.get('platforms', ['PC'])) else 'UA 전략'}
 - {blending.get('genre', 'N/A')} 장르 시장 경쟁력 및 BM 구조 적합성
-- 리텐션 커브 건전성 및 Best-Worst 편차 ({((summary.get('best', {{}}).get('gross_revenue', 1) / max(summary.get('worst', {{}}).get('gross_revenue', 1), 1) - 1) * 100):.0f}%)
+- 리텐션 커브 건전성 및 Best-Worst 편차 ({best_worst_variance:.0f}%)
 - ROAS, 손익분기점, Sustaining 전략
 
 각 전문가의 의견을 나열하지 말고, 하나의 통합된 문단으로 자연스럽게 연결하여 작성하세요.
