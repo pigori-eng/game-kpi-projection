@@ -299,12 +299,22 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
 
   // V8 #3: BEP 차트 데이터 생성 (V12.3.2 수정: HR Cost 포함)
   const generateBepChartData = (): { day: number; cumRevenue: number; cumCost: number; isBep: boolean }[] => {
-    const mktBudget = basicSettings?.launch_mkt_budget || 0;
-    const hrCostMonthly = basicSettings?.hr_cost_monthly || 0;
+    // V12.3.2: 마케팅 예산은 results.v85_marketing에서 가져옴
+    const v85Marketing = (results as any).v85_marketing || {};
+    const mktBudget = v85Marketing.ua_budget + v85Marketing.brand_budget || basicSettings?.launch_mkt_budget || 0;
+    
+    // V12.3.2: headcount에서 HR Cost 계산 (hr_cost_monthly 필드가 없을 수 있음)
+    const hrDirect = basicSettings?.hr_direct_headcount || 0;
+    const hrIndirect = basicSettings?.hr_indirect_headcount || 0;
+    const hrCostMonthly = basicSettings?.hr_cost_monthly || ((hrDirect * 15000000) + (hrIndirect * 14000000));
+    
     const sustainingRatio = basicSettings?.sustaining_mkt_ratio || 0.07;
     
     // 일간 HR 비용 (월간 ÷ 30)
     const dailyHrCost = hrCostMonthly / 30;
+    
+    // 디버그 로그
+    console.log('BEP Debug:', { mktBudget, hrDirect, hrIndirect, hrCostMonthly, dailyHrCost, sustainingRatio });
     
     const data: { day: number; cumRevenue: number; cumCost: number; isBep: boolean }[] = [];
     let cumRevenue = 0;
@@ -858,7 +868,7 @@ const TotalTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
           </tbody>
         </table>
       </div>
-      <div className="bg-white rounded-xl border p-6"><h3 className="text-lg font-semibold mb-4">통합 KPI 추이 (D1~D365)</h3><div className="h-96"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="day" /><YAxis yAxisId="left" tickFormatter={(v) => formatCompactKorean(v)} width={80} /><YAxis yAxisId="right" orientation="right" tickFormatter={(v) => formatCompactKorean(v)} width={80} /><Tooltip /><Legend /><Bar yAxisId="left" dataKey="dau_normal" fill={COLORS.normal} name="DAU" opacity={0.7} /><Line yAxisId="right" type="monotone" dataKey="revenue_best" stroke={COLORS.best} name="Revenue (Best)" dot={false} /><Line yAxisId="right" type="monotone" dataKey="revenue_normal" stroke={COLORS.normal} name="Revenue (Normal)" dot={false} /><Line yAxisId="right" type="monotone" dataKey="revenue_worst" stroke={COLORS.worst} name="Revenue (Worst)" dot={false} /></ComposedChart></ResponsiveContainer></div></div>
+      <div className="bg-white rounded-xl border p-6"><h3 className="text-lg font-semibold mb-4">통합 KPI 추이 (D1~D365)</h3><div className="h-96"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="day" /><YAxis yAxisId="left" tickFormatter={(v) => formatCompactKorean(v)} width={80} /><YAxis yAxisId="right" orientation="right" tickFormatter={(v) => formatCompactKorean(v)} width={80} /><Tooltip formatter={(v: number) => formatCompactKorean(v)} /><Legend /><Bar yAxisId="left" dataKey="dau_normal" fill={COLORS.normal} name="DAU" opacity={0.7} /><Line yAxisId="right" type="monotone" dataKey="revenue_best" stroke={COLORS.best} name="Revenue (Best)" dot={false} /><Line yAxisId="right" type="monotone" dataKey="revenue_normal" stroke={COLORS.normal} name="Revenue (Normal)" dot={false} /><Line yAxisId="right" type="monotone" dataKey="revenue_worst" stroke={COLORS.worst} name="Revenue (Worst)" dot={false} /></ComposedChart></ResponsiveContainer></div></div>
       <div className="border rounded-lg overflow-hidden"><div className="bg-gray-100 px-4 py-2 flex justify-between"><span className="font-semibold">상세 테이블</span><div className="flex gap-2"><button onClick={() => setShowTable(!showTable)} className="text-sm text-blue-600">{showTable ? '접기' : '펼치기'}</button><button onClick={() => downloadCSV(tableData, 'total_kpi.csv', ['day', 'dau_best', 'dau_normal', 'dau_worst', 'revenue_best', 'revenue_normal', 'revenue_worst'])} className="flex items-center gap-1 text-sm bg-green-600 text-white px-3 py-1 rounded"><Download className="w-4 h-4" />CSV</button></div></div>{showTable && <div className="max-h-96 overflow-x-auto overflow-y-auto"><table className="w-full text-xs whitespace-nowrap"><thead className="bg-gray-50 sticky top-0"><tr><th className="px-2 py-2 text-left border-b">Day</th><th className="px-2 py-2 text-right border-b text-green-600">DAU Best</th><th className="px-2 py-2 text-right border-b text-blue-600">Normal</th><th className="px-2 py-2 text-right border-b text-red-600">Worst</th><th className="px-2 py-2 text-right border-b text-green-600">Rev Best</th><th className="px-2 py-2 text-right border-b text-blue-600">Normal</th><th className="px-2 py-2 text-right border-b text-red-600">Worst</th></tr></thead><tbody>{tableData.slice(0, 365).map((r, i) => <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}><td className="px-2 py-1 border-b">{r.day}</td><td className="px-2 py-1 border-b text-right">{formatNumber(r.dau_best)}</td><td className="px-2 py-1 border-b text-right">{formatNumber(r.dau_normal)}</td><td className="px-2 py-1 border-b text-right">{formatNumber(r.dau_worst)}</td><td className="px-2 py-1 border-b text-right">{formatCurrency(r.revenue_best)}</td><td className="px-2 py-1 border-b text-right">{formatCurrency(r.revenue_normal)}</td><td className="px-2 py-1 border-b text-right">{formatCurrency(r.revenue_worst)}</td></tr>)}</tbody></table></div>}</div>
     </div>
   );

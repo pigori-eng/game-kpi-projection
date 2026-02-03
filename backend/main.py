@@ -1085,9 +1085,10 @@ def calculate_revenue(dau: List[float], pr: List[float], arppu: List[float],
         # IAP 매출 = DAU × PR × 일별 ARPPU
         iap_revenue = dau[i] * pr_val * daily_arppu
         
-        # V12.1: 패키지 매출 (PC/Console, 런칭 30일 이내)
+        # V12.3.2: 패키지 매출 (PC/Console - 모든 NRU에 적용)
+        # B2P 게임은 신규 유저가 구매 시 패키지 가격을 지불하므로 365일 내내 적용
         pkg_revenue = 0
-        if is_pc_console and package_price > 0 and nru and i < 30:
+        if is_pc_console and package_price > 0 and nru:
             nru_val = nru[i] if i < len(nru) else 0
             pkg_revenue = nru_val * package_price
             package_revenue_total += pkg_revenue
