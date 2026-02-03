@@ -118,6 +118,16 @@ export interface DebugInfo {
   custom_arppu_value: number | null;
   package_price: number;
   
+  // V12.3: CPA Saturation 정보
+  saturation_factor: number;
+  effective_cpa: number;
+  brand_efficiency_bonus: number;
+  
+  // V12.3: Sustaining 정보
+  sustaining_budget_monthly: number;
+  sustaining_paid_nru_daily: number;
+  sustaining_organic_floor: number;
+  
   // LiveOps 설정
   liveops_intensity: string;
   liveops_decay_rate: number;
@@ -223,6 +233,8 @@ export interface NRUInput {
   wishlist_conversion_rate?: number; // 위시리스트/사전예약 전환율
   cpa_saturation_enabled?: boolean;  // CPA 상승 계수 활성화
   brand_time_lag_enabled?: boolean;  // 브랜딩 지연 효과 활성화
+  // V12.3: Sustaining Budget (별도 월간 예산)
+  sustaining_mkt_budget_monthly?: number;  // 월간 유지 마케팅 예산
 }
 
 export interface RevenueInput {

@@ -21,6 +21,26 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
+# 글로벌 에러 핸들러 - 모든 에러를 잡아서 상세 로깅
+from fastapi import Request
+from fastapi.responses import JSONResponse
+import traceback
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    error_detail = traceback.format_exc()
+    print(f"❌ Global Error: {type(exc).__name__}: {str(exc)}")
+    print(f"❌ Traceback:\n{error_detail}")
+    return JSONResponse(
+        status_code=500,
+        content={
+            "status": "error",
+            "error_type": type(exc).__name__,
+            "error_message": str(exc),
+            "detail": error_detail[:2000]  # 처음 2000자만
+        }
+    )
+
 # Data paths
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 RAW_DATA_PATH = os.path.join(DATA_DIR, "raw_game_data.json")
@@ -60,6 +80,8 @@ class NRUInput(BaseModel):
     wishlist_conversion_rate: Optional[float] = 0.15  # 위시리스트/사전예약 → 실제 유입 전환율 (PC: 10~20%)
     cpa_saturation_enabled: Optional[bool] = True     # CPA 상승 계수 활성화
     brand_time_lag_enabled: Optional[bool] = True     # 브랜딩 지연 효과 활성화
+    # V12.3: Sustaining Budget (별도 추가 월 예산)
+    sustaining_mkt_budget_monthly: Optional[int] = 0  # 월간 유지 마케팅 예산 (기본값: UA의 10%)
 
 class RevenueInput(BaseModel):
     selected_games_pr: List[str] = []
@@ -123,6 +145,57 @@ MIN_SUSTAINING_NRU = {
     "Mobile": 500,      # 모바일은 최소 일 500명
     "Console": 200      # 콘솔은 최소 일 200명
 }
+
+# V12.3: CPA Saturation 상수
+CPA_SATURATION_THRESHOLD = 500_000_000  # 기본 임계값: 5억원
+CPA_SATURATION_COEFFICIENT = 0.15        # 로그 스케일 계수
+
+def calculate_marketing_efficiency(
+    ua_budget: float,
+    brand_budget: float,
+    target_cpa: float
+) -> dict:
+    """
+    V12.3: CPA Saturation (Marketing Efficiency) 계산
+    
+    UA 예산이 임계값을 초과하면 CPA가 로그 스케일로 상승
+    Brand 예산이 임계값을 높여서 효율 저하를 방어
+    
+    Returns:
+        dict: {
+            "effective_cpa": 실제 적용 CPA,
+            "saturation_factor": CPA 상승 배수,
+            "adjusted_threshold": 브랜드 보정된 임계값,
+            "budget_scale": 예산/임계값 비율
+        }
+    """
+    import math
+    
+    # 1. 브랜드 예산 비율로 임계값 상향 (브랜딩 = 효율 방어)
+    brand_ratio = brand_budget / max(1, ua_budget)
+    adjusted_threshold = CPA_SATURATION_THRESHOLD * (1 + min(1.0, brand_ratio))
+    
+    # 2. 예산 스케일 계산
+    budget_scale = ua_budget / max(1, adjusted_threshold)
+    
+    # 3. Saturation Factor (로그 함수)
+    # 예산이 임계값 이하면 1.0 (효율 저하 없음)
+    # 임계값 초과 시 로그 스케일로 단가 상승
+    if budget_scale > 1.0:
+        saturation_factor = 1.0 + (math.log(budget_scale) * CPA_SATURATION_COEFFICIENT)
+    else:
+        saturation_factor = 1.0
+    
+    # 4. 최종 CPA
+    effective_cpa = target_cpa * saturation_factor
+    
+    return {
+        "effective_cpa": effective_cpa,
+        "saturation_factor": round(saturation_factor, 3),
+        "adjusted_threshold": adjusted_threshold,
+        "budget_scale": round(budget_scale, 3),
+        "brand_efficiency_bonus": round(brand_ratio * 100, 1)  # %로 표시
+    }
 
 # ============================================
 # V12: 글로벌 계절성 팩터 (지역별 월간 가중치) - 2026 캘린더 기반
@@ -479,7 +552,7 @@ def generate_retention_curve_v12(
     a: float, b: float, target_d1: float, days: int = 365,
     two_stage_enabled: bool = False, liveops_intensity: str = "Medium",
     genre: str = "Default", platform: str = "Mobile"
-) -> List[float]:
+):
     """
     V12.2: 2-Stage Retention + D30 앵커 강력 보정
     
@@ -489,6 +562,9 @@ def generate_retention_curve_v12(
     [V12.2 Fix] D30 앵커 강화:
     - 벤치마크의 70% 미만이면 문제로 판단
     - 85% 수준까지 b값 역산으로 강제 보정
+    
+    Returns:
+        tuple: (retention_curve: List[float], adjusted_b: float)
     """
     import math
     
@@ -702,16 +778,23 @@ def generate_nru_series_v85(
     import math
     
     # ============================================
-    # 1. CPA Saturation Effect (시장 포화)
+    # 1. CPA Saturation Effect (시장 포화) - V12.3 개선
     # ============================================
     # 예산이 클수록 효율 좋은 유저가 고갈되어 CPA 상승
-    # 공식: Effective CPA = Target CPA × (1 + (Budget / 5억) × 0.05)
+    # Brand 예산이 임계값을 높여서 효율 저하를 방어
     if cpa_saturation_enabled and ua_budget > 0:
-        saturation_factor = 1 + (ua_budget / 500_000_000) * 0.05
-        effective_cpa = int(target_cpa * saturation_factor)
+        efficiency = calculate_marketing_efficiency(ua_budget, brand_budget, target_cpa)
+        effective_cpa = efficiency["effective_cpa"]
+        saturation_factor = efficiency["saturation_factor"]
+        adjusted_threshold = efficiency["adjusted_threshold"]
+        budget_scale = efficiency["budget_scale"]
+        brand_efficiency_bonus = efficiency["brand_efficiency_bonus"]
     else:
         saturation_factor = 1.0
         effective_cpa = target_cpa
+        adjusted_threshold = CPA_SATURATION_THRESHOLD
+        budget_scale = 0
+        brand_efficiency_bonus = 0
     
     # ============================================
     # 2. UA/Brand 예산 분리 및 NRU 계산
@@ -817,19 +900,33 @@ def generate_nru_series_v85(
         primary_platform = "Console"
     min_absolute_nru = MIN_SUSTAINING_NRU.get(primary_platform, 300)
     
-    # Sustaining NRU는 D30의 floor_ratio% 수준에서 Floor 유지
-    base_sustaining_nru = int(d30_nru * floor_ratio)
+    # ============================================
+    # [V12.3 Fix] Sustaining NRU = 예산 기반 Paid + Organic Floor
+    # ============================================
+    # 1. 예산 기반 Paid NRU 계산
+    if sustaining_budget_monthly > 0 and effective_cpa > 0:
+        monthly_sustaining_paid = sustaining_budget_monthly / effective_cpa
+        daily_sustaining_paid = int(monthly_sustaining_paid / 30)
+    else:
+        monthly_sustaining_paid = 0
+        daily_sustaining_paid = 0
+    
+    # 2. Organic Floor (기존 로직 유지 - D30 기반)
+    base_organic_floor = int(d30_nru * floor_ratio)
     ratio_based_floor = int(d30_nru * floor_ratio * 0.5)
+    organic_floor = max(ratio_based_floor, min_absolute_nru)
     
-    # [V12.2] 비율 기반 Floor와 절대값 Floor 중 큰 값 선택
-    floor_nru = max(ratio_based_floor, min_absolute_nru)
-    
+    # 3. Sustaining NRU = Paid + Organic (예산 기반 능동적 유입)
     for day in range(launch_period, days):
         months_after_launch = (day - launch_period) / 30
-        # [V12] LiveOps 강도별 Decay 적용
+        
+        # Organic Decay (LiveOps 강도별)
         decay = np.exp(-decay_rate * months_after_launch)
-        daily_nru = int(base_sustaining_nru * decay)
-        nru_series[day] += max(daily_nru, floor_nru)
+        daily_organic = int(base_organic_floor * decay)
+        
+        # 최종 Sustaining NRU = Paid(예산 기반) + Organic(Floor 보장)
+        daily_sustaining = daily_sustaining_paid + max(daily_organic, organic_floor)
+        nru_series[day] += daily_sustaining
     
     # 최소값 보장 (절대 하한선 적용)
     nru_series = [max(nru, min_absolute_nru) for nru in nru_series]
@@ -840,6 +937,9 @@ def generate_nru_series_v85(
     meta_info = {
         "effective_cpa": effective_cpa,
         "cpa_saturation_factor": round(saturation_factor, 3),
+        "adjusted_threshold": adjusted_threshold if 'adjusted_threshold' in dir() else CPA_SATURATION_THRESHOLD,
+        "budget_scale": budget_scale if 'budget_scale' in dir() else 0,
+        "brand_efficiency_bonus": brand_efficiency_bonus if 'brand_efficiency_bonus' in dir() else 0,
         "pre_launch_users": pre_launch_paid_nru,
         "wishlist_users": wishlist_users,
         "d1_burst_users": d1_burst_users,
@@ -850,6 +950,10 @@ def generate_nru_series_v85(
         "liveops_intensity": liveops_intensity,
         "liveops_decay_rate": liveops_config["decay_rate"],
         "liveops_floor_ratio": floor_ratio,
+        # V12.3: Sustaining 정보
+        "sustaining_budget_monthly": sustaining_budget_monthly,
+        "sustaining_paid_nru_daily": daily_sustaining_paid,
+        "sustaining_organic_floor": organic_floor,
     }
     
     return nru_series[:days], total_paid_nru, organic_nru_total, organic_boost, meta_info
@@ -1380,7 +1484,10 @@ async def calculate_projection(input_data: ProjectionInput):
             adj_ua = int(ua_budget * scenario_mult)
             adj_brand = int(brand_budget * scenario_mult)
             
-            sustaining_monthly = input_data.basic_settings.get("sustaining_mkt_budget_monthly", 0) if input_data.basic_settings else 0
+            sustaining_monthly = input_data.nru.sustaining_mkt_budget_monthly or 0
+            # V12.3: 기본값 = UA 예산의 10%
+            if sustaining_monthly == 0:
+                sustaining_monthly = int(ua_budget * 0.1 / 12)  # 연간의 10%를 월간으로 환산
             
             # V8.5+ 신규 파라미터
             pre_marketing_ratio = input_data.nru.pre_marketing_ratio or 0.0
@@ -1519,7 +1626,10 @@ async def calculate_projection(input_data: ProjectionInput):
     ua_budget = input_data.nru.ua_budget or 0
     brand_budget = input_data.nru.brand_budget or 0
     basic = input_data.basic_settings or load_config()["basic_settings"]
-    sustaining_monthly = basic.get("sustaining_mkt_budget_monthly", 0)
+    # V12.3: sustaining_monthly를 NRUInput에서 가져옴
+    sustaining_monthly = input_data.nru.sustaining_mkt_budget_monthly or 0
+    if sustaining_monthly == 0:
+        sustaining_monthly = int(ua_budget * 0.1 / 12)  # 기본값: UA의 10%를 월간으로
     total_sustaining = sustaining_monthly * 12  # 연간 유지 예산
     
     total_marketing_budget = ua_budget + brand_budget + total_sustaining
@@ -1560,7 +1670,11 @@ async def calculate_projection(input_data: ProjectionInput):
             "blended_roas": round(blended_roas, 1), # 전체 효율 (경영진용)
             "ltv": round(ltv, 0),
             "cac_paid": round(cac_paid, 0),
-            "cac_blended": round(cac_blended, 0)
+            "cac_blended": round(cac_blended, 0),
+            # V12.3: Total Cost (BEP 계산용)
+            "total_cost": total_marketing_budget + (basic.get("hr_cost_monthly", 0) * 12),
+            "marketing_cost": total_marketing_budget,
+            "hr_cost_annual": basic.get("hr_cost_monthly", 0) * 12
         }
     
     # V8.5: 마케팅 예산 분석 정보
@@ -1610,6 +1724,16 @@ async def calculate_projection(input_data: ProjectionInput):
         "custom_pr_value": input_data.revenue.custom_pr,
         "custom_arppu_value": input_data.revenue.custom_arppu,
         "package_price": input_data.revenue.package_price or 0,
+        
+        # V12.3: CPA Saturation 정보
+        "saturation_factor": v85_nru_meta.get("cpa_saturation_factor", 1.0) if v85_nru_meta else 1.0,
+        "effective_cpa": v85_nru_meta.get("effective_cpa", target_cpa) if v85_nru_meta else target_cpa,
+        "brand_efficiency_bonus": v85_nru_meta.get("brand_efficiency_bonus", 0) if v85_nru_meta else 0,
+        
+        # V12.3: Sustaining 정보
+        "sustaining_budget_monthly": sustaining_monthly,
+        "sustaining_paid_nru_daily": v85_nru_meta.get("sustaining_paid_nru_daily", 0) if v85_nru_meta else 0,
+        "sustaining_organic_floor": v85_nru_meta.get("sustaining_organic_floor", 0) if v85_nru_meta else 0,
         
         # LiveOps 설정
         "liveops_intensity": liveops_intensity_val,

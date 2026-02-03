@@ -156,6 +156,47 @@ const DebugReportPanel: React.FC<{ debugInfo?: DebugInfo }> = ({ debugInfo }) =>
             </div>
           </div>
           
+          {/* V12.3: CPA Saturation & Sustaining */}
+          <div className="grid grid-cols-2 gap-4 mt-4 border-t pt-4">
+            {/* CPA Saturation */}
+            <div className="bg-purple-50 p-3 rounded border border-purple-200">
+              <div className="font-bold text-purple-800 mb-2 text-xs">📊 CPA Saturation (마케팅 효율)</div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">Saturation Factor:</span>
+                <span className={`font-mono font-bold ${(debugInfo.saturation_factor || 1) > 1.2 ? 'text-red-600' : 'text-green-600'}`}>
+                  x{(debugInfo.saturation_factor || 1).toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between text-xs mt-1">
+                <span className="text-gray-600">Effective CPA:</span>
+                <span className="font-mono">₩{(debugInfo.effective_cpa || 0).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between text-xs mt-1">
+                <span className="text-gray-600">Brand 효율 보너스:</span>
+                <span className="font-mono text-purple-600">+{debugInfo.brand_efficiency_bonus || 0}%</span>
+              </div>
+              <p className="text-[10px] text-gray-500 mt-2">* 예산 ↑ → CPA ↑ → NRU ↓ (비용은 그대로)</p>
+            </div>
+            
+            {/* Sustaining Budget */}
+            <div className="bg-teal-50 p-3 rounded border border-teal-200">
+              <div className="font-bold text-teal-800 mb-2 text-xs">📈 Sustaining NRU (D31~)</div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">월 예산:</span>
+                <span className="font-mono">₩{(debugInfo.sustaining_budget_monthly || 0).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between text-xs mt-1">
+                <span className="text-gray-600">Paid NRU/일:</span>
+                <span className="font-mono text-teal-700 font-bold">+{(debugInfo.sustaining_paid_nru_daily || 0).toLocaleString()}명</span>
+              </div>
+              <div className="flex justify-between text-xs mt-1">
+                <span className="text-gray-600">Organic Floor/일:</span>
+                <span className="font-mono">+{(debugInfo.sustaining_organic_floor || 0).toLocaleString()}명</span>
+              </div>
+              <p className="text-[10px] text-gray-500 mt-2">* 연간 비용: ₩{((debugInfo.sustaining_budget_monthly || 0) * 12).toLocaleString()}</p>
+            </div>
+          </div>
+          
           {/* Seasonality */}
           {debugInfo.seasonality_applied && (
             <div className="mt-3 p-2 bg-purple-50 rounded text-xs">

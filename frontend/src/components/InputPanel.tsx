@@ -1,7 +1,42 @@
 import { useState, useEffect } from 'react';
-import { TrendingUp, Users, DollarSign, ChevronDown, ChevronUp, HelpCircle, Building, Gamepad2, Info, Sliders, AlertTriangle } from 'lucide-react';
+import { TrendingUp, Users, DollarSign, ChevronDown, ChevronUp, HelpCircle, Building, Gamepad2, Info, Sliders, AlertTriangle, Wifi, WifiOff } from 'lucide-react';
 import type { ProjectionInput, GameListResponse, LiveOpsIntensity, ARPPUUnit, GenreGuideline } from '../types';
-import { getGamesMetadata } from '../utils/api';
+import { getGamesMetadata, getAIStatus } from '../utils/api';
+
+// V12.3: 표본 게임 익명화 매핑 테이블
+// 내부 표본 → 익명화 라벨 (벤치마크 게임은 실명 유지)
+const GAME_ANONYMIZE_MAP: Record<string, string> = {
+  // 내부 표본 (익명화)
+  "다크어벤저3(글로벌)": "Action RPG (Hack&Slash / 2016 / Global)",
+  "다크어벤저3(일본)": "Action RPG (Hack&Slash / 2016 / JP)",
+  "다크어벤저3(한국)": "Action RPG (Hack&Slash / 2016 / KR)",
+  "메M(대만)": "MMORPG (Mobile / 2018 / TW)",
+  "메M(한국)": "MMORPG (Mobile / 2018 / KR)",
+  "슈퍼피플(글로벌)": "Battle Royale (PC / 2022 / Global)",
+  "오버히트(글로벌)": "Collector RPG (Mobile / 2018 / Global)",
+  "오버히트(일본)": "Collector RPG (Mobile / 2018 / JP)",
+  "오버히트(한국)": "Collector RPG (Mobile / 2018 / KR)",
+  "조조전(대만)": "SRPG (Turn-based / 2016 / TW)",
+  "조조전(일본)": "SRPG (Turn-based / 2016 / JP)",
+  "조조전(한국)": "SRPG (Turn-based / 2016 / KR)",
+  "카이저(한국)": "MMORPG (Mobile / 2019 / KR)",
+  "트라하(일본)": "MMORPG (High-End / 2019 / JP)",
+  "트라하(한국)": "MMORPG (High-End / 2019 / KR)",
+  "Abyss Of Dungeons(Internal)": "Internal Project (TBD)",
+  // 벤치마크 게임 (실명 유지)
+  "PUBG Mobile(글로벌-벤치마크)": "PUBG Mobile (Global - Benchmark)",
+  "Arena Breakout(글로벌-벤치마크)": "Arena Breakout (Global - Benchmark)",
+  "PUBG (PC)": "PUBG (PC)",
+  "PUBG (Console)": "PUBG (Console)",
+  "PUBG Mobile (KR)": "PUBG Mobile (KR)",
+  "PUBG Mobile (JP)": "PUBG Mobile (JP)",
+  "PUBG Mobile (Global)": "PUBG Mobile (Global)",
+};
+
+// 게임명 → 표시 라벨 변환 함수
+const getGameDisplayLabel = (gameId: string): string => {
+  return GAME_ANONYMIZE_MAP[gameId] || gameId;
+};
 
 // V12: 장르별 권장 범위 데이터 (프론트엔드 상수)
 const GENRE_GUIDELINES: Record<string, GenreGuideline> = {
@@ -94,10 +129,11 @@ const GameGridSelector: React.FC<{
           const gameMeta = metadata[game];
           const isSelected = selectedGames.includes(game);
           const isDisabled = !isSelected && selectedGames.length >= maxGames;
+          const displayLabel = getGameDisplayLabel(game);  // V12.3: 익명화 라벨
           return (
             <div key={game} className="relative" onMouseEnter={() => setHoveredGame(game)} onMouseLeave={() => setHoveredGame(null)}>
-              <button onClick={() => handleToggle(game)} disabled={isDisabled} className={`w-full px-3 py-2 text-sm text-left border-r border-b border-gray-200 transition-colors truncate flex items-center gap-1 ${isSelected ? 'bg-blue-100 text-blue-800 font-medium' : 'bg-white hover:bg-gray-50 text-gray-700'} ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} ${(idx + 1) % 4 === 0 ? 'border-r-0' : ''}`} title={game}>
-                <span className="truncate flex-1">{game}</span>
+              <button onClick={() => handleToggle(game)} disabled={isDisabled} className={`w-full px-3 py-2 text-sm text-left border-r border-b border-gray-200 transition-colors truncate flex items-center gap-1 ${isSelected ? 'bg-blue-100 text-blue-800 font-medium' : 'bg-white hover:bg-gray-50 text-gray-700'} ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} ${(idx + 1) % 4 === 0 ? 'border-r-0' : ''}`} title={displayLabel}>
+                <span className="truncate flex-1">{displayLabel}</span>
                 {gameMeta && <Info className={`w-3.5 h-3.5 flex-shrink-0 ${hoveredGame === game ? 'text-blue-500' : 'text-gray-400'}`} />}
               </button>
               {gameMeta && <GameTooltip metadata={gameMeta} visible={hoveredGame === game} showBelow={idx < 4} />}
@@ -161,6 +197,9 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
   const [gameMetadata, setGameMetadata] = useState<Record<string, GameMetadata>>({});
   const [nruAutoCalc, setNruAutoCalc] = useState(false);
   const [seasonalityEnabled, setSeasonalityEnabled] = useState(false);
+  
+  // V12.3: AI Status Indicator
+  const [aiStatus, setAiStatus] = useState<{ enabled: boolean; model: string }>({ enabled: false, model: '' });
   
   // V12: 고급 옵션 state
   const [liveOpsIntensity, setLiveOpsIntensity] = useState<LiveOpsIntensity>('Medium');
@@ -376,6 +415,20 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
     );
   };
 
+  // V12.3: AI Status 체크
+  useEffect(() => {
+    const checkAIStatus = async () => {
+      try {
+        const status = await getAIStatus();
+        setAiStatus({ enabled: status.enabled, model: status.model || '' });
+      } catch (err) {
+        console.log('AI Status check failed, fallback mode');
+        setAiStatus({ enabled: false, model: '' });
+      }
+    };
+    checkAIStatus();
+  }, []);
+
   useEffect(() => {
     const loadMetadata = async () => {
       try {
@@ -551,6 +604,27 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
 
   return (
     <div className="space-y-4">
+      {/* V12.3: AI Status Indicator */}
+      <div className="flex justify-end">
+        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs ${
+          aiStatus.enabled 
+            ? 'bg-green-100 text-green-800 border border-green-300' 
+            : 'bg-gray-100 text-gray-600 border border-gray-300'
+        }`}>
+          {aiStatus.enabled ? (
+            <>
+              <Wifi className="w-3.5 h-3.5" />
+              <span>AI Connected ({aiStatus.model || 'GPT-4'})</span>
+            </>
+          ) : (
+            <>
+              <WifiOff className="w-3.5 h-3.5" />
+              <span>AI Offline (Fallback Mode)</span>
+            </>
+          )}
+        </div>
+      </div>
+
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <div className="flex items-start gap-3">
           <HelpCircle className="w-6 h-6 text-blue-600 flex-shrink-0 mt-0.5" />
@@ -1115,34 +1189,51 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                   </table>
                 </div>
 
-                {/* Sustaining 마케팅 (별도 섹션) */}
+                {/* V12.3: Sustaining 마케팅 (월간 예산 직접 입력) */}
                 <div className="border border-teal-300 rounded-lg overflow-hidden">
                   <div className="bg-teal-100 px-3 py-2 border-b font-medium text-sm text-teal-800 flex items-center gap-2">
                     <span>📊 Sustaining 마케팅 (런칭 후)</span>
-                    <span className="text-xs bg-teal-200 text-teal-700 px-2 py-0.5 rounded-full">매출 대비 %</span>
+                    <span className="text-xs bg-teal-200 text-teal-700 px-2 py-0.5 rounded-full">월간 예산</span>
                   </div>
                   <div className="p-3 bg-teal-50/30">
                     <p className="text-xs text-teal-700 mb-3">
-                      <strong>작동 원리:</strong> 런칭 이후 매월 발생하는 매출(Gross Revenue)의 일정 비율을 유지 마케팅 비용으로 산정합니다.
-                      <br />일반적으로 <strong>매출의 5~10%</strong>를 Sustaining 마케팅에 투입합니다.
+                      <strong>V12.3 개선:</strong> 런칭 후(D31~) 매월 투입할 마케팅 예산을 직접 입력합니다.
+                      <br />이 예산으로 <strong>유지 NRU</strong>가 계산됩니다 (NRU = Budget / CPA).
                     </p>
                     <div className="flex items-center gap-3">
-                      <label className="text-sm text-teal-800 font-medium">매출 대비 비율:</label>
+                      <label className="text-sm text-teal-800 font-medium">월 예산:</label>
                       <div className="flex items-center border border-teal-300 rounded px-2 py-1 bg-white">
                         <input 
-                          type="number" 
-                          step="1" 
-                          min="0"
-                          max="30"
-                          value={Math.round((input.basic_settings?.sustaining_mkt_ratio || 0.07) * 100)} 
-                          onChange={(e) => setInput(prev => ({ ...prev, basic_settings: { ...prev.basic_settings!, sustaining_mkt_ratio: (parseFloat(e.target.value) || 0) / 100 } }))} 
-                          className="w-16 bg-transparent border-none p-0 text-right" 
+                          type="text" 
+                          value={(input.nru.sustaining_mkt_budget_monthly || 0).toLocaleString()} 
+                          onChange={(e) => {
+                            const rawValue = e.target.value.replace(/,/g, '');
+                            setInput(prev => ({ 
+                              ...prev, 
+                              nru: { ...prev.nru, sustaining_mkt_budget_monthly: parseInt(rawValue) || 0 }
+                            }));
+                          }}
+                          placeholder={`${Math.round((input.nru.ua_budget || 0) * 0.1 / 12).toLocaleString()}`}
+                          className="w-32 bg-transparent border-none p-0 text-right" 
                         />
-                        <span className="ml-1 text-sm">%</span>
+                        <span className="ml-1 text-sm">원/월</span>
                       </div>
-                      <span className="text-xs text-gray-500">(권장: 5~10%)</span>
+                      <span className="text-xs text-gray-500">(기본값: UA의 10%/12)</span>
                     </div>
-                    <p className="text-xs text-gray-500 mt-2">* Sustaining 비용은 ROAS 계산 시 자동 반영됩니다.</p>
+                    {/* 예상 Sustaining NRU 표시 */}
+                    {(input.nru.sustaining_mkt_budget_monthly || 0) > 0 && (input.nru.target_cpa || 0) > 0 && (
+                      <div className="mt-3 p-2 bg-teal-100 rounded text-xs">
+                        <span className="text-teal-800">
+                          💡 예상 일 Sustaining NRU: <strong>
+                            {Math.round((input.nru.sustaining_mkt_budget_monthly || 0) / (input.nru.target_cpa || 2000) / 30).toLocaleString()}명
+                          </strong>
+                        </span>
+                        <span className="text-teal-600 ml-2">
+                          (월 {Math.round((input.nru.sustaining_mkt_budget_monthly || 0) / (input.nru.target_cpa || 2000)).toLocaleString()}명)
+                        </span>
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-500 mt-2">* 연간 Sustaining 비용 = 월 예산 × 12 → Total Cost에 반영</p>
                   </div>
                 </div>
                 
