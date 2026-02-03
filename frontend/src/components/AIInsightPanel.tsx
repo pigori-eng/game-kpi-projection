@@ -56,7 +56,25 @@ const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ results, autoLoad = tru
         [type]: response.insight
       }));
     } catch (err: any) {
-      setError(err.response?.data?.detail || err.message || 'AI 분석 중 오류가 발생했습니다.');
+      console.error("AI Insight Error:", err);
+      // 더 상세한 에러 메시지 표시
+      const errorDetail = err.response?.data?.detail || err.response?.data?.message || err.message;
+      const statusCode = err.response?.status;
+      let userMessage = 'AI 분석 중 오류가 발생했습니다.';
+      
+      if (statusCode === 401 || statusCode === 403) {
+        userMessage = '🔑 OpenAI API 키가 설정되지 않았거나 유효하지 않습니다. 백엔드 환경변수를 확인하세요.';
+      } else if (statusCode === 408 || err.code === 'ECONNABORTED') {
+        userMessage = '⏱️ AI 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.';
+      } else if (statusCode === 500) {
+        userMessage = `🔧 서버 오류: ${errorDetail || '백엔드 로그를 확인하세요.'}`;
+      } else if (statusCode === 503) {
+        userMessage = '🔌 AI 서비스가 일시적으로 사용 불가합니다. OpenAI 상태를 확인하세요.';
+      } else if (errorDetail) {
+        userMessage = `❌ ${errorDetail}`;
+      }
+      
+      setError(userMessage);
     } finally {
       setLoading(false);
     }
@@ -164,8 +182,22 @@ const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ results, autoLoad = tru
 
         {/* 에러 메시지 */}
         {error && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-            ⚠️ {error}
+          <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+            <div className="flex items-start justify-between">
+              <div className="text-red-700 text-sm">{error}</div>
+              <button
+                onClick={() => {
+                  setError(null);
+                  setInsightCache(prev => ({ ...prev, [selectedType]: undefined }));
+                  fetchInsight(selectedType);
+                }}
+                className="ml-3 px-3 py-1 bg-red-100 hover:bg-red-200 text-red-700 text-xs rounded-md flex items-center gap-1"
+              >
+                <RefreshCw className="w-3 h-3" />
+                재시도
+              </button>
+            </div>
+            <p className="text-xs text-red-500 mt-2">💡 Tip: OpenAI API 키 확인, 네트워크 상태, Render 로그를 점검하세요.</p>
           </div>
         )}
       </div>

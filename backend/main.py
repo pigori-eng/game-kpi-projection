@@ -1100,11 +1100,13 @@ def calculate_revenue(dau: List[float], pr: List[float], arppu: List[float],
 # OpenAI AI Integration
 CURRENT_MODEL = "gpt-4o"
 
-async def get_ai_insight(prompt: str) -> str:
-    """Call OpenAI API for AI insights with Mock Fallback"""
+async def get_ai_insight(prompt: str) -> tuple:
+    """Call OpenAI API for AI insights with Mock Fallback
+    Returns: (insight_text, error_message) - error_message is None if successful
+    """
     if not OPENAI_API_KEY:
         print("💡 API Key가 없습니다. Mock 데이터를 반환합니다.")
-        return None
+        return (None, "OPENAI_API_KEY 환경변수가 설정되지 않았습니다.")
     
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -1127,15 +1129,21 @@ async def get_ai_insight(prompt: str) -> str:
             response.raise_for_status()
             
             data = response.json()
-            return data["choices"][0]["message"]["content"]
+            return (data["choices"][0]["message"]["content"], None)
                 
     except httpx.HTTPStatusError as e:
-        print(f"❌ API HTTP 에러: {e.response.status_code}")
-        return None
+        error_msg = f"OpenAI API HTTP 에러: {e.response.status_code}"
+        print(f"❌ {error_msg}")
+        return (None, error_msg)
+    except httpx.TimeoutException:
+        error_msg = "OpenAI API 타임아웃 (60초 초과)"
+        print(f"❌ {error_msg}")
+        return (None, error_msg)
     except Exception as e:
-        print(f"❌ AI 호출 에러: {str(e)}")
+        error_msg = f"AI 호출 에러: {str(e)}"
+        print(f"❌ {error_msg}")
         print("🔄 안전하게 Mock 데이터로 전환합니다.")
-        return None
+        return (None, error_msg)
 
 def create_insight_prompt(summary: Dict[str, Any], analysis_type: str) -> str:
     """Create prompt for AI based on analysis type with Multi-Persona approach"""
@@ -1542,7 +1550,13 @@ async def calculate_projection(input_data: ProjectionInput):
                     "pre_launch_users": nru_meta["pre_launch_users"],
                     "wishlist_users": nru_meta["wishlist_users"],
                     "d1_burst_users": nru_meta["d1_burst_users"],
-                    "brand_time_lag_peak_day": nru_meta["brand_time_lag_peak_day"]
+                    "brand_time_lag_peak_day": nru_meta["brand_time_lag_peak_day"],
+                    # V12.3: 누락된 필드들 추가
+                    "post_launch_paid_nru": nru_meta["post_launch_paid_nru"],
+                    "sustaining_paid_nru_daily": nru_meta["sustaining_paid_nru_daily"],
+                    "sustaining_organic_floor": nru_meta["sustaining_organic_floor"],
+                    "sustaining_budget_monthly": nru_meta["sustaining_budget_monthly"],
+                    "brand_efficiency_bonus": nru_meta["brand_efficiency_bonus"],
                 }
         else:
             # 기존 로직 (d1_nru 직접 입력)
@@ -1903,13 +1917,21 @@ Normal 시나리오 기준 총 매출 {normal_revenue:,.0f}원이 예상됩니�
 async def get_ai_insight_endpoint(request: AIInsightRequest):
     """Get AI-powered insights for projection results with Mock Fallback"""
     prompt = create_insight_prompt(request.projection_summary, request.analysis_type)
-    insight = await get_ai_insight(prompt)
+    insight, error_msg = await get_ai_insight(prompt)
     
     # V9.8: Mock Fallback
     if insight is None:
-        print("⚠️ AI API failed. Using Mock Report.")
+        print(f"⚠️ AI API failed ({error_msg}). Using Mock Report.")
         insight = generate_mock_ai_report(request.projection_summary, request.analysis_type)
         ai_model = "mock-fallback"
+        # Mock 사용 시 에러 메시지도 함께 전달
+        return {
+            "status": "fallback",
+            "analysis_type": request.analysis_type,
+            "insight": f"[⚠️ AI 서버 연결 실패 - Mock 데이터 사용]\n(원인: {error_msg})\n\n{insight}",
+            "ai_model": ai_model,
+            "error": error_msg
+        }
     else:
         ai_model = CURRENT_MODEL
     
@@ -1923,10 +1945,16 @@ async def get_ai_insight_endpoint(request: AIInsightRequest):
 @app.get("/api/ai/status")
 async def get_ai_status():
     """Check AI integration status"""
+    api_key_set = bool(OPENAI_API_KEY)
+    api_key_preview = f"{OPENAI_API_KEY[:8]}...{OPENAI_API_KEY[-4:]}" if OPENAI_API_KEY and len(OPENAI_API_KEY) > 12 else "not set"
+    
     return {
-        "enabled": bool(OPENAI_API_KEY),
+        "enabled": api_key_set,
         "model": CURRENT_MODEL,
-        "available_types": ["general", "reliability", "retention", "revenue", "risk", "competitive"]
+        "api_key_preview": api_key_preview,
+        "available_types": ["executive_report", "general", "reliability", "retention", "revenue", "risk", "competitive"],
+        "fallback_mode": not api_key_set,
+        "message": "AI 연동 활성화됨" if api_key_set else "API 키 미설정 - Mock 모드로 작동"
     }
 
 @app.get("/api/raw-data")

@@ -8,6 +8,40 @@ import type { ProjectionResult, TabType, GameListResponse, BasicSettings, DebugI
 import { formatNumber, formatCurrency, formatPercent, formatCompactNumber, formatCompactKorean } from '../utils/format';
 import AIInsightPanel from './AIInsightPanel';
 
+// V12.3: 표본 게임 익명화 매핑 테이블 (InputPanel과 동일)
+const GAME_ANONYMIZE_MAP: Record<string, string> = {
+  // 내부 표본 (익명화)
+  "다크어벤저3(글로벌)": "Action RPG (Hack&Slash / 2016 / Global)",
+  "다크어벤저3(일본)": "Action RPG (Hack&Slash / 2016 / JP)",
+  "다크어벤저3(한국)": "Action RPG (Hack&Slash / 2016 / KR)",
+  "메M(대만)": "MMORPG (Mobile / 2018 / TW)",
+  "메M(한국)": "MMORPG (Mobile / 2018 / KR)",
+  "슈퍼피플(글로벌)": "Battle Royale (PC / 2022 / Global)",
+  "오버히트(글로벌)": "Collector RPG (Mobile / 2018 / Global)",
+  "오버히트(일본)": "Collector RPG (Mobile / 2018 / JP)",
+  "오버히트(한국)": "Collector RPG (Mobile / 2018 / KR)",
+  "조조전(대만)": "SRPG (Turn-based / 2016 / TW)",
+  "조조전(일본)": "SRPG (Turn-based / 2016 / JP)",
+  "조조전(한국)": "SRPG (Turn-based / 2016 / KR)",
+  "카이저(한국)": "MMORPG (Mobile / 2019 / KR)",
+  "트라하(일본)": "MMORPG (High-End / 2019 / JP)",
+  "트라하(한국)": "MMORPG (High-End / 2019 / KR)",
+  "Abyss Of Dungeons(Internal)": "Internal Project (TBD)",
+  // 벤치마크 게임 (실명 유지)
+  "PUBG Mobile(글로벌-벤치마크)": "PUBG Mobile (Global - Benchmark)",
+  "Arena Breakout(글로벌-벤치마크)": "Arena Breakout (Global - Benchmark)",
+  "PUBG (PC)": "PUBG (PC)",
+  "PUBG (Console)": "PUBG (Console)",
+  "PUBG Mobile (KR)": "PUBG Mobile (KR)",
+  "PUBG Mobile (JP)": "PUBG Mobile (JP)",
+  "PUBG Mobile (Global)": "PUBG Mobile (Global)",
+};
+
+// 게임명 → 익명화 라벨 변환 함수
+const getAnonymizedGameName = (gameId: string): string => {
+  return GAME_ANONYMIZE_MAP[gameId] || gameId;
+};
+
 interface ResultsPanelProps {
   results: ProjectionResult;
   activeTab: TabType;
@@ -636,10 +670,10 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
           <div className="bg-gray-50 rounded-lg p-4">
             <h3 className="font-medium text-gray-700 mb-3">선택된 표본 게임</h3>
             <div className="grid grid-cols-4 gap-4 text-sm">
-              <div><p className="text-gray-500">Retention</p><p className="font-medium">{results.input.retention_games.join(', ') || '-'}</p></div>
-              <div><p className="text-gray-500">NRU</p><p className="font-medium">{results.input.nru_games.join(', ') || '-'}</p></div>
-              <div><p className="text-gray-500">P.Rate</p><p className="font-medium">{results.input.pr_games.join(', ') || '-'}</p></div>
-              <div><p className="text-gray-500">ARPPU</p><p className="font-medium">{results.input.arppu_games.join(', ') || '-'}</p></div>
+              <div><p className="text-gray-500">Retention</p><p className="font-medium">{results.input.retention_games.map(g => getAnonymizedGameName(g)).join(', ') || '-'}</p></div>
+              <div><p className="text-gray-500">NRU</p><p className="font-medium">{results.input.nru_games.map(g => getAnonymizedGameName(g)).join(', ') || '-'}</p></div>
+              <div><p className="text-gray-500">P.Rate</p><p className="font-medium">{results.input.pr_games.map(g => getAnonymizedGameName(g)).join(', ') || '-'}</p></div>
+              <div><p className="text-gray-500">ARPPU</p><p className="font-medium">{results.input.arppu_games.map(g => getAnonymizedGameName(g)).join(', ') || '-'}</p></div>
             </div>
           </div>
         </div>
