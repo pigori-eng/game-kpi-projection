@@ -22,7 +22,7 @@ const GAME_ANONYMIZE_MAP: Record<string, string> = {
   "카이저(한국)": "MMORPG (Mobile / 2019 / KR)",
   "트라하(일본)": "MMORPG (High-End / 2019 / JP)",
   "트라하(한국)": "MMORPG (High-End / 2019 / KR)",
-  "Abyss Of Dungeons(Internal)": "Internal Project (TBD)",
+  "Abyss Of Dungeons(Internal)": "Extraction (Mobile / 2024 / Global)",
   // 벤치마크 게임 (실명 유지)
   "PUBG Mobile(글로벌-벤치마크)": "PUBG Mobile (Global - Benchmark)",
   "Arena Breakout(글로벌-벤치마크)": "Arena Breakout (Global - Benchmark)",
@@ -908,7 +908,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                             }}
                             className="w-4 h-4 text-purple-600"
                           />
-                          <span className="flex-1 text-sm">{game}</span>
+                          <span className="flex-1 text-sm">{getGameDisplayLabel(game)}</span>
                           <span className={`text-xs px-2 py-0.5 rounded-full ${
                             score >= 80 ? 'bg-green-100 text-green-700' :
                             score >= 60 ? 'bg-blue-100 text-blue-700' :
@@ -1629,7 +1629,17 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                   <p className="text-[10px] text-gray-400 mt-1">힌트: 장르 평균 3~7%</p>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-600">ARPPU (월간)</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs text-gray-600">ARPPU</label>
+                    <select
+                      value={arppuUnit}
+                      onChange={(e) => setArppuUnit(e.target.value as ARPPUUnit)}
+                      className="text-xs border border-amber-300 rounded px-1 py-0.5 bg-amber-50 text-amber-800 font-medium"
+                    >
+                      <option value="monthly">월간 (÷30)</option>
+                      <option value="daily">일간 (원본)</option>
+                    </select>
+                  </div>
                   <div className="flex items-center mt-1">
                     <input 
                       type="number" 
@@ -1647,7 +1657,9 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                     />
                     <span className="ml-1 text-gray-500">원</span>
                   </div>
-                  <p className="text-[10px] text-gray-400 mt-1">힌트: 장르 평균 ₩40K~80K</p>
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    {arppuUnit === 'monthly' ? '힌트: 월 평균 ₩40K~80K (÷30 자동 적용)' : '⚠️ 일간 기준 직접 입력 (30배 주의!)'}
+                  </p>
                 </div>
                 <div>
                   <label className="text-xs text-gray-600">패키지 가격 (PC/Console)</label>

@@ -44,3 +44,39 @@ body {
 .scenario-worst {
   @apply text-red-600 bg-red-50 border-red-200;
 }
+
+/* Print styles for PDF export */
+@media print {
+  body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  /* Hide non-essential elements when printing */
+  header, footer, nav, 
+  .print\\:hidden,
+  button:not(.print-visible) {
+    display: none !important;
+  }
+  
+  /* Show only the results panel */
+  .print\\:max-w-none {
+    max-width: 100% !important;
+  }
+  
+  /* Ensure backgrounds print */
+  .bg-gradient-to-r {
+    background: #1e293b !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+  
+  /* Page breaks */
+  .page-break {
+    page-break-before: always;
+  }
+  
+  /* Ensure charts are visible */
+  .recharts-wrapper {
+    page-break-inside: avoid;
+  }
+}

@@ -406,6 +406,11 @@ function App() {
           </div>
         )}
       </div>
+      
+      {/* Footer */}
+      <footer className="bg-gray-800 text-gray-400 text-center py-3 text-sm">
+        Made by Han Changyoon
+      </footer>
     </div>
   );
 }

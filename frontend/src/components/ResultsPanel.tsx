@@ -26,7 +26,7 @@ const GAME_ANONYMIZE_MAP: Record<string, string> = {
   "카이저(한국)": "MMORPG (Mobile / 2019 / KR)",
   "트라하(일본)": "MMORPG (High-End / 2019 / JP)",
   "트라하(한국)": "MMORPG (High-End / 2019 / KR)",
-  "Abyss Of Dungeons(Internal)": "Internal Project (TBD)",
+  "Abyss Of Dungeons(Internal)": "Extraction (Mobile / 2024 / Global)",
   // 벤치마크 게임 (실명 유지)
   "PUBG Mobile(글로벌-벤치마크)": "PUBG Mobile (Global - Benchmark)",
   "Arena Breakout(글로벌-벤치마크)": "Arena Breakout (Global - Benchmark)",
@@ -260,6 +260,12 @@ const downloadCSV = (data: any[], filename: string, headers: string[]) => {
 
 const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSettings }> = ({ results, basicSettings }) => {
   const { summary } = results;
+  const printRef = useRef<HTMLDivElement>(null);
+  
+  // PDF 저장 함수
+  const handlePrintPdf = () => {
+    window.print();
+  };
   
   // Phase 2: LTV & ROAS 계산
   const calculateLtvRoas = (scenario: 'best' | 'normal' | 'worst') => {
@@ -291,23 +297,26 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
     worst: calculateLtvRoas('worst'),
   };
 
-  // V8 #3: BEP 차트 데이터 생성
+  // V8 #3: BEP 차트 데이터 생성 (V12.3.2 수정: HR Cost 포함)
   const generateBepChartData = (): { day: number; cumRevenue: number; cumCost: number; isBep: boolean }[] => {
     const mktBudget = basicSettings?.launch_mkt_budget || 0;
-    const devCost = basicSettings?.dev_cost || 0;
+    const hrCostMonthly = basicSettings?.hr_cost_monthly || 0;
     const sustainingRatio = basicSettings?.sustaining_mkt_ratio || 0.07;
+    
+    // 일간 HR 비용 (월간 ÷ 30)
+    const dailyHrCost = hrCostMonthly / 30;
     
     const data: { day: number; cumRevenue: number; cumCost: number; isBep: boolean }[] = [];
     let cumRevenue = 0;
-    let cumCost = devCost + mktBudget; // 초기 비용 = 개발비 + 런칭 MKT
+    let cumCost = mktBudget; // 초기 비용 = 런칭 마케팅 예산
     
     const dailyRevenue = results.results.normal.full_data.revenue;
     
     for (let i = 0; i < Math.min(dailyRevenue.length, 365); i++) {
       cumRevenue += dailyRevenue[i];
-      // Sustaining MKT = 일별 매출의 일정 비율
+      // 일간 비용 = HR Cost + Sustaining MKT (매출의 일정 비율)
       const dailySustaining = dailyRevenue[i] * sustainingRatio;
-      cumCost += dailySustaining;
+      cumCost += dailyHrCost + dailySustaining;
       
       const prevData = data[i - 1];
       data.push({
@@ -325,14 +334,23 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
   const bepDay = bepChartData.findIndex(d => d.isBep) + 1;
 
   return (
-    <div className="space-y-8 max-w-4xl mx-auto">
+    <div className="space-y-8 max-w-4xl mx-auto print:max-w-none" ref={printRef}>
       {/* V8 #5: A4 스타일 종합 보고서 헤더 */}
       <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-xl p-8 text-white print:bg-slate-800">
         <div className="flex items-center justify-between mb-4">
           <h1 className="text-3xl font-bold">📊 KPI Projection Report</h1>
-          <div className="text-right text-sm text-slate-300">
-            <p>Generated: {new Date().toLocaleDateString('ko-KR')}</p>
-            <p>Period: {results.input.projection_days} days</p>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={handlePrintPdf}
+              className="flex items-center gap-2 bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg text-sm print:hidden"
+            >
+              <Download className="w-4 h-4" />
+              PDF 저장
+            </button>
+            <div className="text-right text-sm text-slate-300">
+              <p>Generated: {new Date().toLocaleDateString('ko-KR')}</p>
+              <p>Period: {results.input.projection_days} days</p>
+            </div>
           </div>
         </div>
         <div className="grid grid-cols-3 gap-4 mt-6">
@@ -1012,7 +1030,7 @@ const RawDataTab: React.FC<{ games: GameListResponse | null }> = ({ games }) => 
           {[{ key: 'retention', label: 'Retention', data: games.retention }, { key: 'nru', label: 'NRU', data: games.nru }, { key: 'payment_rate', label: 'Payment Rate', data: games.payment_rate }, { key: 'arppu', label: 'ARPPU', data: games.arppu }].map(({ key, label, data }) => (
             <div key={key} className="border rounded-lg overflow-hidden">
               <div className="bg-gray-100 px-3 py-2 flex justify-between"><span className="font-medium">{label} ({data.length}개)</span></div>
-              <div className="max-h-48 overflow-y-auto">{data.map((g, i) => <div key={g} className={`px-3 py-2 text-sm ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} border-b last:border-b-0`}>{g}</div>)}</div>
+              <div className="max-h-48 overflow-y-auto">{data.map((g, i) => <div key={g} className={`px-3 py-2 text-sm ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} border-b last:border-b-0`}>{getAnonymizedGameName(g)}</div>)}</div>
             </div>
           ))}
         </div>
