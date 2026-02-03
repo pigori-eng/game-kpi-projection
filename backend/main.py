@@ -9,6 +9,26 @@ import json
 import os
 import httpx
 
+# ============================================
+# numpy 타입 → Python native 타입 변환 헬퍼
+# ============================================
+def sanitize_for_json(obj):
+    """numpy 타입을 Python native 타입으로 재귀적으로 변환"""
+    if isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_for_json(item) for item in obj]
+    elif isinstance(obj, (np.integer, np.int64, np.int32)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64, np.float32)):
+        return float(obj)
+    elif isinstance(obj, (np.bool_, np.bool)):
+        return bool(obj)
+    elif isinstance(obj, np.ndarray):
+        return sanitize_for_json(obj.tolist())  # tolist 후에도 재귀 적용
+    else:
+        return obj
+
 app = FastAPI(title="Game KPI Projection API", version="2.0.0")
 
 # CORS 설정 - 모든 origin 허용
@@ -1807,7 +1827,8 @@ async def calculate_projection(input_data: ProjectionInput):
     debug_info["current_avg_dau"] = int(avg_dau)
     debug_info["dau_gap_ratio"] = round(required_dau / max(1, avg_dau), 1)
     
-    return {
+    # numpy 타입을 Python native 타입으로 변환 (JSON 직렬화 오류 방지)
+    result = {
         "status": "success",
         "input": {
             "launch_date": input_data.launch_date,
@@ -1839,6 +1860,8 @@ async def calculate_projection(input_data: ProjectionInput):
         "summary": summary,
         "results": results
     }
+    
+    return sanitize_for_json(result)
 
 # V9.8: Mock AI Report Generator (Fallback용)
 def generate_mock_ai_report(summary: Dict[str, Any], analysis_type: str) -> str:
