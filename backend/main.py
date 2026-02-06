@@ -10,6 +10,41 @@ import os
 import httpx
 
 # ============================================
+# V12.3.2: 게임명 익명화 맵 (엑셀 다운로드용)
+# ============================================
+GAME_ANONYMIZE_MAP = {
+    # 내부 표본 (익명화)
+    "다크어벤저3(글로벌)": "Action RPG (Hack&Slash / 2016 / Global)",
+    "다크어벤저3(일본)": "Action RPG (Hack&Slash / 2016 / JP)",
+    "다크어벤저3(한국)": "Action RPG (Hack&Slash / 2016 / KR)",
+    "메M(대만)": "MMORPG (Mobile / 2018 / TW)",
+    "메M(한국)": "MMORPG (Mobile / 2018 / KR)",
+    "슈퍼피플(글로벌)": "Battle Royale (PC / 2022 / Global)",
+    "오버히트(글로벌)": "Collector RPG (Mobile / 2018 / Global)",
+    "오버히트(일본)": "Collector RPG (Mobile / 2018 / JP)",
+    "오버히트(한국)": "Collector RPG (Mobile / 2018 / KR)",
+    "조조전(대만)": "SRPG (Turn-based / 2016 / TW)",
+    "조조전(일본)": "SRPG (Turn-based / 2016 / JP)",
+    "조조전(한국)": "SRPG (Turn-based / 2016 / KR)",
+    "카이저(한국)": "MMORPG (Mobile / 2019 / KR)",
+    "트라하(일본)": "MMORPG (High-End / 2019 / JP)",
+    "트라하(한국)": "MMORPG (High-End / 2019 / KR)",
+    "Abyss Of Dungeons(Internal)": "Extraction (Mobile / 2024 / Global)",
+    # 벤치마크 게임 (실명 유지)
+    "PUBG Mobile(글로벌-벤치마크)": "PUBG Mobile (Global - Benchmark)",
+    "Arena Breakout(글로벌-벤치마크)": "Arena Breakout (Global - Benchmark)",
+    "PUBG (PC)": "PUBG (PC)",
+    "PUBG (Console)": "PUBG (Console)",
+    "PUBG Mobile (KR)": "PUBG Mobile (KR)",
+    "PUBG Mobile (JP)": "PUBG Mobile (JP)",
+    "PUBG Mobile (Global)": "PUBG Mobile (Global)",
+}
+
+def get_anonymized_game_name(game_name: str) -> str:
+    """게임명을 익명화된 이름으로 변환"""
+    return GAME_ANONYMIZE_MAP.get(game_name, game_name)
+
+# ============================================
 # numpy 타입 → Python native 타입 변환 헬퍼
 # ============================================
 def sanitize_for_json(obj):
@@ -2016,7 +2051,9 @@ async def download_raw_data_excel():
         # Row 4+: 게임 데이터
         row_idx = 4
         for game_name, values in data_dict.items():
-            ws.cell(row=row_idx, column=2, value=game_name).border = thin_border
+            # V12.3.2: 게임명 익명화 적용
+            anonymized_name = get_anonymized_game_name(game_name)
+            ws.cell(row=row_idx, column=2, value=anonymized_name).border = thin_border
             for i, val in enumerate(values[:max_days]):
                 cell = ws.cell(row=row_idx, column=i + 3, value=val)
                 cell.border = thin_border
