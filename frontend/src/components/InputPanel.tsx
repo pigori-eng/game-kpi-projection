@@ -6,7 +6,7 @@ import { getGamesMetadata, getAIStatus } from '../utils/api';
 // V12.3: 표본 게임 익명화 매핑 테이블
 // 내부 표본 → 익명화 라벨 (벤치마크 게임은 실명 유지)
 const GAME_ANONYMIZE_MAP: Record<string, string> = {
-  // GROUP A: 기존 내부 표본 (익명화)
+  // 내부 표본 게임 (익명화)
   "메M(대만)": "MMORPG (Mobile / 2018 / TW)",
   "메M(한국)": "MMORPG (Mobile / 2018 / KR)",
   "AxE(대만)": "MMORPG (Mobile / 2017 / TW)",
@@ -27,12 +27,12 @@ const GAME_ANONYMIZE_MAP: Record<string, string> = {
   "조조전(대만)": "SRPG (Mobile / 2016 / TW)",
   "조조전(글로벌)": "SRPG (Mobile / 2016 / Global)",
   "카이저(한국)": "MMORPG (Mobile / 2019 / KR)",
-  "트라하(한국)": "MMORPG (High-End / 2019 / KR)",
-  "트라하(일본)": "MMORPG (High-End / 2019 / JP)",
+  "트라하(한국)": "MMORPG (Mobile / 2019 / KR)",
+  "트라하(일본)": "MMORPG (Mobile / 2019 / JP)",
   "나이트워커(중국)": "Action RPG (PC / 2022 / CN)",
   "슈퍼피플(글로벌)": "Battle Royale (PC / 2022 / Global)",
   "라플라스M(앱애니)": "MMORPG (Mobile / 2018 / Global)",
-  // GROUP B: 신규 추가 (실명 표기 게임 포함)
+  // GROUP B: 신규 추가 게임
   "PUBG (PC/B2P/2018)": "PUBG PC (B2P / Battle Royale / 2018 / Global)",
   "PUBG (PC/F2P/2022)": "PUBG PC (F2P / Battle Royale / 2022 / Global)",
   "PUBGM (KR+JP/Launch-2019)": "PUBG Mobile (Launch / 2019 / KR+JP)",

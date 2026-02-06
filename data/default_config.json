@@ -1,24 +1,33 @@
 {
-  "projection_days": 365,
-  "blending": {
-    "weight": 0.7,
-    "genre": "MMORPG",
-    "platforms": ["Mobile"],
-    "benchmark_only": false,
-    "time_decay": true
+  "basic_settings": {
+    "launch_date": "2026-11-12",
+    "infrastructure_cost_ratio": 0.03,
+    "market_fee_ratio": 0.30,
+    "vat_ratio": 0.10,
+    "hr_cost_monthly": 1720000000,
+    "sustaining_mkt_ratio": 0.07,
+    "launch_mkt_best": 4319591521,
+    "launch_mkt_normal": 3926901383,
+    "launch_mkt_worst": 3534211245,
+    "cpi": 2660,
+    "uac": 3800,
+    "hr_direct_headcount": 50,
+    "hr_indirect_headcount": 20,
+    "dev_cost": 0
   },
-  "quality_score": "B",
-  "bm_type": "Midcore",
-  "regions": ["global"],
-  "retention": {
-    "target_d1": {"best": 0.45, "normal": 0.40, "worst": 0.35}
+  "retention_settings": {
+    "best": 0.50,
+    "normal": 0.45,
+    "worst": 0.40
   },
-  "nru": {
-    "d1_nru": {"best": 50000, "normal": 30000, "worst": 15000},
+  "nru_settings": {
+    "d1_nru": { "best": 440000, "normal": 400000, "worst": 360000 },
     "paid_organic_ratio": 0.5,
-    "nvr": 0.7
+    "nvr": 0.7,
+    "adjustment": { "best_vs_normal": -0.05, "worst_vs_normal": 0.05 }
   },
-  "revenue": {
-    "currency": "KRW"
+  "revenue_settings": {
+    "pr_adjustment": { "best_vs_normal": 0.05, "worst_vs_normal": -0.05 },
+    "arppu_adjustment": { "best_vs_normal": 0.10, "worst_vs_normal": -0.10 }
   }
 }

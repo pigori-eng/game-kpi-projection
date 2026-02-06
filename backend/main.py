@@ -13,7 +13,7 @@ import httpx
 # V12.3.2: 게임명 익명화 맵 (엑셀 다운로드용)
 # ============================================
 GAME_ANONYMIZE_MAP = {
-    # GROUP A: 기존 내부 표본 (익명화)
+    # 내부 표본 게임 (익명화)
     "메M(대만)": "MMORPG (Mobile / 2018 / TW)",
     "메M(한국)": "MMORPG (Mobile / 2018 / KR)",
     "AxE(대만)": "MMORPG (Mobile / 2017 / TW)",
@@ -34,12 +34,12 @@ GAME_ANONYMIZE_MAP = {
     "조조전(대만)": "SRPG (Mobile / 2016 / TW)",
     "조조전(글로벌)": "SRPG (Mobile / 2016 / Global)",
     "카이저(한국)": "MMORPG (Mobile / 2019 / KR)",
-    "트라하(한국)": "MMORPG (High-End / 2019 / KR)",
-    "트라하(일본)": "MMORPG (High-End / 2019 / JP)",
+    "트라하(한국)": "MMORPG (Mobile / 2019 / KR)",
+    "트라하(일본)": "MMORPG (Mobile / 2019 / JP)",
     "나이트워커(중국)": "Action RPG (PC / 2022 / CN)",
     "슈퍼피플(글로벌)": "Battle Royale (PC / 2022 / Global)",
     "라플라스M(앱애니)": "MMORPG (Mobile / 2018 / Global)",
-    # GROUP B: 신규 추가 (실명 표기 게임 포함)
+    # GROUP B: 신규 추가 게임
     "PUBG (PC/B2P/2018)": "PUBG PC (B2P / Battle Royale / 2018 / Global)",
     "PUBG (PC/F2P/2022)": "PUBG PC (F2P / Battle Royale / 2022 / Global)",
     "PUBGM (KR+JP/Launch-2019)": "PUBG Mobile (Launch / 2019 / KR+JP)",
@@ -2036,9 +2036,7 @@ async def download_raw_data_excel():
     
     def create_raw_sheet(ws, sheet_title, metric_name, description, data_dict):
         """Raw 데이터 시트 생성 (원본 엑셀 형식)"""
-        # Row 1: 안내 문구
-        ws['B1'] = f'- 아래 게임 추가 시 {sheet_title} 게임 리스트에 자동으로 추가됩니다.'
-        ws['B1'].font = Font(color="FF0000")
+        # V12.3.2: Row 1 안내 문구 삭제 (불필요)
         
         # Row 2: 메트릭명 및 설명
         ws['B2'] = metric_name
