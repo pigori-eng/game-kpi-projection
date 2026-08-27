@@ -1,0 +1,541 @@
+{
+ "entries": [
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "DNDM (NA)",
+   "game_family": "dndm",
+   "category": "launch",
+   "actual_pool": "observed",
+   "horizon_residuals": {
+    "D30": -0.304,
+    "D90": 0.1773,
+    "D180": 0.599,
+    "D365": null
+   },
+   "cumulative_error": 1.6922935276827311,
+   "band_coverage": 0.12244897959183673
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "DNDM (SEA)",
+   "game_family": "dndm",
+   "category": "launch",
+   "actual_pool": "observed",
+   "horizon_residuals": {
+    "D30": -0.5474,
+    "D90": 0.356,
+    "D180": null,
+    "D365": null
+   },
+   "cumulative_error": 1.408760685156732,
+   "band_coverage": 0.08333333333333333
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "DNDM (SA)",
+   "game_family": "dndm",
+   "category": "launch",
+   "actual_pool": "observed",
+   "horizon_residuals": {
+    "D30": -0.9744,
+    "D90": -0.0266,
+    "D180": null,
+    "D365": null
+   },
+   "cumulative_error": 0.650624058125567,
+   "band_coverage": 0.09146341463414634
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "PUBG (PC/B2P/2018)",
+   "game_family": "pubg_pc",
+   "category": "live_slice",
+   "actual_pool": "observed",
+   "horizon_residuals": {
+    "D30": -0.0078,
+    "D90": 0.2353,
+    "D180": 0.6043,
+    "D365": 1.2251
+   },
+   "cumulative_error": 2.4045964459138607,
+   "band_coverage": 0.057534246575342465
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "PUBG (PC/F2P/2022)",
+   "game_family": "pubg_pc",
+   "category": "live_slice",
+   "actual_pool": "observed",
+   "horizon_residuals": {
+    "D30": 0.0909,
+    "D90": 0.0983,
+    "D180": 0.2521,
+    "D365": 0.2064
+   },
+   "cumulative_error": 0.22920324593979916,
+   "band_coverage": 0.1232876712328767
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "PUBGM (KR+JP/Launch-2019)",
+   "game_family": "pubgm",
+   "category": "live_slice",
+   "actual_pool": "observed",
+   "horizon_residuals": {
+    "D30": 0.5344,
+    "D90": 0.3885,
+    "D180": 0.3368,
+    "D365": 0.1787
+   },
+   "cumulative_error": 0.1956641142194808,
+   "band_coverage": 0.4136986301369863
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "PUBGM (KR+JP/Stable-2022)",
+   "game_family": "pubgm",
+   "category": "live_slice",
+   "actual_pool": "observed",
+   "horizon_residuals": {
+    "D30": 0.3,
+    "D90": 0.2368,
+    "D180": 0.3698,
+    "D365": 0.3806
+   },
+   "cumulative_error": 0.4631543743570869,
+   "band_coverage": 0.09863013698630137
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "inZOI",
+   "game_family": "inzoi",
+   "category": "launch",
+   "actual_pool": "observed",
+   "horizon_residuals": {
+    "D30": -0.4817,
+    "D90": -0.0758,
+    "D180": 0.2816,
+    "D365": null
+   },
+   "cumulative_error": 0.8263922028970048,
+   "band_coverage": 0.012698412698412698
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "PUBG (Console/2017)",
+   "game_family": "pubg_console",
+   "category": "launch",
+   "actual_pool": "observed",
+   "horizon_residuals": {
+    "D30": -1.4441,
+    "D90": -1.2941,
+    "D180": -1.0978,
+    "D365": -0.8252
+   },
+   "cumulative_error": -0.5618339367329991,
+   "band_coverage": 0.19726027397260273
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "메M(대만)",
+   "game_family": "mem",
+   "category": "pseudo_launch",
+   "actual_pool": "pseudo",
+   "horizon_residuals": {
+    "D30": -1.0375,
+    "D90": -0.6944,
+    "D180": -0.4391,
+    "D365": -0.2366
+   },
+   "cumulative_error": -0.21066767210325907,
+   "band_coverage": 0.3452054794520548
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "AxE(대만)",
+   "game_family": "axe",
+   "category": "pseudo_launch",
+   "actual_pool": "pseudo",
+   "horizon_residuals": {
+    "D30": -2.0691,
+    "D90": -1.6296,
+    "D180": -1.2934,
+    "D365": null
+   },
+   "cumulative_error": -0.6083041850362431,
+   "band_coverage": 0.25835866261398177
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "V4(한국)",
+   "game_family": "v4",
+   "category": "pseudo_launch",
+   "actual_pool": "pseudo",
+   "horizon_residuals": {
+    "D30": -1.8933,
+    "D90": -1.7635,
+    "D180": -1.7086,
+    "D365": null
+   },
+   "cumulative_error": -0.8016815023514601,
+   "band_coverage": 0.011406844106463879
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "AxE(한국)",
+   "game_family": "axe",
+   "category": "pseudo_launch",
+   "actual_pool": "pseudo",
+   "horizon_residuals": {
+    "D30": -1.8576,
+    "D90": -1.5226,
+    "D180": -1.3407,
+    "D365": -1.212
+   },
+   "cumulative_error": -0.702407865607693,
+   "band_coverage": 0.09863013698630137
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "메M(한국)",
+   "game_family": "mem",
+   "category": "pseudo_launch",
+   "actual_pool": "pseudo",
+   "horizon_residuals": {
+    "D30": 0.2044,
+    "D90": 0.6102,
+    "D180": 0.7341,
+    "D365": 1.1616
+   },
+   "cumulative_error": 2.195030191353132,
+   "band_coverage": 0.1095890410958904
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "MOE(한국)",
+   "game_family": "moe",
+   "category": "pseudo_launch",
+   "actual_pool": "pseudo",
+   "horizon_residuals": {
+    "D30": -1.8022,
+    "D90": -1.2544,
+    "D180": -0.9158,
+    "D365": -0.33
+   },
+   "cumulative_error": -0.2811056403119003,
+   "band_coverage": 0.25753424657534246
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "MOE(글로벌)",
+   "game_family": "moe",
+   "category": "pseudo_launch",
+   "actual_pool": "pseudo",
+   "horizon_residuals": {
+    "D30": -3.8051,
+    "D90": -3.4552,
+    "D180": -3.1559,
+    "D365": -2.6115
+   },
+   "cumulative_error": -0.9265758697265948,
+   "band_coverage": 0.0
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "MOE(일본대만)",
+   "game_family": "moe",
+   "category": "pseudo_launch",
+   "actual_pool": "pseudo",
+   "horizon_residuals": {
+    "D30": -1.9059,
+    "D90": -1.6501,
+    "D180": -1.4065,
+    "D365": -0.7236
+   },
+   "cumulative_error": -0.5150045672040806,
+   "band_coverage": 0.2219178082191781
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "다크어벤져3(한국)",
+   "game_family": "da3",
+   "category": "pseudo_launch",
+   "actual_pool": "pseudo",
+   "horizon_residuals": {
+    "D30": 0.0815,
+    "D90": 0.4012,
+    "D180": 0.602,
+    "D365": 1.1942
+   },
+   "cumulative_error": 2.3010776489615523,
+   "band_coverage": 0.09041095890410959
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "다크어벤져3(글로벌)",
+   "game_family": "da3",
+   "category": "pseudo_launch",
+   "actual_pool": "pseudo",
+   "horizon_residuals": {
+    "D30": 0.4449,
+    "D90": 0.5199,
+    "D180": 0.578,
+    "D365": 0.8606
+   },
+   "cumulative_error": 1.3646513010567642,
+   "band_coverage": 0.14794520547945206
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "다크어벤져3(일본)",
+   "game_family": "da3",
+   "category": "pseudo_launch",
+   "actual_pool": "pseudo",
+   "horizon_residuals": {
+    "D30": 0.538,
+    "D90": 0.9466,
+    "D180": 1.1892,
+    "D365": null
+   },
+   "cumulative_error": 4.378388388761099,
+   "band_coverage": 0.04261363636363636
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "오버히트(한국)",
+   "game_family": "overhit",
+   "category": "pseudo_launch",
+   "actual_pool": "pseudo",
+   "horizon_residuals": {
+    "D30": -1.9202,
+    "D90": -2.0423,
+    "D180": -1.967,
+    "D365": -1.5951
+   },
+   "cumulative_error": -0.7971024094673939,
+   "band_coverage": 0.07397260273972603
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "오버히트(일본)",
+   "game_family": "overhit",
+   "category": "pseudo_launch",
+   "actual_pool": "pseudo",
+   "horizon_residuals": {
+    "D30": -1.5167,
+    "D90": -1.4216,
+    "D180": -1.2522,
+    "D365": -0.932
+   },
+   "cumulative_error": -0.6062159234073824,
+   "band_coverage": 0.31232876712328766
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "오버히트(글로벌)",
+   "game_family": "overhit",
+   "category": "pseudo_launch",
+   "actual_pool": "pseudo",
+   "horizon_residuals": {
+    "D30": -1.4888,
+    "D90": -1.1162,
+    "D180": -0.8537,
+    "D365": -0.4671
+   },
+   "cumulative_error": -0.3732128115309936,
+   "band_coverage": 0.24722222222222223
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "조조전(한국)",
+   "game_family": "jojo",
+   "category": "pseudo_launch",
+   "actual_pool": "pseudo",
+   "horizon_residuals": {
+    "D30": -2.8394,
+    "D90": -2.7557,
+    "D180": -2.7742,
+    "D365": -2.5977
+   },
+   "cumulative_error": -0.9255545494777471,
+   "band_coverage": 0.0
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "조조전(일본)",
+   "game_family": "jojo",
+   "category": "pseudo_launch",
+   "actual_pool": "pseudo",
+   "horizon_residuals": {
+    "D30": -1.345,
+    "D90": -1.3737,
+    "D180": -1.1862,
+    "D365": -0.9148
+   },
+   "cumulative_error": -0.599417339997669,
+   "band_coverage": 0.18356164383561643
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "조조전(대만)",
+   "game_family": "jojo",
+   "category": "pseudo_launch",
+   "actual_pool": "pseudo",
+   "horizon_residuals": {
+    "D30": -2.5041,
+    "D90": -2.467,
+    "D180": -2.3917,
+    "D365": -2.0102
+   },
+   "cumulative_error": -0.8660365441779903,
+   "band_coverage": 0.0
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "AxE(일본)",
+   "game_family": "axe",
+   "category": "pseudo_launch",
+   "actual_pool": "pseudo",
+   "horizon_residuals": {
+    "D30": -1.0303,
+    "D90": -0.8276,
+    "D180": -0.6173,
+    "D365": -0.3243
+   },
+   "cumulative_error": -0.27693727168100435,
+   "band_coverage": 0.34794520547945207
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "카이저(한국)",
+   "game_family": "kaiser",
+   "category": "pseudo_launch",
+   "actual_pool": "pseudo",
+   "horizon_residuals": {
+    "D30": -1.1757,
+    "D90": -0.867,
+    "D180": -0.7326,
+    "D365": -0.4765
+   },
+   "cumulative_error": -0.3790732498138397,
+   "band_coverage": 0.3561643835616438
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "트라하(한국)",
+   "game_family": "traha",
+   "category": "pseudo_launch",
+   "actual_pool": "pseudo",
+   "horizon_residuals": {
+    "D30": -0.2259,
+    "D90": -0.0418,
+    "D180": 0.0406,
+    "D365": 0.4552
+   },
+   "cumulative_error": 0.5765362378906466,
+   "band_coverage": 0.1978021978021978
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "트라하(일본)",
+   "game_family": "traha",
+   "category": "pseudo_launch",
+   "actual_pool": "pseudo",
+   "horizon_residuals": {
+    "D30": -1.5604,
+    "D90": -1.6243,
+    "D180": null,
+    "D365": null
+   },
+   "cumulative_error": -0.8040319933821002,
+   "band_coverage": 0.0
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "나이트워커(중국)",
+   "game_family": "nightwalker",
+   "category": "pseudo_launch",
+   "actual_pool": "pseudo",
+   "horizon_residuals": {
+    "D30": -2.7367,
+    "D90": -2.5278,
+    "D180": -2.3617,
+    "D365": null
+   },
+   "cumulative_error": -0.8341501208557088,
+   "band_coverage": 0.10451977401129943
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "슈퍼피플(글로벌)",
+   "game_family": "superpeople",
+   "category": "pseudo_launch",
+   "actual_pool": "pseudo",
+   "horizon_residuals": {
+    "D30": -0.7021,
+    "D90": null,
+    "D180": null,
+    "D365": null
+   },
+   "cumulative_error": -0.23380154282870874,
+   "band_coverage": 0.2638888888888889
+  },
+  {
+   "engine_version": "v13.0_internal_resourced",
+   "method": "LOFO",
+   "game": "Arena Breakout(글로벌-벤치마크)",
+   "game_family": "arena",
+   "category": "pseudo_launch",
+   "actual_pool": "pseudo",
+   "horizon_residuals": {
+    "D30": -3.8396,
+    "D90": null,
+    "D180": null,
+    "D365": null
+   },
+   "cumulative_error": -0.9784972919061296,
+   "band_coverage": 0.0
+  }
+ ],
+ "policy_prior_inflation": {
+  "pseudo_pool_factor": 2.0,
+  "clamp": [
+   1.5,
+   3.0
+  ],
+  "status": "provisional",
+  "note": "observed<5 family — ratio 추정 금지 (Freeze)"
+ }
+}

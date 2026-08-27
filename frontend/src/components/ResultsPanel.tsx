@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Download, FileSpreadsheet, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, Bug } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -46,6 +46,7 @@ const GAME_ANONYMIZE_MAP: Record<string, string> = {
   "DNDM (SA)": "DNDM (Mobile / F2P / 2025 / SA)",
   "inZOI": "inZOI (PC / B2P / 2025)",
   "Arena Breakout(글로벌-벤치마크)": "Arena Breakout (Global - Benchmark)",
+  "PUBG (Console/2017)": "PUBG Console (B2P / Battle Royale / 2017 / Global)",
 };
 
 // 게임명 → 익명화 라벨 변환 함수
@@ -269,9 +270,12 @@ const downloadCSV = (data: any[], filename: string, headers: string[]) => {
   link.click();
 };
 
-const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSettings }> = ({ results, basicSettings }) => {
+const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSettings; view?: 'revenue' | 'financial' }> = ({ results, basicSettings, view = 'revenue' }) => {
   const { summary } = results;
   const printRef = useRef<HTMLDivElement>(null);
+  // V12.5: Revenue/Financial 뷰 분리 — 매출 과소평가 방지를 위해 BEP는 별도 뷰
+  const showRevenue = view === 'revenue';
+  const showFinancial = view === 'financial';
   
   // PDF 저장 함수
   const handlePrintPdf = () => {
@@ -390,7 +394,71 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
         </div>
       </div>
 
-      {/* Section 1: Executive Summary (AI) */}
+      {/* V13.4 P3.5: Product Timeline 사용 안내 (API-first) */}
+      {showRevenue && (
+        <div className="bg-sky-50 border border-sky-200 rounded-lg px-4 py-2 text-xs text-sky-700">
+          🌊 <b>순차출시/멀티모드 프로젝션(P3.5/P4.5)</b>: <code>/api/projection/product-schedule</code>에 waves[] + identity_policy로 요청 —
+          Unique Account DAU·Wave별 매출 제공, mode_event 지정 시 BR/EX/Both 분해(prototype). wave_scale prior는 wave_scale_policy로 명시 선택 (PUBG 실측: Console=20.7%/Mobile KR+JP=27.5%, scale-only).
+        </div>
+      )}
+
+      {/* V13 P3a: Prediction Reliability Card (백엔드 계산, 프론트는 표시만) */}
+      {showRevenue && (results as any).reliability_card && !(results as any).reliability_card.error && (() => {
+        const card = (results as any).reliability_card;
+        const gc = (g: string) =>
+          g?.startsWith('A') ? 'bg-green-100 text-green-700' : g?.startsWith('B') ? 'bg-blue-100 text-blue-700' :
+          g?.startsWith('C') ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-600';
+        const labels: Record<string,string> = { acquisition:'Acquisition', absolute_retention:'Retention',
+          lifecycle_shape:'Lifecycle', monetization:'Monetization', financial_bep:'BEP', multimode_synergy:'Multi-mode' };
+        return (
+          <section className="bg-white rounded-xl border-2 border-slate-200 overflow-hidden">
+            <div className="bg-slate-100 px-6 py-3 border-b flex items-center justify-between">
+              <h2 className="text-lg font-bold text-slate-800">🛡️ Prediction Reliability</h2>
+              <div className="text-xs text-slate-500">
+                Schema {card.schema_contract} · Unit {String(card.unit_contract).split(' ')[0]}
+              </div>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+                {Object.entries(card.metrics || {}).map(([k, v]) => (
+                  <div key={k} className={`rounded-lg p-2.5 text-center ${gc(String(v))}`}>
+                    <p className="text-[11px] opacity-70">{labels[k] || k}</p>
+                    <p className="text-lg font-bold">{String(v)}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-600">
+                <span>Observed launch families: <b>{card.calibration?.observed_launch_families}</b></span>
+                <span>Pseudo families: <b>{card.calibration?.pseudo_families}</b></span>
+                <span>External peers: <b>{card.calibration?.external_peers}</b></span>
+                <span>벤치마크: <b>{card.calibration?.benchmark_source}</b> (L{card.calibration?.benchmark_fallback_level}, n={card.calibration?.benchmark_n_games})</span>
+                <span>외부 리텐션: <b>{card.external_evidence_methods?.retention}</b></span>
+                <span>Lifecycle: <b>{card.external_evidence_methods?.lifecycle}</b></span>
+              </div>
+              {(results as any).provisional_interval?.available && (() => {
+                const pi = (results as any).provisional_interval;
+                return (
+                  <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 text-xs text-indigo-800">
+                    <b>{pi.label}</b>: P50 × [{pi.multipliers.low}x ~ {pi.multipliers.high}x]
+                    <span className="ml-2 opacity-70">({pi.basis.families} families, observed {pi.basis.observed_families}, pseudo inflation {pi.basis.pseudo_inflation}x)</span>
+                    <p className="mt-1 opacity-70">⚠ {pi.caveat}</p>
+                  </div>
+                );
+              })()}
+              {card.warnings?.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1">
+                  {card.warnings.map((w: string, i: number) => (
+                    <p key={i} className="text-xs text-amber-700">⚠ {w}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        );
+      })()}
+
+      {/* Section 1: Executive Summary (AI) — Revenue View */}
+      {showRevenue && (
       <section className="bg-white rounded-xl border-2 border-violet-200 overflow-hidden">
         <div className="bg-violet-100 px-6 py-4 border-b border-violet-200">
           <h2 className="text-xl font-bold text-violet-900">📋 Section 1: Executive Summary</h2>
@@ -399,11 +467,13 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
           <AIInsightPanel results={results} autoLoad={true} />
         </div>
       </section>
+      )}
 
-      {/* Section 2: 핵심 KPI 요약 */}
+      {/* Section 2: 핵심 KPI 요약 — Revenue View */}
+      {showRevenue && (
       <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="bg-gray-100 px-6 py-4 border-b">
-          <h2 className="text-xl font-bold text-gray-800">📈 Section 2: Key Metrics</h2>
+          <h2 className="text-xl font-bold text-gray-800">📈 Section 2: Key Metrics (Gross 기준)</h2>
         </div>
         <div className="p-6">
           {/* 계산 방식 설명 박스 */}
@@ -472,9 +542,10 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
           </table>
         </div>
       </section>
+      )}
 
-      {/* Section 3: Financial Analysis (BEP 차트 + ROAS) */}
-      {((basicSettings?.launch_mkt_budget && basicSettings.launch_mkt_budget > 0) || (basicSettings?.dev_cost && basicSettings.dev_cost > 0)) && (
+      {/* Section 3: Financial Analysis (BEP 차트 + ROAS) — Financial View 전용 */}
+      {showFinancial && ((basicSettings?.launch_mkt_budget && basicSettings.launch_mkt_budget > 0) || (basicSettings?.dev_cost && basicSettings.dev_cost > 0)) && (
         <section className="bg-white rounded-xl border border-orange-200 overflow-hidden">
           <div className="bg-orange-100 px-6 py-4 border-b border-orange-200">
             <h2 className="text-xl font-bold text-orange-800">💰 Section 3: Financial Analysis (BEP)</h2>
@@ -680,7 +751,16 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
         </section>
       )}
 
-      {/* Section 4: 산정 근거 */}
+      {/* V12.5: Financial View에서 예산 미입력 시 안내 */}
+      {showFinancial && !((basicSettings?.launch_mkt_budget && basicSettings.launch_mkt_budget > 0) || (basicSettings?.dev_cost && basicSettings.dev_cost > 0)) && (
+        <section className="bg-orange-50 rounded-xl border border-orange-200 p-8 text-center">
+          <p className="text-orange-700 font-medium">💰 Financial View를 보려면 입력 패널에서 마케팅 예산 또는 개발비를 입력하세요.</p>
+          <p className="text-sm text-orange-500 mt-2">BEP 분석은 비용 정보가 있어야 계산됩니다.</p>
+        </section>
+      )}
+
+      {/* Section 4: 산정 근거 — Revenue View */}
+      {showRevenue && (
       <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="bg-gray-100 px-6 py-4 border-b">
           <h2 className="text-xl font-bold text-gray-800">📐 Section 4: Calculation Basis</h2>
@@ -717,6 +797,7 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
           </div>
         </div>
       </section>
+      )}
 
       {/* 벤치마크 100% 경고 */}
       {results.blending?.benchmark_only && (
@@ -1060,17 +1141,236 @@ const RawDataTab: React.FC<{ games: GameListResponse | null }> = ({ games }) => 
   );
 };
 
+// ============================================================
+// V12.5: Backtest Tab — Leave-One-Out 검증
+// ============================================================
+const BacktestTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
+  const [availableGames, setAvailableGames] = useState<Array<{id: string; display: string; has_revenue: boolean; has_measured_actuals: boolean; days: number}>>([]);
+  const [selectedGame, setSelectedGame] = useState<string>('');
+  const [btResult, setBtResult] = useState<any>(null);
+  const [bulkResult, setBulkResult] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [autoCalibrate, setAutoCalibrate] = useState(true);
+  const API_BASE = import.meta.env.VITE_API_URL || '/api';
+
+  useEffect(() => {
+    fetch(`${API_BASE}/backtest/available-games`)
+      .then(r => r.json())
+      .then(d => setAvailableGames(d.games || []))
+      .catch(() => {});
+  }, []);
+
+  const runBacktest = async () => {
+    if (!selectedGame) return;
+    setLoading(true);
+    setBtResult(null);
+    try {
+      // 현재 프로젝션 입력을 그대로 재사용 + 대상 게임만 지정
+      const res = await fetch(`${API_BASE}/backtest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target_game: selectedGame,
+          auto_calibrate: autoCalibrate,
+          projection_input: {
+            launch_date: results.input.launch_date,
+            projection_days: 365,
+            retention: { selected_games: results.input.retention_games, target_d1_retention: { best: 0.5, normal: 0.45, worst: 0.4 } },
+            nru: { selected_games: results.input.nru_games, d1_nru: { best: 0, normal: 0, worst: 0 } },
+            revenue: { selected_games_pr: results.input.pr_games, selected_games_arppu: results.input.arppu_games },
+            blending: results.blending ? { weight: results.blending.weight_internal, genre: results.blending.genre, platforms: results.blending.platforms, time_decay: results.blending.time_decay } : undefined,
+            quality_score: (results as any).v7_settings?.quality_score || 'B',
+            bm_type: (results as any).v7_settings?.bm_type || 'Midcore',
+            regions: ['global'],
+            advanced: { arppu_unit: 'daily', liveops_intensity: 'Medium', two_stage_retention: true, seasonality_regions: ['global'] },
+          },
+        }),
+      });
+      setBtResult(await res.json());
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const runBulk = async () => {
+    setLoading(true);
+    setBulkResult(null);
+    try {
+      const res = await fetch(`${API_BASE}/backtest/run-all`, { method: 'POST' });
+      setBulkResult(await res.json());
+    } catch (e) { console.error(e); } finally { setLoading(false); }
+  };
+
+  const fmtPct = (v: number | null | undefined, signed = false) =>
+    v === null || v === undefined ? 'N/A' : `${signed && v > 0 ? '+' : ''}${(v * 100).toFixed(1)}%`;
+
+  const gradeColor = (g: string) =>
+    g === 'A' ? 'bg-green-100 text-green-700' : g === 'B' ? 'bg-blue-100 text-blue-700' :
+    g === 'C' ? 'bg-yellow-100 text-yellow-700' : g === 'D' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700';
+
+  // 오버레이 차트 데이터
+  const chartData = btResult?.status === 'success' ? btResult.actual.dau.map((_: number, i: number) => ({
+    day: i + 1,
+    actual: btResult.metrics.metric_basis === 'revenue' ? btResult.actual.revenue?.[i] : btResult.actual.dau[i],
+    best: btResult.prediction_bands.best[btResult.metrics.metric_basis][i],
+    normal: btResult.prediction_bands.normal[btResult.metrics.metric_basis][i],
+    worst: btResult.prediction_bands.worst[btResult.metrics.metric_basis][i],
+  })) : [];
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-indigo-50 rounded-xl border-2 border-indigo-200 p-6">
+        <h2 className="text-xl font-bold text-indigo-900 mb-1">🔬 Backtest — 예측 신뢰성 검증</h2>
+        <p className="text-sm text-indigo-700 mb-4">대상 게임을 표본에서 제외(Leave-One-Out)하고 예측한 뒤, 실측 데이터와 비교합니다.</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <select value={selectedGame} onChange={e => setSelectedGame(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm min-w-[280px]">
+            <option value="">검증 대상 게임 선택...</option>
+            {availableGames.map(g => (
+              <option key={g.id} value={g.id}>
+                {g.display} ({g.days}일{g.has_measured_actuals ? ' · 실측보유' : ''})
+              </option>
+            ))}
+          </select>
+          <label className="flex items-center gap-1.5 text-sm text-gray-700">
+            <input type="checkbox" checked={autoCalibrate} onChange={e => setAutoCalibrate(e.target.checked)} />
+            Auto-Calibrate (실측 D1값 사용 → 순수 모델오차 측정)
+          </label>
+          <button onClick={runBacktest} disabled={!selectedGame || loading}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium disabled:opacity-40 hover:bg-indigo-700">
+            {loading ? '검증 중...' : '백테스트 실행'}
+          </button>
+          <button onClick={runBulk} disabled={loading}
+            className="px-4 py-2 bg-violet-600 text-white rounded-lg text-sm font-medium disabled:opacity-40 hover:bg-violet-700">
+            전체 일괄 리포트
+          </button>
+        </div>
+      </div>
+
+      {btResult?.status === 'success' && (
+        <>
+          {/* 스코어카드 */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className={`rounded-xl p-4 text-center ${gradeColor(btResult.grade)}`}>
+              <p className="text-xs opacity-70">종합 등급</p>
+              <p className="text-3xl font-bold">{btResult.grade}</p>
+            </div>
+            <div className="bg-white rounded-xl border p-4 text-center">
+              <p className="text-xs text-gray-500">MAPE (D1-30)</p>
+              <p className="text-xl font-bold">{fmtPct(btResult.metrics.mape_by_period.d1_30)}</p>
+            </div>
+            <div className="bg-white rounded-xl border p-4 text-center">
+              <p className="text-xs text-gray-500">누적매출 오차</p>
+              <p className="text-xl font-bold">{fmtPct(btResult.metrics.cumulative_revenue_error, true)}</p>
+            </div>
+            <div className="bg-white rounded-xl border p-4 text-center">
+              <p className="text-xs text-gray-500">Band Coverage</p>
+              <p className="text-xl font-bold">{fmtPct(btResult.metrics.band_coverage)}</p>
+            </div>
+            <div className="bg-white rounded-xl border p-4 text-center">
+              <p className="text-xs text-gray-500">Peak DAU 오차</p>
+              <p className="text-xl font-bold">{fmtPct(btResult.metrics.peak_dau_error.size_error, true)}</p>
+            </div>
+          </div>
+
+          {/* 오버레이 차트 */}
+          <div className="bg-white rounded-xl border p-4">
+            <h3 className="font-semibold text-gray-800 mb-1">
+              예측 밴드 vs 실측 ({btResult.metrics.metric_basis === 'revenue' ? '일별 매출' : 'DAU'})
+              <span className="ml-2 text-xs font-normal text-gray-400">실측소스: {btResult.actual_source === 'measured' ? '실측 시리즈' : '코호트 재구성'}</span>
+            </h3>
+            <ResponsiveContainer width="100%" height={360}>
+              <ComposedChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="day" tick={{ fontSize: 11 }} />
+                <YAxis tickFormatter={(v) => formatCompactNumber(v)} tick={{ fontSize: 11 }} />
+                <Tooltip formatter={(v: any) => formatNumber(Number(v))} />
+                <Legend />
+                <Line type="monotone" dataKey="best" stroke="#22c55e" dot={false} strokeWidth={1} strokeDasharray="4 4" name="예측 Best" />
+                <Line type="monotone" dataKey="normal" stroke="#3b82f6" dot={false} strokeWidth={1.5} name="예측 Normal" />
+                <Line type="monotone" dataKey="worst" stroke="#ef4444" dot={false} strokeWidth={1} strokeDasharray="4 4" name="예측 Worst" />
+                <Line type="monotone" dataKey="actual" stroke="#111827" dot={false} strokeWidth={2.5} name="실측" />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* 구간별 MAPE */}
+          <div className="bg-white rounded-xl border p-4">
+            <h3 className="font-semibold text-gray-800 mb-3">구간별 MAPE</h3>
+            <div className="grid grid-cols-4 gap-3 text-center">
+              {Object.entries(btResult.metrics.mape_by_period).map(([k, v]) => (
+                <div key={k} className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-500">{k.replace('_', '~').toUpperCase()}</p>
+                  <p className="text-lg font-bold">{fmtPct(v as number | null)}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {bulkResult?.status === 'success' && (
+        <div className="bg-white rounded-xl border-2 border-violet-200 p-5">
+          <h3 className="font-bold text-violet-900 mb-3">📋 전체 일괄 백테스트 리포트 (신뢰성 문서)</h3>
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+              <p className="text-xs text-green-600 font-semibold">🎯 런칭 예측 신뢰성 (헤드라인 · 사업부 제출용)</p>
+              <p className="text-2xl font-bold text-green-800 mt-1">
+                ±{bulkResult.summary.launch_family_weighted?.family_weighted_abs_error != null ? (bulkResult.summary.launch_family_weighted.family_weighted_abs_error * 100).toFixed(1) : '—'}%
+              </p>
+              <p className="text-xs text-gray-500">Family-balanced 누적매출 절대오차 · {bulkResult.summary.launch_family_weighted?.families || 0} families
+                <span className="ml-2 opacity-60">(row 기준 진단치: ±{bulkResult.summary.launch_reliability?.avg_abs_cumulative_error != null ? (bulkResult.summary.launch_reliability.avg_abs_cumulative_error * 100).toFixed(1) : '—'}%)</span></p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+              <p className="text-xs text-gray-500 font-semibold">🧪 운영중기 슬라이스 (실험적 · 툴 범위 밖)</p>
+              <p className="text-2xl font-bold text-gray-600 mt-1">
+                ±{bulkResult.summary.live_slice_experimental?.avg_abs_cumulative_error != null ? (bulkResult.summary.live_slice_experimental.avg_abs_cumulative_error * 100).toFixed(0) : '—'}%
+              </p>
+              <p className="text-xs text-gray-500">라이브 서비스 예측은 별도 시계열 모델 필요</p>
+            </div>
+          </div>
+          <table className="w-full text-sm">
+            <thead><tr className="bg-gray-100">
+              <th className="px-3 py-2 text-left">게임</th>
+              <th className="px-3 py-2 text-center">구분</th>
+              <th className="px-3 py-2 text-center">등급</th>
+              <th className="px-3 py-2 text-right">누적오차</th>
+              <th className="px-3 py-2 text-right">Coverage</th>
+            </tr></thead>
+            <tbody>
+              {bulkResult.reports.filter((r: any) => !r.error).map((r: any) => (
+                <tr key={r.game} className={`border-b ${r.category === 'live_slice' ? 'opacity-50' : ''}`}>
+                  <td className="px-3 py-2">{r.display}</td>
+                  <td className="px-3 py-2 text-center text-xs">{r.category === 'launch' ? '🎯 런칭' : '🧪 중기'}</td>
+                  <td className="px-3 py-2 text-center"><span className={`px-2 py-0.5 rounded text-xs font-bold ${gradeColor(r.grade)}`}>{r.grade}</span></td>
+                  <td className="px-3 py-2 text-right">{fmtPct(r.cumulative_error, true)}</td>
+                  <td className="px-3 py-2 text-right">{fmtPct(r.band_coverage)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="text-xs text-gray-400 mt-3">* Auto-Calibrate 모드 + 리전 과금계수 + B2P 모드 적용. 운영중기 슬라이스(PUBG)는 런칭예측 툴의 검증 범위 밖이므로 헤드라인에서 제외됩니다. inZOI는 동종(B2P×Simulation) 표본 0개 상태의 결과입니다.</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const ResultsPanel: React.FC<ResultsPanelProps> = ({ results, activeTab, games, basicSettings }) => {
   const renderContent = () => {
     switch (activeTab) {
-      case 'overview': return <OverviewTab results={results} basicSettings={basicSettings} />;
+      case 'overview': return <OverviewTab results={results} basicSettings={basicSettings} view="revenue" />;
+      case 'financial': return <OverviewTab results={results} basicSettings={basicSettings} view="financial" />;
+      case 'backtest': return <BacktestTab results={results} />;
       case 'retention': return <RetentionTab results={results} />;
       case 'nru': return <NRUTab results={results} />;
       case 'revenue': return <RevenueTab results={results} />;
       case 'projection-total': return <TotalTab results={results} />;
       case 'projection-dau': return <DAUTab results={results} />;
       case 'raw-data': return <RawDataTab games={games} />;
-      default: return <OverviewTab results={results} basicSettings={basicSettings} />;
+      default: return <OverviewTab results={results} basicSettings={basicSettings} view="revenue" />;
     }
   };
   return <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">{renderContent()}</div>;

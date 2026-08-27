@@ -42,6 +42,7 @@ const GAME_ANONYMIZE_MAP: Record<string, string> = {
   "DNDM (SA)": "DNDM (Mobile / F2P / 2025 / SA)",
   "inZOI": "inZOI (PC / B2P / 2025)",
   "Arena Breakout(글로벌-벤치마크)": "Arena Breakout (Global - Benchmark)",
+  "PUBG (Console/2017)": "PUBG Console (B2P / Battle Royale / 2017 / Global)",
 };
 
 // 게임명 → 표시 라벨 변환 함수
@@ -214,7 +215,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
   
   // V12: 고급 옵션 state
   const [liveOpsIntensity, setLiveOpsIntensity] = useState<LiveOpsIntensity>('Medium');
-  const [arppuUnit, setArppuUnit] = useState<ARPPUUnit>('monthly');
+  const [arppuUnit, setArppuUnit] = useState<ARPPUUnit>('daily');  // V13.1 P0: 내부 데이터 계약 = daily
   const [twoStageRetention, setTwoStageRetention] = useState(false);
   const [seasonalityRegions, setSeasonalityRegions] = useState<string[]>(['korea']);
   
@@ -642,7 +643,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
           <div>
             <h3 className="font-semibold text-blue-900 mb-2">📊 회귀분석 및 벤치마크 기반 KPI프로젝션</h3>
             <div className="text-sm text-blue-800 space-y-1">
-              <p><strong>1. 데이터 소스:</strong> 내부 표본 게임(15개) + 시장 벤치마크(SensorTower/Newzoo) 통합</p>
+              <p><strong>1. 데이터 소스:</strong> 내부 실측 게임(35개) 기반. 벤치마크 커브도 내부 표본 분포(장르|플랫폼)에서 산출 — 외부 데이터는 상대 비교 Evidence 전용 (V13)</p>
               <p><strong>2. Retention Curve:</strong> Power Law 회귀분석(a × day^b) + 장르/플랫폼별 벤치마크 블렌딩</p>
               <p><strong>3. NRU:</strong> MKT 예산 기반 자동 계산 → 시나리오별 보정</p>
               <p><strong>4. DAU:</strong> Cohort 매트릭스 - DAU(d) = Σ(NRU(i) × Retention(d-i))</p>
@@ -720,7 +721,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                 <p><strong>🎯 작동 원리:</strong> 선택한 장르/플랫폼/BM타입에 맞는 벤치마크 데이터와 표본 게임을 자동 매칭합니다.</p>
                 <div className="mt-2 p-2 bg-white/50 rounded">
                   <p className="font-semibold text-amber-800">📊 벤치마크 블렌딩 공식:</p>
-                  <p className="font-mono text-[10px] mt-1">최종값 = (내부 표본 × 가중치) + (시장 벤치마크 × (1-가중치))</p>
+                  <p className="font-mono text-[10px] mt-1">최종값 = (선택 표본 × 가중치) + (내부 장르분포 벤치마크 × (1-가중치)) — 외부 절대값 미사용 (V13)</p>
                   <p className="mt-1">• 가중치 100%: 내부 데이터만 사용 (데이터 충분할 때)</p>
                   <p>• 가중치 70%: 내부 70% + 벤치마크 30% (일반적 권장)</p>
                   <p>• 가중치 0%: 벤치마크만 사용 (내부 데이터 없을 때)</p>
@@ -756,7 +757,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ games, input, setInput }) => {
                 {projectInfo.genre && (projectInfo.platforms?.length || 0) > 0 && (
                   <div className="p-3 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200">
                     <p className="text-xs font-bold text-blue-800 mb-2 flex items-center gap-1">
-                      🤖 AI 권장 설정 (자동 적용됨)
+                      📋 장르 프리셋 자동 적용 (User Scenario — 편집 가능)
                     </p>
                     <div className="grid grid-cols-3 gap-3 text-xs">
                       <div className="bg-white rounded p-2 border border-blue-100">

@@ -344,6 +344,8 @@ export interface SummaryResult {
 }
 
 export interface ProjectionResult {
+  reliability_card?: any;  // V13 P3a
+  external_evidence?: any; // V13 P2.5
   status: string;
   input: {
     launch_date: string;
@@ -423,7 +425,7 @@ export interface ProjectionResult {
 }
 
 // UI Types
-export type TabType = 'overview' | 'retention' | 'nru' | 'revenue' | 'projection-total' | 'projection-dau' | 'raw-data';
+export type TabType = 'overview' | 'retention' | 'nru' | 'revenue' | 'projection-total' | 'projection-dau' | 'raw-data' | 'financial' | 'backtest';
 
 export interface GameListResponse {
   retention: string[];

@@ -47,6 +47,9 @@ const AIInsightPanel: React.FC<AIInsightPanelProps> = ({ results, autoLoad = tru
         // V7: blending 정보 추가
         blending: results.blending,
         v7_settings: (results as any).v7_settings,
+        // V13.1 P3a: Backend calculates → AI interprets (신뢰도 창작 금지)
+        reliability_card: (results as any).reliability_card,
+        external_evidence: (results as any).external_evidence,
       };
       
       const response = await getAIInsight(summaryData, type);

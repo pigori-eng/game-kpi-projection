@@ -156,7 +156,8 @@ function App() {
     { 
       section: 'overview' as const,
       items: [
-        { id: 'overview' as TabType, label: 'Overview', icon: BarChart3 },
+        { id: 'overview' as TabType, label: '📈 Revenue View', icon: BarChart3 },
+        { id: 'financial' as TabType, label: '💰 Financial (BEP)', icon: DollarSign },
         { id: 'retention' as TabType, label: '1. Retention', icon: TrendingUp },
         { id: 'nru' as TabType, label: '2. NRU', icon: Users },
         { id: 'revenue' as TabType, label: '3. Revenue', icon: DollarSign },
@@ -173,6 +174,7 @@ function App() {
       section: 'rawData' as const,
       items: [
         { id: 'raw-data' as TabType, label: 'Raw Data', icon: Database },
+        { id: 'backtest' as TabType, label: '🔬 Backtest', icon: Calculator },
       ]
     },
   ];

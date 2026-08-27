@@ -5,6 +5,10 @@ from pydantic import BaseModel
 from typing import List, Dict, Optional, Any
 import numpy as np
 from scipy.optimize import curve_fit
+import external_evidence as ext_ev  # V13 P2.5: 물리 분리 모듈
+import contracts  # V13 P0: Metric Contract
+import product_timeline as ptl  # V13.3 P3.5
+import arpdau_engine as arp  # V13.5 P4a/P4.6
 import json
 import os
 import httpx
@@ -49,6 +53,7 @@ GAME_ANONYMIZE_MAP = {
     "DNDM (SA)": "DNDM (Mobile / F2P / 2025 / SA)",
     "inZOI": "inZOI (PC / B2P / 2025)",
     "Arena Breakout(글로벌-벤치마크)": "Arena Breakout (Global - Benchmark)",
+    "PUBG (Console/2017)": "PUBG Console (B2P / Battle Royale / 2017 / Global)",
 }
 
 def get_anonymized_game_name(game_name: str) -> str:
@@ -174,6 +179,7 @@ class ProjectionInput(BaseModel):
     regions: Optional[List[str]] = None  # ["korea", "japan", "global", ...]
     # V12 추가: 고급 옵션
     advanced: Optional[Dict[str, Any]] = None  # { liveops_intensity, arppu_unit, two_stage_retention, seasonality_regions }
+    exclude_family: Optional[str] = None  # V13.1 P2: LOFO 시 내부 벤치마크에서도 family 제외
 
 # V12: LiveOps 강도별 설정
 LIVEOPS_CONFIG = {
@@ -279,85 +285,31 @@ SEASONALITY_BY_REGION = {
 
 def calculate_seasonality(regions: List[str], launch_date: str, days: int = 365) -> List[float]:
     """
-    지역별 계절성 팩터 계산
-    - 월간 기본 계절성
-    - 주간 변동성 (주말 +15~20%)
-    - 특별 이벤트 스파이크 (명절, 대형 업데이트 등)
+    [V13.2 PROMOTED] 계절성 = PUBG PC 6개년 실측 월계수(internal prior) × 결정적 주말계수(+10%).
+    - 합성 랜덤 스파이크/노이즈 제거 (관측근거: 피드백4 #15)
+    - 적용은 Revenue(ARPPU) 경로 1회만 — NRU 이중적용 제거
+    - 실측 prior 부재 시 1.0 (중립)
     """
     from datetime import datetime, timedelta
-    import random
-    
     try:
         start_date = datetime.strptime(launch_date, "%Y-%m-%d")
-    except:
-        start_date = datetime(2026, 11, 12)  # 기본값
-    
-    # 시드 고정 (재현성)
-    random.seed(42)
-    
-    # 특별 이벤트 날짜 (월-일 기준)
-    SPECIAL_EVENTS = {
-        "korea": [(1, 1), (2, 1), (2, 2), (5, 5), (9, 15), (9, 16), (9, 17), (12, 25), (12, 31)],  # 설날, 추석, 크리스마스 등
-        "japan": [(1, 1), (5, 3), (5, 4), (5, 5), (8, 15), (12, 25), (12, 31)],  # 신정, 골든위크, 오본 등
-        "global": [(1, 1), (11, 24), (11, 25), (12, 24), (12, 25), (12, 31)],  # 블랙프라이데이, 크리스마스 등
-        "na": [(1, 1), (7, 4), (11, 24), (11, 25), (12, 24), (12, 25), (12, 31)],
-        "eu": [(1, 1), (12, 24), (12, 25), (12, 31)],
-        "china": [(1, 1), (2, 1), (2, 2), (10, 1), (10, 2), (10, 3)],  # 춘절, 국경절
-        "sea": [(1, 1), (4, 13), (4, 14), (11, 1), (12, 25), (12, 31)],  # 송끄란 등
-        "sa": [(1, 1), (2, 13), (2, 14), (12, 25), (12, 31)],  # 카니발 등
-    }
-    
+    except Exception:
+        start_date = datetime(2026, 11, 12)
+    try:
+        pri = json.load(open(os.path.join(DATA_DIR, "internal_priors.json"), encoding="utf-8"))
+        monthly = pri.get("seasonality_monthly_pubg_pc", {}).get("factors", {})
+    except Exception:
+        monthly = {}
     factors = []
-    for day in range(days):
-        current_date = start_date + timedelta(days=day)
-        month = current_date.month
-        weekday = current_date.weekday()  # 0=월, 6=일
-        month_day = (current_date.month, current_date.day)
-        
-        # 1. 월간 기본 계절성
-        region_factors = []
-        for region in regions:
-            region_key = region.lower()
-            if region_key in SEASONALITY_BY_REGION:
-                region_factors.append(SEASONALITY_BY_REGION[region_key].get(month, 1.0))
-        
-        base_factor = np.mean(region_factors) if region_factors else 1.0
-        
-        # 2. 주간 변동성 (금~일 +15~20%, 월~화 -5~10%)
-        if weekday == 4:  # 금요일
-            weekly_factor = 1.12 + random.uniform(0, 0.05)
-        elif weekday == 5:  # 토요일
-            weekly_factor = 1.18 + random.uniform(0, 0.07)
-        elif weekday == 6:  # 일요일
-            weekly_factor = 1.15 + random.uniform(0, 0.05)
-        elif weekday in [0, 1]:  # 월/화
-            weekly_factor = 0.92 + random.uniform(0, 0.05)
-        else:  # 수/목
-            weekly_factor = 1.0 + random.uniform(-0.02, 0.02)
-        
-        # 3. 특별 이벤트 스파이크 (+30~60%)
-        event_factor = 1.0
-        for region in regions:
-            region_key = region.lower()
-            if region_key in SPECIAL_EVENTS:
-                if month_day in SPECIAL_EVENTS[region_key]:
-                    event_factor = max(event_factor, 1.35 + random.uniform(0, 0.25))
-        
-        # 4. 대형 업데이트 시뮬레이션 (30일마다 +20~35%)
-        if day > 30 and (day % 30 < 3 or day % 30 > 27):
-            event_factor = max(event_factor, 1.20 + random.uniform(0, 0.15))
-        
-        # 5. 약간의 랜덤 노이즈 (±3%)
-        noise = 1.0 + random.uniform(-0.03, 0.03)
-        
-        final_factor = base_factor * weekly_factor * event_factor * noise
-        factors.append(final_factor)
-    
-    return factors
+    for d in range(days):
+        cur = start_date + timedelta(days=d)
+        mf = float(monthly.get(f"{cur.month:02d}", 1.0))
+        wf = 1.10 if cur.weekday() >= 5 else 1.0  # 결정적 주말계수 (policy assumption, 문서화)
+        factors.append(mf * wf)
+    # 정규화: 평균 1.0 (총량 보존 — 계절성은 분포 이동만)
+    m = float(np.mean(factors)) if factors else 1.0
+    return [f / m for f in factors]
 
-# ============================================
-# Time-Decay 블렌딩 (시간에 따라 가중치 변경)
-# ============================================
 def calculate_time_decay_weight(day: int, days: int = 365) -> float:
     """
     시간 가중치 계산 (Time-Decay)
@@ -457,29 +409,146 @@ BENCHMARK_DATA = {
     }
 }
 
-def get_benchmark_data(genre: str, platforms: List[str]) -> Dict[str, float]:
-    """장르/플랫폼에 맞는 벤치마크 데이터 반환 (다중 플랫폼은 평균)"""
+# ============================================================
+# V13 P1: Absolute Metric Re-sourcing
+# 절대값 벤치마크의 소스를 외부 하드코딩(BENCHMARK_DATA/BENCHMARK_D30_RETENTION)
+# → 내부 Pool A/B 장르 분포로 교체. 외부 데이터는 External Evidence Layer에서
+# relative/shape 전용 (Isolation Test A/B로 보장).
+# BENCHMARK_DATA/BENCHMARK_D30_RETENTION 상수는 DEPRECATED (참조 제거됨).
+# ============================================================
+GAME_META_V13 = {
+    "메M(대만)": ("MMORPG", "Mobile"), "메M(한국)": ("MMORPG", "Mobile"),
+    "AxE(대만)": ("MMORPG", "Mobile"), "AxE(한국)": ("MMORPG", "Mobile"), "AxE(일본)": ("MMORPG", "Mobile"),
+    "V4(한국)": ("MMORPG", "Mobile"), "카이저(한국)": ("MMORPG", "Mobile"),
+    "트라하(한국)": ("MMORPG", "Mobile"), "트라하(일본)": ("MMORPG", "Mobile"),
+    "라플라스M(앱애니)": ("MMORPG", "Mobile"),
+    "MOE(한국)": ("SRPG", "Mobile"), "MOE(글로벌)": ("SRPG", "Mobile"), "MOE(일본대만)": ("SRPG", "Mobile"),
+    "조조전(한국)": ("SRPG", "Mobile"), "조조전(일본)": ("SRPG", "Mobile"),
+    "조조전(대만)": ("SRPG", "Mobile"), "조조전(글로벌)": ("SRPG", "Mobile"),
+    "다크어벤져3(한국)": ("Action RPG", "Mobile"), "다크어벤져3(글로벌)": ("Action RPG", "Mobile"),
+    "다크어벤져3(일본)": ("Action RPG", "Mobile"),
+    "오버히트(한국)": ("Collector RPG", "Mobile"), "오버히트(일본)": ("Collector RPG", "Mobile"),
+    "오버히트(글로벌)": ("Collector RPG", "Mobile"),
+    "나이트워커(중국)": ("Action RPG", "PC"),
+    "슈퍼피플(글로벌)": ("Battle Royale", "PC"),
+    "PUBG (PC/B2P/2018)": ("Battle Royale", "PC"), "PUBG (PC/F2P/2022)": ("Battle Royale", "PC"),
+    "PUBGM (KR+JP/Launch-2019)": ("Battle Royale", "Mobile"), "PUBGM (KR+JP/Stable-2022)": ("Battle Royale", "Mobile"),
+    "DNDM (NA)": ("Extraction Shooter", "Mobile"), "DNDM (SEA)": ("Extraction Shooter", "Mobile"),
+    "DNDM (SA)": ("Extraction Shooter", "Mobile"),
+    "inZOI": ("Simulation", "PC"),
+    "Arena Breakout(글로벌-벤치마크)": ("Extraction Shooter", "Mobile"),
+    "PUBG (Console/2017)": ("Battle Royale", "Console"),
+}
+
+_INTERNAL_BENCH_CACHE = None
+
+def _median(vals):
+    return float(np.median(vals)) if vals else None
+
+# V13.1 P1: 리텐션 semantics 필터 — live-slice 성격 리텐션은 런칭 벤치마크에서 제외
+# (PUBG PC/PUBGM 코호트 리텐션 = 성숙기 active_user_return_rate 성격 → Newzoo와 동일한 정의 문제)
+RETENTION_LIVE_SLICE_GAMES = {"PUBG (PC/B2P/2018)", "PUBG (PC/F2P/2022)",
+                               "PUBGM (KR+JP/Launch-2019)", "PUBGM (KR+JP/Stable-2022)"}
+GAME_FAMILY_MAP_V13 = {
+    "메M(대만)": "mem", "메M(한국)": "mem", "AxE(대만)": "axe", "AxE(한국)": "axe", "AxE(일본)": "axe",
+    "V4(한국)": "v4", "카이저(한국)": "kaiser", "트라하(한국)": "traha", "트라하(일본)": "traha",
+    "라플라스M(앱애니)": "laplace", "MOE(한국)": "moe", "MOE(글로벌)": "moe", "MOE(일본대만)": "moe",
+    "조조전(한국)": "jojo", "조조전(일본)": "jojo", "조조전(대만)": "jojo", "조조전(글로벌)": "jojo",
+    "다크어벤져3(한국)": "da3", "다크어벤져3(글로벌)": "da3", "다크어벤져3(일본)": "da3",
+    "오버히트(한국)": "overhit", "오버히트(일본)": "overhit", "오버히트(글로벌)": "overhit",
+    "나이트워커(중국)": "nightwalker", "슈퍼피플(글로벌)": "superpeople",
+    "PUBG (PC/B2P/2018)": "pubg_pc", "PUBG (PC/F2P/2022)": "pubg_pc",
+    "PUBGM (KR+JP/Launch-2019)": "pubgm", "PUBGM (KR+JP/Stable-2022)": "pubgm",
+    "DNDM (NA)": "dndm", "DNDM (SEA)": "dndm", "DNDM (SA)": "dndm",
+    "inZOI": "inzoi", "Arena Breakout(글로벌-벤치마크)": "arena", "PUBG (Console/2017)": "pubg_console",
+}
+
+def build_internal_benchmarks(exclude_family: Optional[str] = None) -> Dict[str, Dict]:
+    """내부 Pool A/B 분포 (P1). exclude_family 지정 시 해당 family 전체 제외 (LOFO 무누수)."""
+    global _INTERNAL_BENCH_CACHE
+    if exclude_family is None and _INTERNAL_BENCH_CACHE is not None:
+        return _INTERNAL_BENCH_CACHE
+    raw = load_raw_data()
+    dist = {}
+    for game, (genre, platform) in GAME_META_V13.items():
+        if exclude_family and GAME_FAMILY_MAP_V13.get(game) == exclude_family:
+            continue
+        key = f"{genre}|{platform}"
+        e = dist.setdefault(key, {"d1": [], "d7": [], "d30": [], "d90": [], "pr": [], "arppu": [], "games": []})
+        ret = raw['games']['retention'].get(game)
+        if ret and game not in RETENTION_LIVE_SLICE_GAMES:  # semantics 필터
+            if len(ret) >= 1: e["d1"].append(ret[0])
+            if len(ret) >= 7: e["d7"].append(ret[6])
+            if len(ret) >= 30: e["d30"].append(ret[29])
+            if len(ret) >= 90: e["d90"].append(ret[89])
+        pr = raw['games']['payment_rate'].get(game)
+        if pr: e["pr"].append(float(np.mean(pr[:90])))
+        ar = raw['games']['arppu'].get(game)
+        if ar: e["arppu"].append(float(np.mean(ar[:90])))
+        e["games"].append(game)
+    if exclude_family is None:
+        _INTERNAL_BENCH_CACHE = dist
+    return dist
+
+_GLOBAL_DEFAULT_BENCH = {"d1": 0.40, "d7": 0.18, "d30": 0.08, "d90": 0.035, "pr": 0.04, "arppu": 50000}
+
+def get_internal_benchmark(genre: str, platforms: List[str],
+                            exclude_family: Optional[str] = None) -> Dict[str, Any]:
+    """
+    V13.1: 지표별 독립 fallback (retention/pr/arppu 각각 L0→L1→L2).
+    exclude_family 지정 시 LOFO 무누수 벤치마크.
+    """
+    dist = build_internal_benchmarks(exclude_family)
     if not platforms:
         platforms = ["PC"]
-    
-    values = []
-    for platform in platforms:
-        if platform in BENCHMARK_DATA and genre in BENCHMARK_DATA[platform]:
-            values.append(BENCHMARK_DATA[platform][genre])
-    
-    if not values:
-        # 기본값 (PC/MMORPG)
-        return {"d1": 0.32, "d7": 0.20, "d30": 0.11, "d90": 0.06, "pr": 0.06, "arppu": 78000}
-    
-    # 다중 플랫폼이면 평균
-    return {
-        "d1": np.mean([v["d1"] for v in values]),
-        "d7": np.mean([v["d7"] for v in values]),
-        "d30": np.mean([v["d30"] for v in values]),
-        "d90": np.mean([v["d90"] for v in values]),
-        "pr": np.mean([v["pr"] for v in values]),
-        "arppu": np.mean([v["arppu"] for v in values]),
+
+    def collect(keys, metrics):
+        agg = {m: [] for m in metrics}
+        n_games = 0
+        for k in keys:
+            if k in dist:
+                for m in metrics:
+                    agg[m].extend(dist[k][m])
+                n_games += len(dist[k]["games"])
+        return agg, n_games
+
+    keys0 = [f"{genre}|{p}" for p in platforms]
+    keys1 = [k for k in dist if k.startswith(f"{genre}|")]
+    keys2 = list(dist.keys())
+
+    def resolve(metrics, need):
+        for lvl, keys in [(0, keys0), (1, keys1), (2, keys2)]:
+            agg, n = collect(keys, metrics)
+            if all(agg[m] for m in need):
+                return agg, lvl, n
+        return {m: [] for m in metrics}, 2, 0
+
+    ret_agg, ret_lvl, ret_n = resolve(["d1", "d7", "d30", "d90"], ["d1", "d30"])
+    pr_agg, pr_lvl, pr_n = resolve(["pr"], ["pr"])
+    ar_agg, ar_lvl, ar_n = resolve(["arppu"], ["arppu"])
+
+    result = {
+        "d1": _median(ret_agg["d1"]) or _GLOBAL_DEFAULT_BENCH["d1"],
+        "d7": _median(ret_agg["d7"]) or _GLOBAL_DEFAULT_BENCH["d7"],
+        "d30": _median(ret_agg["d30"]) or _GLOBAL_DEFAULT_BENCH["d30"],
+        "d90": _median(ret_agg["d90"]) or (_median(ret_agg["d30"]) or _GLOBAL_DEFAULT_BENCH["d30"]) * 0.45,
+        "pr": _median(pr_agg["pr"]) or _GLOBAL_DEFAULT_BENCH["pr"],
+        "arppu": _median(ar_agg["arppu"]) or _GLOBAL_DEFAULT_BENCH["arppu"],
+        "source": "internal_pool_ab",
+        "excluded_family": exclude_family,
+        "fallback_level": max(ret_lvl, pr_lvl, ar_lvl),  # 하위호환 (최악치)
+        "fallback_levels": {"retention": ret_lvl, "pr": pr_lvl, "arppu": ar_lvl},
+        "n_games": ret_n,
+        "n_games_by_metric": {"retention": ret_n, "pr": pr_n, "arppu": ar_n},
     }
+    result["d7"] = min(result["d7"], result["d1"])
+    result["d30"] = min(result["d30"], result["d7"])
+    result["d90"] = min(result["d90"], result["d30"])
+    return result
+
+def get_benchmark_data(genre: str, platforms: List[str], exclude_family: Optional[str] = None) -> Dict[str, float]:
+    """[V13 P1] 벤치마크 = 내부 Pool A/B 분포 (외부 절대값 사용 금지)"""
+    return get_internal_benchmark(genre, platforms, exclude_family)
 
 def generate_benchmark_retention_curve(benchmark: Dict[str, float], days: int = 365) -> List[float]:
     """벤치마크 데이터로 Power Law 리텐션 커브 생성"""
@@ -617,7 +686,8 @@ def generate_retention_curve(a: float, b: float, target_d1: float, days: int = 3
 def generate_retention_curve_v12(
     a: float, b: float, target_d1: float, days: int = 365,
     two_stage_enabled: bool = False, liveops_intensity: str = "Medium",
-    genre: str = "Default", platform: str = "Mobile"
+    genre: str = "Default", platform: str = "Mobile",
+    exclude_family: Optional[str] = None
 ):
     """
     V12.2: 2-Stage Retention + D30 앵커 강력 보정
@@ -635,7 +705,7 @@ def generate_retention_curve_v12(
     import math
     
     # 벤치마크 D30 가져오기
-    benchmark_d30 = BENCHMARK_D30_RETENTION.get(genre, BENCHMARK_D30_RETENTION["Default"]).get(platform, 0.08)
+    benchmark_d30 = get_internal_benchmark(genre, [platform], exclude_family)["d30"]  # V13.1: LOFO 무누수
     
     # 기본 Power Law로 D30 계산
     calculated_d30 = target_d1 * (30 ** b) if b < 0 else target_d1 * 0.1
@@ -1344,8 +1414,8 @@ UA&브랜딩 마케터, 퍼블리싱, 데이터 사이언스, 라이브 서비�
 {'- PC/Console 플랫폼은 모바일과 달리 CPI/CPA 기반 UA가 제한적이므로, Steam/스토어 노출, 미디어 리뷰, 커뮤니티 바이럴 등 Organic 중심 모객을 기준으로 평가하세요.' if any(p in ['PC', 'Console'] for p in blending.get('platforms', ['PC'])) else '- 모바일 플랫폼은 CPI/CPA 기반 UA 효율을 중심으로 평가하세요.'}
 
 응답 형식:
-1. 신뢰도 점수: (100점 만점, 숫자만)
-2. 신뢰도 등급: (A/B/C/D/F 중 하나)
+1. 신뢰도 점수: 입력에 reliability_card가 포함된 경우 그 지표별 등급을 근거로 해석하고, 직접 창작하지 말 것. 카드가 없으면 "카드 미제공"이라고 답할 것.
+2. 신뢰도 등급: reliability_card.metrics의 등급을 인용·해석 (백엔드 계산값이 유일한 근거)
 3. 통합 신뢰도 평가: {'모객 목표 현실성 (Organic 중심), ' if any(p in ['PC', 'Console'] for p in blending.get('platforms', ['PC'])) else 'NRU/CPI 목표 현실성, '}표본 데이터 품질, 시장 벤치마크 적정성, 수익 예측 현실성을 하나의 통합된 문단으로 분석
 4. 신뢰도 향상 제안: 구체적인 개선 방안 3가지
 
@@ -1475,7 +1545,7 @@ async def calculate_projection(input_data: ProjectionInput):
         use_benchmark_only = True
     
     # 벤치마크 데이터 가져오기 (BM Type 적용)
-    benchmark = get_benchmark_data(genre, platforms)
+    benchmark = get_benchmark_data(genre, platforms, input_data.exclude_family)
     benchmark["pr"] = benchmark["pr"] * bm_modifier["pr_mod"]
     benchmark["arppu"] = benchmark["arppu"] * bm_modifier["arppu_mod"]
     benchmark_ret_curve = generate_benchmark_retention_curve(benchmark, days)
@@ -1489,7 +1559,11 @@ async def calculate_projection(input_data: ProjectionInput):
     advanced = input_data.advanced or {}
     two_stage_enabled = advanced.get("two_stage_retention", False)
     liveops_intensity = advanced.get("liveops_intensity", "Medium")
-    arppu_unit = advanced.get("arppu_unit", "monthly")
+    arppu_unit_input = advanced.get("arppu_unit", "daily")  # V13.1 P0: default=daily
+    # P0 canonicalization: 내부 표본 ARPPU는 계약상 daily 확정 → UI 설정과 무관하게 daily
+    # custom_arppu(사용자 입력)에만 사용자 지정 unit 적용
+    _uses_custom_arppu = bool(input_data.revenue.custom_arppu and input_data.revenue.custom_arppu > 0)
+    arppu_unit = arppu_unit_input if _uses_custom_arppu else "daily"
     seasonality_regions = advanced.get("seasonality_regions", [])
     
     # V12.1: 사용자 직접 입력값 확인 (우선순위: 사용자 > 벤치마크)
@@ -1513,7 +1587,7 @@ async def calculate_projection(input_data: ProjectionInput):
                 two_stage_enabled=True,
                 liveops_intensity=liveops_intensity,
                 genre=genre,
-                platform=primary_platform
+                platform=primary_platform, exclude_family=input_data.exclude_family
             )
         else:
             # D30 앵커 보정만 적용
@@ -1522,7 +1596,7 @@ async def calculate_projection(input_data: ProjectionInput):
                 two_stage_enabled=False,
                 liveops_intensity=liveops_intensity,
                 genre=genre,
-                platform=primary_platform
+                platform=primary_platform, exclude_family=input_data.exclude_family
             )
         
         # V7: Time-Decay 블렌딩 적용
@@ -1616,7 +1690,8 @@ async def calculate_projection(input_data: ProjectionInput):
             v85_nru_meta = None
         
         # V7: 계절성 적용 (NRU에 반영)
-        nru_series = [int(nru * sf) for nru, sf in zip(nru_series, seasonality_factors)]
+        # V13.2: 계절성 이중적용 제거 — Revenue 경로 1회만 적용 (피드백4 #15)
+        pass
         
         # DAU 계산
         dau_series = calculate_dau_matrix(nru_series, ret_curve, days)
@@ -1795,14 +1870,12 @@ async def calculate_projection(input_data: ProjectionInput):
     d30_ret_value = normal_d30_retention[29] if len(normal_d30_retention) > 29 else 0
     
     # 벤치마크 D30 가져오기
-    benchmark_d30 = BENCHMARK_D30_RETENTION.get(genre, BENCHMARK_D30_RETENTION["Default"]).get(
-        "PC" if "PC" in platforms else "Mobile", 0.08
-    )
+    benchmark_d30 = get_internal_benchmark(genre, platforms, input_data.exclude_family)["d30"]  # V13.1
     
     debug_info = {
         # 단위 정보
-        "unit_conversion": "daily_arppu_raw" if advanced.get("arppu_unit", "monthly") == "daily" else "monthly_arppu_divided_by_30",
-        "arppu_unit": advanced.get("arppu_unit", "monthly"),
+        "unit_conversion": "daily_arppu_raw" if arppu_unit == "daily" else "monthly_arppu_divided_by_30",
+        "arppu_unit": arppu_unit,
         
         # 사용자 직접 입력 여부
         "custom_pr_used": input_data.revenue.custom_pr is not None and input_data.revenue.custom_pr > 0,
@@ -1926,8 +1999,191 @@ async def calculate_projection(input_data: ProjectionInput):
         "summary": summary,
         "results": results
     }
-    
+
+    # ── V13.2 P3b: Provisional 80% Prediction Interval (residual store 기반) ──
+    try:
+        result["provisional_interval"] = build_provisional_interval(
+            result["summary"]["normal"].get("total_gross_revenue")
+            or result["summary"]["normal"].get("gross_revenue")
+            or sum(results["normal"]["full_data"]["revenue"]))
+    except Exception as _pe:
+        result["provisional_interval"] = {"error": str(_pe)}
+
+    # ── V13 P2.5/P3a: External Evidence + Metric-level Reliability Card ──
+    # Evidence는 여기서만 계산되며 위 절대값 결과(results/summary)에 역주입되지 않는다 (Isolation).
+    try:
+        normal_dau_series = results["normal"]["full_data"]["dau"]
+        normal_ret = results["normal"]["full_data"].get("retention", [])
+        internal_tail = None
+        if len(normal_ret) >= 28 and normal_ret[6] > 0:
+            internal_tail = round(normal_ret[27] / normal_ret[6], 4)
+        envelope = ext_ev.lifecycle_envelope_check(normal_dau_series, genre)
+        _d1 = normal_ret[0] if len(normal_ret) >= 1 else None
+        _d7 = normal_ret[6] if len(normal_ret) >= 7 else None
+        _d28 = normal_ret[27] if len(normal_ret) >= 28 else None
+        evidence = {
+            "peer": ext_ev.peer_percentile_summary(genre, _d1, _d7, _d28),
+            "tail_class": ext_ev.tail_class(genre, internal_tail),
+            "lifecycle_envelope": envelope,
+            "tam": ext_ev.tam_check(genre, summary.get("normal", {}).get("peak_dau", 0)),
+        }
+        result["external_evidence"] = evidence
+        result["reliability_card"] = build_reliability_card(
+            input_data, genre, platforms, benchmark, evidence)
+    except Exception as _e:
+        result["external_evidence"] = {"error": str(_e)}
+        result["reliability_card"] = {"error": str(_e)}
+
     return sanitize_for_json(result)
+
+
+def build_provisional_interval(p50_cumulative: float) -> Dict[str, Any]:
+    """
+    V13.2 P3b: Conformal 전 단계 — residual store(LOFO, launch)의 family-collapsed
+    log-residual 분포로 Provisional 80% Prediction Interval 산출.
+    Freeze 규칙: Pool A(observed)는 원본, Pool B(pseudo)는 policy inflation 2.0x [1.5,3.0].
+    observed families < 5 → 명칭 'provisional' 고정, 통계적 P10/P90 아님을 명시.
+    """
+    store_path = os.path.join(DATA_DIR, "residual_store.json")
+    if not os.path.exists(store_path):
+        return {"available": False, "reason": "residual_store 없음 — /api/backtest/run-all 선행 필요"}
+    store = json.load(open(store_path, encoding="utf-8"))
+    infl = store.get("policy_prior_inflation", {}).get("pseudo_pool_factor", 2.0)
+    fam_res = {}
+    for e in store.get("entries", []):
+        if e.get("category") not in ("launch", "pseudo_launch") or e.get("cumulative_error") is None:
+            continue
+        lr = float(np.log(1 + e["cumulative_error"]))
+        if e.get("actual_pool") == "pseudo":
+            lr *= infl  # policy inflation (log-scale 확대)
+        fam_res.setdefault((e["game_family"], e["actual_pool"]), []).append(lr)
+    fam_points = [float(np.median(v)) for v in fam_res.values()]
+    if len(fam_points) < 5:
+        return {"available": False, "reason": f"family residual {len(fam_points)}개 — 최소 5 필요"}
+    q10, q90 = float(np.percentile(fam_points, 10)), float(np.percentile(fam_points, 90))
+    # residual = log(pred/actual) → actual = pred / exp(residual)
+    lo_mult, hi_mult = float(np.exp(-q90)), float(np.exp(-q10))
+    obs_n = len({k for k in fam_res if k[1] == "observed"})
+    return {
+        "available": True,
+        "label": "Provisional 80% Prediction Interval",
+        "p50_cumulative": p50_cumulative,
+        "interval_low": p50_cumulative * lo_mult if p50_cumulative else None,
+        "interval_high": p50_cumulative * hi_mult if p50_cumulative else None,
+        "multipliers": {"low": round(lo_mult, 3), "high": round(hi_mult, 3)},
+        "basis": {"families": len(fam_points), "observed_families": obs_n,
+                  "pseudo_inflation": infl, "method": "LOFO family-collapsed log-residual q10/q90"},
+        "caveat": "observed family 부족 — 통계적 P10/P90 아님, Conformal 확정은 P3b 완료 후",
+    }
+
+
+def build_reliability_card(input_data, genre: str, platforms: List[str],
+                            benchmark: Dict, evidence: Dict) -> Dict[str, Any]:
+    """
+    V13 P3a: Metric-level Reliability Card — 백엔드 계산 (AI는 해석만).
+    등급 근거: 동일장르 내부 표본 수 / fallback_level / observed launch family 수.
+    """
+    raw = load_raw_data()
+    dist = build_internal_benchmarks()
+
+    GAME_FAMILY_V13 = {
+        "메M(대만)": "mem", "메M(한국)": "mem", "AxE(대만)": "axe", "AxE(한국)": "axe", "AxE(일본)": "axe",
+        "V4(한국)": "v4", "카이저(한국)": "kaiser", "트라하(한국)": "traha", "트라하(일본)": "traha",
+        "라플라스M(앱애니)": "laplace", "MOE(한국)": "moe", "MOE(글로벌)": "moe", "MOE(일본대만)": "moe",
+        "조조전(한국)": "jojo", "조조전(일본)": "jojo", "조조전(대만)": "jojo", "조조전(글로벌)": "jojo",
+        "다크어벤져3(한국)": "da3", "다크어벤져3(글로벌)": "da3", "다크어벤져3(일본)": "da3",
+        "오버히트(한국)": "overhit", "오버히트(일본)": "overhit", "오버히트(글로벌)": "overhit",
+        "나이트워커(중국)": "nightwalker", "슈퍼피플(글로벌)": "superpeople",
+        "PUBG (PC/B2P/2018)": "pubg_pc", "PUBG (PC/F2P/2022)": "pubg_pc",
+        "PUBGM (KR+JP/Launch-2019)": "pubgm", "PUBGM (KR+JP/Stable-2022)": "pubgm",
+        "DNDM (NA)": "dndm", "DNDM (SEA)": "dndm", "DNDM (SA)": "dndm",
+        "inZOI": "inzoi", "Arena Breakout(글로벌-벤치마크)": "arena",
+        "PUBG (Console/2017)": "pubg_console",
+    }
+
+    def same_genre_n(metric_key: str) -> int:
+        """동일장르 표본을 family 단위로 카운트 (rows 아님 — Freeze 원칙)"""
+        fams = set()
+        for game, (g, _p) in GAME_META_V13.items():
+            if g == genre and raw['games'].get(metric_key, {}).get(game):
+                fams.add(GAME_FAMILY_V13.get(game, game))
+        return len(fams)
+
+    def grade_by_n(n: int, fallback: int) -> str:
+        if fallback >= 2:
+            return "D"
+        if n >= 4: return "B"
+        if n == 3: return "B-"
+        if n == 2: return "C+"
+        if n == 1: return "C"
+        return "D"
+
+    fb = benchmark.get("fallback_level", 0) if isinstance(benchmark, dict) else 0
+    ret_n = same_genre_n('retention')
+    pr_n = same_genre_n('payment_rate')
+    nru_n = same_genre_n('nru')
+
+    # Calibration 카운트 (Freeze 사양: rows/families 병기)
+    actuals = raw.get('actuals', {})
+    LAUNCH_FAMS = {"dndm", "inzoi", "pubg_console"}
+    fam_of = {"DNDM (NA)": "dndm", "DNDM (SEA)": "dndm", "DNDM (SA)": "dndm", "inZOI": "inzoi",
+              "PUBG (PC/B2P/2018)": "pubg_pc", "PUBG (PC/F2P/2022)": "pubg_pc",
+              "PUBGM (KR+JP/Launch-2019)": "pubgm", "PUBGM (KR+JP/Stable-2022)": "pubgm",
+              "PUBG (Console/2017)": "pubg_console"}
+    obs_fams = {fam_of.get(g) for g in actuals if fam_of.get(g)}
+    obs_launch = len(obs_fams & LAUNCH_FAMS)
+    peer_n = evidence.get("peer", {}).get("sample_n", 0)
+
+    env_warns = evidence.get("lifecycle_envelope", {}).get("warnings", [])
+    warnings = list(env_warns)
+    if ret_n == 0:
+        warnings.append(f"'{genre}' 동일장르 내부 리텐션 표본 0개 — L{fb} fallback 사용 중")
+    if obs_launch < 3:
+        warnings.append(f"Observed launch family {obs_launch}개 — 예측구간은 provisional")
+    warnings.append("Multi-mode incremental synergy = hypothesis-only (P50 중립)")
+
+    lifecycle_grade = "B" if evidence.get("lifecycle_envelope", {}).get("applicable") else "C"
+
+    # V13.1: 실제 validator 호출 (하드코딩 제거)
+    schema_status = "PASS"
+    try:
+        for _mk, _c in contracts.INTERNAL_CONTRACTS.items():
+            contracts.validate_contract(_c, strict=True)
+    except Exception as _ve:
+        schema_status = f"FAIL ({_ve})"
+    _arppu_c = contracts.INTERNAL_CONTRACTS.get("arppu", {})
+    unit_status = ("PASS (arppu=daily/KRW canonical)"
+                   if _arppu_c.get("unit") == "daily" and _arppu_c.get("currency") == "KRW"
+                   else "FAIL (unit contract 위반)")
+
+    return {
+        "schema_contract": schema_status,
+        "unit_contract": unit_status,
+        "metrics": {
+            "acquisition": grade_by_n(nru_n, fb),
+            "absolute_retention": grade_by_n(ret_n, fb),
+            "lifecycle_shape": lifecycle_grade,
+            "monetization": grade_by_n(pr_n, fb),
+            "financial_bep": grade_by_n(min(pr_n, ret_n), fb),
+            "multimode_synergy": "D",
+        },
+        "calibration": {
+            "observed_launch_families": obs_launch,
+            "observed_rows": len(actuals),
+            "pseudo_families": len(set(GAME_FAMILY_MAP_V13.values()) - obs_fams),
+            "external_peers": peer_n,
+            "benchmark_source": benchmark.get("source", "internal_pool_ab") if isinstance(benchmark, dict) else "internal_pool_ab",
+            "benchmark_fallback_level": fb,
+            "fallback_levels": benchmark.get("fallback_levels", {}) if isinstance(benchmark, dict) else {},
+            "benchmark_n_games": benchmark.get("n_games", 0) if isinstance(benchmark, dict) else 0,
+        },
+        "external_evidence_methods": {
+            "retention": "Relative Only",
+            "lifecycle": "Shape Only (warning)",
+            "multimode_lift": "Not Calibrated",
+        },
+        "warnings": warnings,
+    }
 
 # V9.8: Mock AI Report Generator (Fallback용)
 def generate_mock_ai_report(summary: Dict[str, Any], analysis_type: str) -> str:
@@ -2129,7 +2385,637 @@ async def upload_game_data(file: UploadFile = File(...), metric: str = "retentio
     with open(RAW_DATA_PATH, 'w', encoding='utf-8') as f:
         json.dump(raw_data, f, ensure_ascii=False, indent=2)
     
-    return {"status": "success", "message": f"Added/updated games in {metric}"}
+    # V13.1 P0: 업로드 데이터 계약 경고 (검증 미적용 우회 방지)
+    _contract_warning = ("업로드 데이터에 metric contract 자동검증이 아직 적용되지 않습니다. "
+                         "ARPPU는 daily/KRW, 리텐션은 new_install_cohort 정의를 준수해야 하며 "
+                         "위반 시 V13 재소싱 벤치마크가 오염됩니다.")
+    return { "contract_warning": _contract_warning,"status": "success", "message": f"Added/updated games in {metric}"}
+
+# ============================================================
+# V12.5: Backtesting (Leave-One-Out 검증)
+# ============================================================
+class BacktestInput(BaseModel):
+    target_game: str
+    projection_input: ProjectionInput
+    auto_calibrate: Optional[bool] = False  # True: 실측 D1 NRU/리텐션을 입력으로 사용 → 순수 모델 오차 측정
+    # V12.5.1: 오차 보정 옵션
+    initial_dau: Optional[int] = None              # 운영중기 게임: 기존 유저베이스 (None=실측에서 자동산출)
+    region_monetization_factor: Optional[float] = 1.0  # 리전 과금력 배수 (표본 대비)
+    b2p_mode: Optional[bool] = False               # B2P: Revenue = NRU × package_price
+    package_price_net_krw: Optional[float] = 0     # B2P 순단가 (원화)
+
+def _fit_extend_retention(ret_data: List[float], days: int = 365) -> List[float]:
+    """실측 리텐션(90일)을 Power Law로 피팅해 365일로 확장"""
+    a, b = fit_retention_curve(ret_data)
+    curve = list(ret_data[:days])
+    for d in range(len(curve) + 1, days + 1):
+        curve.append(max(0.0001, retention_curve(d, a, b)))
+    return curve[:days]
+
+def _mape(pred: List[float], actual: List[float]) -> Optional[float]:
+    """MAPE 계산 (actual=0 구간 제외)"""
+    pairs = [(p, a) for p, a in zip(pred, actual) if a > 0]
+    if not pairs:
+        return None
+    return float(np.mean([abs(p - a) / a for p, a in pairs]))
+
+@app.post("/api/backtest")
+async def run_backtest(bt: BacktestInput):
+    """
+    Leave-One-Out 백테스트:
+    1. 대상 게임을 표본에서 제외하고 예측 실행
+    2. 대상 게임의 실측 데이터로 actual 시리즈 재구성
+    3. 구간별 MAPE / 누적오차 / Peak DAU / Band Coverage 산출
+    """
+    raw_data = load_raw_data()
+    target = bt.target_game
+
+    # 1. 실측 데이터 존재 검증
+    actual_nru = raw_data['games']['nru'].get(target)
+    actual_ret = raw_data['games']['retention'].get(target)
+    if not actual_nru or not actual_ret:
+        raise HTTPException(status_code=400, detail=f"'{target}'의 실측 NRU/Retention 데이터가 없습니다.")
+    actual_pr_data = raw_data['games']['payment_rate'].get(target)
+    actual_arppu_data = raw_data['games']['arppu'].get(target)
+
+    # 2. Leave-One-Out: 입력에서 대상 게임 강제 제외
+    pin = bt.projection_input.model_copy(deep=True)
+    pin.retention.selected_games = [g for g in pin.retention.selected_games if g != target]
+    pin.nru.selected_games = [g for g in pin.nru.selected_games if g != target]
+    pin.revenue.selected_games_pr = [g for g in pin.revenue.selected_games_pr if g != target]
+    pin.revenue.selected_games_arppu = [g for g in pin.revenue.selected_games_arppu if g != target]
+
+    # 2.5 Auto-Calibrate: 실측 초기값을 입력으로 사용 (입력추정오차 제거 → 순수 모델오차 측정)
+    if bt.auto_calibrate:
+        actual_d1_nru = int(actual_nru[0]) if actual_nru else 10000
+        actual_d1_ret = float(actual_ret[0]) if actual_ret else 0.4
+        pin.nru.d1_nru = {
+            "best": int(actual_d1_nru * 1.1),
+            "normal": actual_d1_nru,
+            "worst": int(actual_d1_nru * 0.9),
+        }
+        pin.retention.target_d1_retention = {
+            "best": min(0.95, actual_d1_ret * 1.1),
+            "normal": actual_d1_ret,
+            "worst": actual_d1_ret * 0.9,
+        }
+        # 예산 기반 NRU 자동산출 비활성화 (실측 D1 NRU 직접 사용)
+        pin.nru.ua_budget = 0
+        pin.nru.brand_budget = 0
+
+    # 3. 예측 실행 — V13.1: 내부 벤치마크에서도 target family 제외 (LOFO 무누수)
+    pin.exclude_family = GAME_FAMILY_MAP_V13.get(target, target)
+    prediction = await calculate_projection(pin)
+
+    # 4. Actual 시리즈 구성 — 실측 DAU/Revenue가 있으면 우선 사용 (V12.5 actuals)
+    actuals_store = raw_data.get('actuals', {})
+    real_actual = actuals_store.get(target)
+
+    if real_actual and real_actual.get('dau'):
+        # 실측 시리즈 직접 사용 (가장 정확)
+        actual_dau = [int(v) for v in real_actual['dau'][:365]]
+        n_days = len(actual_dau)
+        actual_nru_series = [int(v) for v in actual_nru[:n_days]]
+        actual_revenue = [float(v) for v in real_actual.get('revenue_krw', [])[:n_days]]
+        has_revenue = bool(actual_revenue) and sum(actual_revenue) > 0
+        actual_source = "measured"
+    else:
+        # 폴백: 코호트 매트릭스 재구성 (GROUP A 등 DAU 시리즈 미보유 게임)
+        n_days = min(len(actual_nru), 365)
+        actual_ret_curve = _fit_extend_retention(actual_ret, 365)
+        actual_nru_series = [int(v) for v in actual_nru[:n_days]]
+        actual_dau = calculate_dau_matrix(actual_nru_series, actual_ret_curve, n_days)
+        actual_revenue = []
+        has_revenue = bool(actual_pr_data and actual_arppu_data)
+        if has_revenue:
+            for d in range(n_days):
+                pr_v = actual_pr_data[d] if d < len(actual_pr_data) else (actual_pr_data[-1] if actual_pr_data else 0)
+                ar_v = actual_arppu_data[d] if d < len(actual_arppu_data) else (actual_arppu_data[-1] if actual_arppu_data else 0)
+                actual_revenue.append(actual_dau[d] * pr_v * ar_v)
+        actual_source = "reconstructed"
+
+    # 5. 예측 시리즈 추출 + V12.5.1 보정 적용
+    pred = {s: {k: list(prediction["results"][s]["full_data"][k]) for k in ["revenue", "dau", "nru"]}
+            for s in ["best", "normal", "worst"]}
+
+    # 5.1 운영중기 보정: 기존 유저베이스(initial_dau)를 베테랑 감쇠로 추가
+    #     자동산출: 실측 D1 DAU - D1 NRU (진짜 런칭게임은 자동으로 ≈0)
+    initial_dau = bt.initial_dau
+    if initial_dau is None and real_actual and real_actual.get('dau'):
+        initial_dau = max(0, int(real_actual['dau'][0]) - int(actual_nru[0]))
+    initial_dau = initial_dau or 0
+
+    # 운영중기 판정: 기존베이스가 D1 NRU의 3배 이상이면 운영중기 슬라이스
+    is_midlife = initial_dau > 3 * max(1, int(actual_nru[0]))
+    veteran_b = VETERAN_DECAY_B
+    calibration_window = 0
+    if is_midlife and real_actual and len(real_actual.get('dau', [])) >= 30:
+        # 시계열 표준기법: 첫 30일(train)로 감쇠율 피팅 → D31+(test)로 평가
+        d0 = float(real_actual['dau'][0])
+        d29 = float(real_actual['dau'][29])
+        if d0 > 0 and d29 > 0:
+            ratio = d29 / d0
+            import math as _math
+            veteran_b = _math.log(max(0.3, min(1.5, ratio))) / _math.log(395.0 / 365.0)
+            veteran_b = max(-8.0, min(0.5, veteran_b))
+            calibration_window = 30
+
+    if initial_dau > 0:
+        for s in ["best", "normal", "worst"]:
+            for d in range(min(365, len(pred[s]["dau"]))):
+                veteran = initial_dau * (((365 + d) / 365) ** veteran_b)
+                base_dau = pred[s]["dau"][d]
+                arpdau = (pred[s]["revenue"][d] / base_dau) if base_dau > 0 else 0
+                pred[s]["dau"][d] = base_dau + veteran
+                pred[s]["revenue"][d] = pred[s]["revenue"][d] + veteran * arpdau
+
+    # 5.2 B2P 모드: Revenue = NRU × 순단가 (F2P 공식 대체)
+    if bt.b2p_mode and bt.package_price_net_krw and bt.package_price_net_krw > 0:
+        for s in ["best", "normal", "worst"]:
+            pred[s]["revenue"] = [nru_v * bt.package_price_net_krw for nru_v in pred[s]["nru"]]
+
+    # 5.3 리전 과금력 보정
+    rf = bt.region_monetization_factor or 1.0
+    if rf != 1.0:
+        for s in ["best", "normal", "worst"]:
+            pred[s]["revenue"] = [v * rf for v in pred[s]["revenue"]]
+
+    pred_rev_normal = pred["normal"]["revenue"][:n_days]
+    pred_dau_normal = pred["normal"]["dau"][:n_days]
+
+    # 6. 메트릭 계산
+    periods = {"d1_30": (0, 30), "d31_90": (30, 90), "d91_180": (90, 180), "d181_365": (180, 365)}
+    mape_by_period = {}
+    for label, (s, e) in periods.items():
+        e2 = min(e, n_days)
+        if s >= n_days:
+            mape_by_period[label] = None
+            continue
+        if has_revenue:
+            mape_by_period[label] = _mape(pred_rev_normal[s:e2], actual_revenue[s:e2])
+        else:
+            mape_by_period[label] = _mape(pred_dau_normal[s:e2], [float(v) for v in actual_dau[s:e2]])
+
+    cumulative_error = None
+    if has_revenue and sum(actual_revenue) > 0:
+        cumulative_error = (sum(pred_rev_normal) - sum(actual_revenue)) / sum(actual_revenue)
+
+    # V13 P2: horizon별 누적 log-residual (D30/90/180/365, 관측 없으면 null — 생존편향 방지)
+    horizon_residuals = {}
+    for hz in [30, 90, 180, 365]:
+        if has_revenue and n_days >= hz:
+            a_cum = sum(actual_revenue[:hz]); p_cum = sum(pred_rev_normal[:hz])
+            horizon_residuals[f"D{hz}"] = round(float(np.log(max(p_cum, 1) / max(a_cum, 1))), 4) if a_cum > 0 else None
+        else:
+            horizon_residuals[f"D{hz}"] = None
+
+    # Peak DAU 오차
+    actual_peak = max(actual_dau) if actual_dau else 0
+    actual_peak_day = actual_dau.index(actual_peak) + 1 if actual_dau else 0
+    pred_peak = max(pred_dau_normal) if pred_dau_normal else 0
+    pred_peak_day = pred_dau_normal.index(pred_peak) + 1 if pred_dau_normal else 0
+    peak_dau_error = {
+        "size_error": (pred_peak - actual_peak) / actual_peak if actual_peak > 0 else None,
+        "timing_error_days": pred_peak_day - actual_peak_day,
+        "actual_peak": int(actual_peak), "predicted_peak": int(pred_peak),
+    }
+
+    # Band Coverage: 실측이 Worst~Best 밴드 안에 들어온 비율
+    target_series_actual = actual_revenue if has_revenue else [float(v) for v in actual_dau]
+    target_key = "revenue" if has_revenue else "dau"
+    band_hits = 0
+    band_total = 0
+    for d in range(n_days):
+        a = target_series_actual[d]
+        if a <= 0:
+            continue
+        lo = min(pred["worst"][target_key][d], pred["best"][target_key][d])
+        hi = max(pred["worst"][target_key][d], pred["best"][target_key][d])
+        band_total += 1
+        if lo <= a <= hi:
+            band_hits += 1
+    band_coverage = band_hits / band_total if band_total > 0 else None
+
+    # 종합 등급
+    def grade(mape30, coverage):
+        score = 0
+        if mape30 is not None:
+            score += max(0, 50 - mape30 * 100)  # MAPE 0%=50점, 50%=0점
+        if coverage is not None:
+            score += coverage * 50               # 커버리지 100%=50점
+        if score >= 85: return "A"
+        if score >= 70: return "B"
+        if score >= 55: return "C"
+        if score >= 40: return "D"
+        return "F"
+
+    return sanitize_for_json({
+        "status": "success",
+        "target_game": target,
+        "target_game_display": get_anonymized_game_name(target),
+        "actual_days_available": n_days,
+        "has_revenue_actual": has_revenue,
+        "actual_source": actual_source,
+        "adjustments": {
+            "initial_dau_applied": initial_dau,
+            "is_midlife_slice": is_midlife,
+            "veteran_decay_b": round(veteran_b, 3),
+            "calibration_window_days": calibration_window,
+            "region_monetization_factor": rf,
+            "b2p_mode": bool(bt.b2p_mode),
+        },
+        "prediction_bands": {
+            "best": {k: pred["best"][k][:n_days] for k in ["revenue", "dau", "nru"]},
+            "normal": {k: pred["normal"][k][:n_days] for k in ["revenue", "dau", "nru"]},
+            "worst": {k: pred["worst"][k][:n_days] for k in ["revenue", "dau", "nru"]},
+        },
+        "actual": {
+            "revenue": actual_revenue if has_revenue else None,
+            "dau": actual_dau,
+            "nru": actual_nru_series,
+        },
+        "metrics": {
+            "mape_by_period": mape_by_period,
+            "cumulative_revenue_error": cumulative_error,
+            "peak_dau_error": peak_dau_error,
+            "band_coverage": band_coverage,
+            "horizon_residuals": horizon_residuals,
+            "metric_basis": "revenue" if has_revenue else "dau",
+        },
+        "grade": grade(mape_by_period.get("d1_30"), band_coverage),
+    })
+
+@app.get("/api/backtest/available-games")
+async def get_backtest_games():
+    """백테스트 가능한 게임 목록 (NRU+Retention 실측 보유)"""
+    raw_data = load_raw_data()
+    games = []
+    for g in raw_data['games']['nru'].keys():
+        if g in raw_data['games']['retention']:
+            games.append({
+                "id": g,
+                "display": get_anonymized_game_name(g),
+                "has_revenue": g in raw_data['games']['payment_rate'] and g in raw_data['games']['arppu'],
+                "has_measured_actuals": g in raw_data.get('actuals', {}),
+                "days": len(raw_data['games']['nru'][g]),
+            })
+    return {"games": games}
+
+# 게임별 기본 메타 (일괄 백테스트용)
+# region_monetization_factor: 참조표본 대비 해당 리전의 과금력 배수 (내부 DNDM 실측: SEA=NA×0.12, SA=NA×0.07)
+# b2p + package_price_net_krw: B2P 게임은 Revenue = NRU × 순단가로 예측
+BACKTEST_GAME_META = {
+    "DNDM (NA)": {"genre": "Extraction Shooter", "platforms": ["Mobile"], "launch": "2025-02-05", "category": "launch"},
+    "DNDM (SEA)": {"genre": "Extraction Shooter", "platforms": ["Mobile"], "launch": "2025-06-11",
+                   "region_monetization_factor": 0.12, "category": "launch"},
+    "DNDM (SA)": {"genre": "Extraction Shooter", "platforms": ["Mobile"], "launch": "2025-06-11",
+                  "region_monetization_factor": 0.07, "category": "launch"},
+    "PUBG (PC/B2P/2018)": {"genre": "Battle Royale", "platforms": ["PC"], "launch": "2018-01-11", "category": "live_slice"},
+    "PUBG (PC/F2P/2022)": {"genre": "Battle Royale", "platforms": ["PC"], "launch": "2022-01-12", "category": "live_slice"},
+    "PUBGM (KR+JP/Launch-2019)": {"genre": "Battle Royale", "platforms": ["Mobile"], "launch": "2019-10-01", "category": "live_slice"},
+    "PUBGM (KR+JP/Stable-2022)": {"genre": "Battle Royale", "platforms": ["Mobile"], "launch": "2022-02-14", "category": "live_slice"},
+    "inZOI": {"genre": "Simulation", "platforms": ["PC"], "launch": "2025-03-28",
+              "b2p": True, "package_price_net_krw": 32270, "category": "launch"},
+    "PUBG (Console/2017)": {"genre": "Battle Royale", "platforms": ["Console"], "launch": "2017-12-12",
+              "b2p": True, "package_price_net_krw": 22970, "category": "launch"},
+}
+
+# 운영중기 기존 유저베이스 감쇠율: 베테랑 코호트(가입 1년+ 가정)의 Power Law 연장
+VETERAN_DECAY_B = -0.25  # (365+d)/365 ^ b → 연간 약 -16% 자연감소
+
+# 전체 게임 장르 맵 (유사 표본 자동 선택용)
+GAME_GENRE_MAP = {
+    "메M(대만)": "MMORPG", "메M(한국)": "MMORPG", "AxE(대만)": "MMORPG", "AxE(한국)": "MMORPG",
+    "AxE(일본)": "MMORPG", "V4(한국)": "MMORPG", "카이저(한국)": "MMORPG",
+    "트라하(한국)": "MMORPG", "트라하(일본)": "MMORPG", "라플라스M(앱애니)": "MMORPG",
+    "MOE(한국)": "SRPG", "MOE(글로벌)": "SRPG", "MOE(일본대만)": "SRPG",
+    "조조전(한국)": "SRPG", "조조전(일본)": "SRPG", "조조전(대만)": "SRPG", "조조전(글로벌)": "SRPG",
+    "다크어벤져3(한국)": "Action RPG", "다크어벤져3(글로벌)": "Action RPG", "다크어벤져3(일본)": "Action RPG",
+    "오버히트(한국)": "Collector RPG", "오버히트(일본)": "Collector RPG", "오버히트(글로벌)": "Collector RPG",
+    "나이트워커(중국)": "Action RPG",
+    "슈퍼피플(글로벌)": "Battle Royale",
+    "PUBG (PC/B2P/2018)": "Battle Royale", "PUBG (PC/F2P/2022)": "Battle Royale",
+    "PUBGM (KR+JP/Launch-2019)": "Battle Royale", "PUBGM (KR+JP/Stable-2022)": "Battle Royale",
+    "DNDM (NA)": "Extraction Shooter", "DNDM (SEA)": "Extraction Shooter", "DNDM (SA)": "Extraction Shooter",
+    "inZOI": "Simulation",
+    "Arena Breakout(글로벌-벤치마크)": "Extraction Shooter",
+}
+
+def _select_similar_games(target: str, genre: str, raw_data: dict, max_n: int = 5) -> List[str]:
+    """동일 장르 우선 → 부족하면 유사 장르 → 그래도 부족하면 전체에서 보충"""
+    GENRE_NEIGHBORS = {
+        "Extraction Shooter": ["Battle Royale", "FPS"],
+        "Battle Royale": ["Extraction Shooter", "FPS"],
+        "Simulation": ["Casual", "Strategy"],
+        "MMORPG": ["Action RPG"],
+        "Action RPG": ["MMORPG"],
+        "SRPG": ["Collector RPG", "Strategy"],
+        "Collector RPG": ["SRPG"],
+    }
+    # V13 P2: LOFO — 대상 game family 전체를 표본에서 제외 (headline 기준)
+    GAME_FAMILY = {
+        "메M(대만)": "mem", "메M(한국)": "mem", "AxE(대만)": "axe", "AxE(한국)": "axe", "AxE(일본)": "axe",
+        "V4(한국)": "v4", "카이저(한국)": "kaiser", "트라하(한국)": "traha", "트라하(일본)": "traha",
+        "라플라스M(앱애니)": "laplace", "MOE(한국)": "moe", "MOE(글로벌)": "moe", "MOE(일본대만)": "moe",
+        "조조전(한국)": "jojo", "조조전(일본)": "jojo", "조조전(대만)": "jojo", "조조전(글로벌)": "jojo",
+        "다크어벤져3(한국)": "da3", "다크어벤져3(글로벌)": "da3", "다크어벤져3(일본)": "da3",
+        "오버히트(한국)": "overhit", "오버히트(일본)": "overhit", "오버히트(글로벌)": "overhit",
+        "나이트워커(중국)": "nightwalker", "슈퍼피플(글로벌)": "superpeople",
+        "PUBG (PC/B2P/2018)": "pubg_pc", "PUBG (PC/F2P/2022)": "pubg_pc",
+        "PUBGM (KR+JP/Launch-2019)": "pubgm", "PUBGM (KR+JP/Stable-2022)": "pubgm",
+        "DNDM (NA)": "dndm", "DNDM (SEA)": "dndm", "DNDM (SA)": "dndm",
+        "inZOI": "inzoi", "Arena Breakout(글로벌-벤치마크)": "arena",
+        "PUBG (Console/2017)": "pubg_console",
+    }
+    target_family = GAME_FAMILY.get(target, target)
+    valid = [g for g in raw_data['games']['nru'].keys()
+             if GAME_FAMILY.get(g, g) != target_family and g in raw_data['games']['retention']]
+    same = [g for g in valid if GAME_GENRE_MAP.get(g) == genre]
+    if len(same) >= max_n:
+        return same[:max_n]
+    neighbors = GENRE_NEIGHBORS.get(genre, [])
+    near = [g for g in valid if GAME_GENRE_MAP.get(g) in neighbors and g not in same]
+    pool = same + near
+    if len(pool) >= 2:
+        return pool[:max_n]
+    rest = [g for g in valid if g not in pool]
+    return (pool + rest)[:max_n]
+
+@app.post("/api/backtest/run-all")
+async def run_all_backtests():
+    """
+    실측 actuals 보유 게임 전체 일괄 백테스트 (auto_calibrate 모드)
+    → 툴 전체 신뢰성 리포트 생성
+    """
+    raw_data = load_raw_data()
+    actuals_games = list(raw_data.get('actuals', {}).keys())
+    all_games = list(raw_data['games']['nru'].keys())
+
+    # V13.1 P2: Pool B (pseudo) 대상 = actuals 없는 게임 (재구성 actual로 LOFO)
+    pseudo_targets = [g for g in all_games
+                      if g not in actuals_games and g in raw_data['games']['retention']
+                      and g in raw_data['games']['payment_rate']]
+
+    reports = []
+    for target in actuals_games + pseudo_targets:
+        _is_pseudo = target not in actuals_games
+        _g, _p = GAME_META_V13.get(target, ("Default", "Mobile"))
+        meta = BACKTEST_GAME_META.get(target,
+            {"genre": _g, "platforms": [_p], "launch": "2024-01-01",
+             "category": "launch" if _is_pseudo else "launch"})
+        # 동일 장르 표본 자동 선택 (대상 제외)
+        similar = _select_similar_games(target, meta["genre"], raw_data, max_n=5)
+        try:
+            bt = BacktestInput(
+                target_game=target,
+                auto_calibrate=True,
+                region_monetization_factor=meta.get("region_monetization_factor", 1.0),
+                b2p_mode=meta.get("b2p", False),
+                package_price_net_krw=meta.get("package_price_net_krw", 0),
+                projection_input=ProjectionInput(
+                    launch_date=meta["launch"], projection_days=365,
+                    retention=RetentionInput(selected_games=similar),
+                    nru=NRUInput(selected_games=similar, d1_nru={"best": 0, "normal": 0, "worst": 0}),
+                    revenue=RevenueInput(selected_games_pr=similar, selected_games_arppu=similar),
+                    blending={"weight": 0.7, "genre": meta["genre"], "platforms": meta["platforms"], "time_decay": True},
+                    quality_score="B", bm_type="Midcore", regions=["global"],
+                    advanced={"arppu_unit": "daily", "liveops_intensity": "Medium",
+                              "two_stage_retention": True, "seasonality_regions": ["global"]},
+                ),
+            )
+            r = await run_backtest(bt)
+            # V12.5.1: 등급 = 누적오차 기준 (일별 MAPE는 노이즈가 커서 보조지표)
+            ce_abs = abs(r["metrics"]["cumulative_revenue_error"]) if r["metrics"]["cumulative_revenue_error"] is not None else None
+            if ce_abs is not None:
+                grade = "A" if ce_abs <= 0.15 else "B" if ce_abs <= 0.30 else "C" if ce_abs <= 0.50 else "D" if ce_abs <= 0.80 else "F"
+            else:
+                grade = r["grade"]
+            reports.append({
+                "game": target, "display": r["target_game_display"], "grade": grade,
+                "category": "pseudo_launch" if _is_pseudo else meta.get("category", "launch"),
+                "game_family": GAME_FAMILY_MAP_V13.get(target, target),
+                "mape_d1_30": r["metrics"]["mape_by_period"].get("d1_30"),
+                "cumulative_error": r["metrics"]["cumulative_revenue_error"],
+                "band_coverage": r["metrics"]["band_coverage"],
+                "horizon_residuals": r["metrics"].get("horizon_residuals", {}),
+                "actual_pool": "pseudo" if _is_pseudo else "observed",
+                "region_factor_source": ("posthoc_target_derived_LEAKAGE_FLAG"
+                    if meta.get("region_monetization_factor", 1.0) != 1.0 else "none"),
+                "days": r["actual_days_available"],
+            })
+        except Exception as e:
+            reports.append({"game": target, "error": str(e)})
+
+    # 종합 통계 — 카테고리 분리 (launch = 툴 본래 목적 / live_slice = 실험적)
+    def _cat_summary(cat):
+        sub = [r for r in reports if "error" not in r and r.get("category") == cat]
+        valid_ce = [abs(r["cumulative_error"]) for r in sub if r.get("cumulative_error") is not None]
+        valid_cov = [r["band_coverage"] for r in sub if r.get("band_coverage") is not None]
+        return {
+            "games": len(sub),
+            "avg_abs_cumulative_error": float(np.mean(valid_ce)) if valid_ce else None,
+            "avg_band_coverage": float(np.mean(valid_cov)) if valid_cov else None,
+        }
+
+    valid = [r for r in reports if "error" not in r and r.get("mape_d1_30") is not None]
+    summary = {
+        "games_tested": len(reports),
+        "launch_reliability": _cat_summary("launch"),       # ← 헤드라인 지표 (사업부 제출용)
+        "live_slice_experimental": _cat_summary("live_slice"),  # ← 참고용 (런칭예측 툴 범위 밖)
+        "avg_mape_d1_30": float(np.mean([r["mape_d1_30"] for r in valid])) if valid else None,
+        "avg_band_coverage": float(np.mean([r["band_coverage"] for r in valid if r.get("band_coverage") is not None])) if valid else None,
+        "grade_distribution": {},
+    }
+    for r in reports:
+        g = r.get("grade", "ERROR")
+        summary["grade_distribution"][g] = summary["grade_distribution"].get(g, 0) + 1
+
+    # V13 P2: family-weighted headline (family 내 median으로 접기 — Freeze 원칙)
+    def _family_weighted(cat):
+        fams = {}
+        for r in reports:
+            if "error" in r or r.get("category") != cat or r.get("cumulative_error") is None:
+                continue
+            fams.setdefault(r["game_family"], []).append(abs(r["cumulative_error"]))
+        if not fams:
+            return {"families": 0, "family_weighted_abs_error": None}
+        fam_meds = [float(np.median(v)) for v in fams.values()]
+        return {"families": len(fams), "family_weighted_abs_error": float(np.mean(fam_meds))}
+    summary["launch_family_weighted"] = _family_weighted("launch")          # ← headline (observed)
+    summary["live_slice_family_weighted"] = _family_weighted("live_slice")  # ← diagnostic
+    summary["pseudo_family_weighted"] = _family_weighted("pseudo_launch")   # ← Pool B (Conformal 재료)
+
+    # V13 P2: versioned residual store 기록
+    ENGINE_VERSION = "v13.0_internal_resourced"
+    store_path = os.path.join(DATA_DIR, "residual_store.json")
+    try:
+        store = json.load(open(store_path, encoding="utf-8")) if os.path.exists(store_path) else {"entries": []}
+    except Exception:
+        store = {"entries": []}
+    store["entries"] = [e for e in store["entries"] if e.get("engine_version") != ENGINE_VERSION]
+    for r in reports:
+        if "error" in r:
+            continue
+        store["entries"].append({
+            "engine_version": ENGINE_VERSION, "method": "LOFO",
+            "game": r["game"], "game_family": r["game_family"], "category": r["category"],
+            "actual_pool": r["actual_pool"], "horizon_residuals": r["horizon_residuals"],
+            "cumulative_error": r["cumulative_error"], "band_coverage": r["band_coverage"],
+        })
+    store["policy_prior_inflation"] = {"pseudo_pool_factor": 2.0, "clamp": [1.5, 3.0],
+                                        "status": "provisional", "note": "observed<5 family — ratio 추정 금지 (Freeze)"}
+    try:
+        json.dump(store, open(store_path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    except Exception:
+        pass
+
+    return sanitize_for_json({"status": "success", "engine_version": ENGINE_VERSION,
+                              "exclusion_method": "LOFO", "summary": summary, "reports": reports})
+
+# ============================================================
+# V12.5: 크로스 플랫폼 예측 (Phase 1: 플랫폼별 독립 산출 + 합산)
+# ============================================================
+
+
+@app.post("/api/projection/arpdau-forecast")
+async def arpdau_forecast(body: Dict[str, Any]):
+    """V13.6 P4a: recipe/region-aware ARPDAU forecast (Candidate — Shadow A/B 통과 전 /projection 미연결)"""
+    dau = body.get("dau", [])
+    if not dau:
+        raise HTTPException(status_code=400, detail="dau[] 필수")
+    recipe = body.get("recipe")
+    if not recipe:
+        raise HTTPException(status_code=422, detail="recipe 필수 (launch_f2p_iap/live_f2p_iap 등) — silent default 금지")
+    try:
+        f = arp.revenue_forecast(dau, recipe, body.get("genre", "Battle Royale"),
+            body.get("platform", "PC"), body.get("region_group", "GLOBAL"),
+            body.get("percentile", "p50"), body.get("exclude_family"))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    env = arp.monetization_scenario_envelope(dau, recipe, body.get("genre", "Battle Royale"),
+        body.get("platform", "PC"), body.get("region_group", "GLOBAL"))
+    return sanitize_for_json({"status": "success", "forecast": f,
+        "monetization_scenario_envelope": env,
+        "engine_status": "candidate — P4-G3 Shadow A/B 통과 후 /projection 옵션 승격"})
+
+# ============================================================
+# V13.3 P3.5: Product Schedule (waves[]) + Legacy Adapter
+# ============================================================
+class WaveInput(BaseModel):
+    wave_id: str
+    platform: str
+    launch_date: str
+    region_scope: Optional[List[str]] = None
+    projection_input: ProjectionInput
+    identity_policy: Dict[str, Any]
+
+class ProductScheduleInput(BaseModel):
+    product_name: Optional[str] = "product"
+    total_days: int = 1095
+    waves: List[WaveInput]
+    mode_event: Optional[Dict[str, Any]] = None  # V13.6: P4.5 연결 (BR/EX/Both 분해)
+    wave_scale_policy: Optional[Dict[str, Any]] = None  # 명시 선택만 (silent 적용 금지): {source, prior_id, multiplier}
+
+@app.post("/api/projection/product-schedule")
+async def calculate_product_schedule(ps: ProductScheduleInput):
+    from datetime import datetime as _dt
+    if not ps.waves:
+        raise HTTPException(status_code=400, detail="waves[] 필수")
+    dates = [_dt.strptime(w.launch_date, "%Y-%m-%d") for w in ps.waves]
+    t0 = min(dates)
+    wave_results = []
+    for w, d in zip(ps.waves, dates):
+        ptl.validate_identity_policy(w.identity_policy, w.wave_id)  # 사전 검증 (422)
+        pin = w.projection_input.model_copy(deep=True)
+        if pin.blending is None: pin.blending = {}
+        pin.blending["platforms"] = [w.platform]
+        r = await calculate_projection(pin)
+        fd = r["results"]["normal"]["full_data"]
+        wave_results.append({"wave_id": w.wave_id, "platform": w.platform,
+            "launch_date": w.launch_date, "offset_days": (d - t0).days,
+            "identity_policy": w.identity_policy,
+            "dau": fd["dau"], "nru": fd["nru"], "revenue": fd["revenue"]})
+    combined = ptl.combine_waves(wave_results, ps.total_days)
+    # V13.6: P4.5 Mode Expansion API 연결 (옵션)
+    if getattr(ps, "mode_event", None):
+        combined["mode_state"] = ptl.apply_mode_expansion(
+            combined["unique_account_dau"], ps.mode_event, ps.total_days)
+    return sanitize_for_json({"status": "success", "product_name": ps.product_name,
+        "t0": t0.strftime("%Y-%m-%d"), "combined": combined,
+        "synergy": {"retention_lift": 1.00, "arpdau_lift": 1.00, "organic_lift": 1.00}})
+
+class MultiPlatformInput(BaseModel):
+    projection_input: ProjectionInput
+    platform_mix: Dict[str, float]  # {"Mobile": 0.6, "PC": 0.3, "Console": 0.1}
+
+# PUBG 실데이터 기반 플랫폼 계수 (PC 대비)
+PLATFORM_FACTORS = {
+    "PC":      {"arpdau_factor": 1.00, "pur_factor": 1.00},
+    "Console": {"arpdau_factor": 1.60, "pur_factor": 0.85},  # PUBG: Console ARPDAU 1.6x, PUR 0.85x
+    "Mobile":  {"arpdau_factor": 0.65, "pur_factor": 1.30},  # 모바일: 낮은 ARPPU, 높은 PR
+}
+
+@app.post("/api/projection/multiplatform")
+async def calculate_multiplatform(mp: MultiPlatformInput):
+    """
+    플랫폼별 독립 산출 후 합산:
+    - 예산을 platform_mix 비율로 분배
+    - 플랫폼별 벤치마크/표본으로 개별 projection
+    - 일별 시리즈 합산 + 플랫폼별 breakdown 제공
+    """
+    mix = {k: v for k, v in mp.platform_mix.items() if v > 0}
+    total_ratio = sum(mix.values())
+    if total_ratio <= 0:
+        raise HTTPException(status_code=400, detail="platform_mix 비율 합이 0입니다.")
+    mix = {k: v / total_ratio for k, v in mix.items()}  # 정규화
+
+    per_platform = {}
+    for platform, ratio in mix.items():
+        pin = mp.projection_input.model_copy(deep=True)
+        # 예산/NRU 분배
+        if pin.nru.ua_budget:
+            pin.nru.ua_budget = int(pin.nru.ua_budget * ratio)
+        if pin.nru.brand_budget:
+            pin.nru.brand_budget = int(pin.nru.brand_budget * ratio)
+        if pin.nru.sustaining_mkt_budget_monthly:
+            pin.nru.sustaining_mkt_budget_monthly = int(pin.nru.sustaining_mkt_budget_monthly * ratio)
+        pin.nru.d1_nru = {k: int(v * ratio) for k, v in pin.nru.d1_nru.items()}
+        # 플랫폼 고정
+        if pin.blending is None:
+            pin.blending = {}
+        pin.blending["platforms"] = [platform]
+        per_platform[platform] = await calculate_projection(pin)
+
+    # 합산
+    days = mp.projection_input.projection_days
+    combined = {"best": {}, "normal": {}, "worst": {}}
+    for scenario in ["best", "normal", "worst"]:
+        for key in ["revenue", "dau", "nru"]:
+            series = [0.0] * days
+            for platform, result in per_platform.items():
+                p_series = result["results"][scenario]["full_data"][key]
+                factor = PLATFORM_FACTORS.get(platform, {}).get("arpdau_factor", 1.0) if key == "revenue" else 1.0
+                for d in range(min(days, len(p_series))):
+                    series[d] += p_series[d] * (factor if key == "revenue" else 1.0)
+            combined[scenario][key] = series
+
+        combined[scenario]["summary"] = {
+            "gross_revenue": sum(combined[scenario]["revenue"]),
+            "total_nru": int(sum(combined[scenario]["nru"])),
+            "peak_dau": int(max(combined[scenario]["dau"])) if combined[scenario]["dau"] else 0,
+            "average_dau": int(np.mean(combined[scenario]["dau"])) if combined[scenario]["dau"] else 0,
+        }
+
+    return sanitize_for_json({
+        "status": "success",
+        "platform_mix": mix,
+        "platform_factors_applied": {p: PLATFORM_FACTORS.get(p) for p in mix},
+        "combined": combined,
+        "per_platform_summary": {
+            p: {s: r["summary"][s] for s in ["best", "normal", "worst"]}
+            for p, r in per_platform.items()
+        },
+    })
 
 if __name__ == "__main__":
     import uvicorn

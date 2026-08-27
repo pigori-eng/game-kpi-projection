@@ -1,0 +1,59 @@
+{
+ "seasonality_monthly_pubg_pc": {
+  "factors": {
+   "01": 1.1722,
+   "02": 1.0231,
+   "03": 0.7074,
+   "04": 0.8904,
+   "05": 0.6425,
+   "06": 1.0259,
+   "07": 1.2231,
+   "08": 1.1772,
+   "09": 1.0945,
+   "10": 0.818,
+   "11": 1.3527,
+   "12": 0.8731
+  },
+  "source": "PUBG PC 성숙기(2020+) 6개년 월별 일평균매출, 연도 정규화",
+  "measurement_method": "first_party_observed",
+  "status": "PROMOTED — V13.2에서 엔진 연결 (Kyle 승인, 관측근거: 이중적용+합성스파이크 플래그)"
+ },
+ "weekday_factors_pubg_pc": {
+  "factors": {
+   "0": 0.7608,
+   "1": 0.7826,
+   "2": 1.7156,
+   "3": 1.0165,
+   "4": 1.0163,
+   "5": 0.951,
+   "6": 0.7435
+  },
+  "note": "0=월 ... 6=일, PUBG PC F2P 365d 실측",
+  "measurement_method": "first_party_observed"
+ },
+ "wave_scale_priors": {
+  "pubg_console_after_pc": {
+   "source_wave": "pc",
+   "target_platform": "console",
+   "region_scope": "global",
+   "revenue_ratio_y1": 0.207,
+   "dau_ratio_y1": 0.125,
+   "prior_source": "PUBG Console actual 365d",
+   "transfer_scope": "market_wave_scale_only",
+   "prior_confidence": "medium",
+   "data_version": "v13.3"
+  },
+  "pubg_mobile_after_pc": {
+   "source_wave": "pc",
+   "target_platform": "mobile",
+   "region_scope": "KR+JP만(주의)",
+   "revenue_ratio_y1": 0.275,
+   "dau_ratio_y1": 0.467,
+   "prior_source": "PUBGM KR+JP Launch actual",
+   "transfer_scope": "market_wave_scale_only",
+   "prior_confidence": "low_medium",
+   "data_version": "v13.3",
+   "note": "글로벌 아님 — KR+JP 한정 규모비. overlap/retention lift 전이 금지"
+  }
+ }
+}
