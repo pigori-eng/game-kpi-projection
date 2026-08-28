@@ -804,9 +804,9 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
         <div className="bg-amber-50 border-2 border-amber-400 rounded-xl p-4 flex items-start gap-3">
           <span className="text-2xl">⚠️</span>
           <div>
-            <h3 className="font-bold text-amber-800 mb-1">시장 평균 데이터만 사용되었습니다</h3>
+            <h3 className="font-bold text-amber-800 mb-1">표본 미선택 — 내부 장르분포 벤치마크 100%로 계산됨</h3>
             <p className="text-sm text-amber-700">
-              표본 게임이 선택되지 않아 벤치마크 100%로 계산되었습니다. 
+              선택 표본 게임이 없어 블렌딩 가중치가 벤치마크 100%입니다. (V13.1부터 벤치마크는 <b>내부 Pool A/B 장르분포</b>에서 산출 — 외부 시장데이터 아님, Reliability Card의 benchmark_source 참조)
               더 정확한 프로젝션을 위해 유사 게임을 표본으로 선택해주세요.
             </p>
           </div>

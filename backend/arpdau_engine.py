@@ -21,7 +21,9 @@ _META = {
 }
 RECIPE_COMPAT = {"launch_f2p_iap": {"launch_f2p_iap","live_f2p_iap"},
                  "live_f2p_iap": {"live_f2p_iap","launch_f2p_iap"},
-                 "launch_b2p_package": {"launch_b2p_package"}}
+                 "launch_b2p_package": {"launch_b2p_package"},
+                 # V13.7 J: Hybrid는 IAP 부분만 F2P pool과 호환 (DLC 매출은 별도 basis — 라벨 명시)
+                 "hybrid_f2p_dlc": {"hybrid_f2p_dlc","launch_f2p_iap","live_f2p_iap"}}
 
 def build_arpdau_priors(exclude_family: Optional[str] = None) -> Dict[str, Any]:
     raw = json.load(open(os.path.join(_DATA, "raw_game_data.json"), encoding="utf-8"))

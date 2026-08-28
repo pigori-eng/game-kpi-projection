@@ -55,5 +55,51 @@
    "data_version": "v13.3",
    "note": "글로벌 아님 — KR+JP 한정 규모비. overlap/retention lift 전이 금지"
   }
+ },
+ "newstate_priors": {
+  "source": "Sensor Tower measured (2021-11 ~ 2026-08, 일별 DAU + 월별 80개국 수익)",
+  "platform_scope": "MOBILE_ONLY — GW는 PC 기반 크로스플랫폼이므로 Mobile wave의 reservoir/region prior로만 전이 (PC/Console 직접 전이 금지)",
+  "prereg_to_download_ratio": {
+   "m0": 0.5,
+   "m3": 0.59,
+   "definition": "Launch Download / Pre-registration SCALE RATIO (aggregate) — 개인 단위 전환율 아님 (M0 다운로드에는 organic/paid/featuring 포함, 피드백15 §3)",
+   "individual_prereg_activation_rate": "unknown — cohort 추적 데이터 필요",
+   "transfer_scope": "mobile_wave_reservoir_scale_only",
+   "confidence": "medium",
+   "activation_usage_tag": "Scenario assumption informed by NEW STATE launch-scale evidence — individual activation UNMEASURED. measured 표현 금지 (피드백17 §6)"
+  },
+  "launch_curve": {
+   "d1_dau": 2730000,
+   "peak30_dau": 8240000,
+   "decay_pct_of_peak": {
+    "d30": 0.235,
+    "d90": 0.107,
+    "d180": 0.078,
+    "d365": 0.05
+   },
+   "lesson": "IP → Acquisition 증거 / Retention·BM은 별개 (franchise launch n=2: PUBG=안착성공, NEW STATE=안착실패)"
+  },
+  "region_rpd_relative_to_us": {
+   "JP": 2.9,
+   "KR": 1.1,
+   "US": 1.0,
+   "DE": 0.67,
+   "GB": 0.51,
+   "FR": 0.49,
+   "TR": 0.14,
+   "BR": 0.1,
+   "SEA_avg": 0.13,
+   "IN": 0.02,
+   "usage": "hierarchical shrinkage 재료 — 직접 상수화 금지 (단일 게임 BM 효과 혼재, 피드백15 §10). V13.7.1에서는 EU factor만 proxy→shrunk 승격"
+  },
+  "event_uplift_prior": {
+   "weekly_spike_count_4.8y": 86,
+   "status": "inferred — DAU uplift는 기존Active+복귀+신규의 합. Return AU 확보 시 reactivation prior로 승격 (피드백15 §11)"
+  },
+  "ua_cost_observed": {
+   "KR_CPI_krw": 3578,
+   "exec_cpa_krw": 5121,
+   "caveat": "spend level/objective/audience 미분화 단일점 — 다차원 CPI prior 및 Spend→CPI curve는 V14.2 (Nixtla 연동)"
+  }
  }
 }

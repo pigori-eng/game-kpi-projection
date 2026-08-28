@@ -1,7 +1,9 @@
-# 🎮 Game KPI Projection Tool
+# 🎮 Game KPI Projection Tool — V14.0.1
 
-회귀분석 및 벤치마크 기반의 게임 KPI 예측 시뮬레이션 도구입니다.  
-내부 표본 게임 데이터와 시장 벤치마크를 블렌딩하여 Retention, NRU, DAU, Revenue를 365일간 예측합니다.
+회귀분석 및 **내부 실측 데이터** 기반의 게임 KPI 예측 시뮬레이션 도구입니다.  
+단일 게임 365일 프로젝션부터 **순차출시 × 멀티모드 × 크로스프로그레션 3~4개년 제품 프로젝션**까지 지원합니다.
+
+> **이 툴의 목적은 "매출을 맞히는 것"이 아니라, "어떤 가정에서 이 숫자가 나왔고, 어떤 근거가 약하며, 지난번 대비 왜 변했는가"에 답하는 것입니다.**
 
 ---
 
@@ -20,6 +22,13 @@
 11. [입력 파라미터](#11-입력-파라미터)
 12. [API 엔드포인트](#12-api-엔드포인트)
 13. [배포 가이드](#13-배포-가이드)
+14. [Product 3Y Timeline (순차출시·멀티모드)](#14-product-3y-timeline-순차출시멀티모드)
+15. [신뢰성 체계 (Contract · LOFO · Evidence)](#15-신뢰성-체계-contract--lofo--evidence)
+16. [Freeze 설계 원칙](#16-freeze-설계-원칙)
+17. [V14 모듈 상태](#17-v14-모듈-상태)
+18. [GW 참조 케이스](#18-gw-참조-케이스)
+19. [테스트](#19-테스트)
+20. [버전 히스토리 · 알려진 한계](#20-버전-히스토리--알려진-한계)
 
 ---
 
@@ -36,8 +45,13 @@
 
 | 구분 | 설명 |
 |------|------|
-| 내부 표본 | 자사 출시 게임 15종의 실제 KPI 데이터 (365일) |
-| 시장 벤치마크 | SensorTower, Newzoo 등 공개 데이터 기반 장르/플랫폼별 평균값 |
+| 내부 표본 (Pool A) | 자사 출시 게임 **35종**의 실제 KPI 데이터 (retention/NRU/PR/ARPPU/actuals) |
+| 내부 벤치마크 | **장르\|플랫폼별 내부 표본 분포**에서 산출 (V13부터 외부 절대값 미사용) |
+| External Evidence | Newzoo/SensorTower peer set — **상대 비교·경고 전용, P50 주입 금지** |
+| Internal Priors | PUBG 실측 계절성/wave scale/stickiness, NEW STATE 런칭 evidence |
+
+> ⚠️ **V13 이후 변경**: 시장 벤치마크 절대값을 예측에 직접 블렌딩하지 않습니다.  
+> 외부 데이터는 정의(semantics)가 내부와 달라 Evidence Layer로 격리되었습니다.
 
 ### 1.3 핵심 계산 흐름
 
@@ -50,6 +64,15 @@
 PR/ARPPU 설정    →    Revenue 계산               →    일별/총 매출
 ────────────────────────────────────────────────────────────────
 ```
+
+### 1.4 두 개의 프로젝션 모드
+
+| 모드 | 용도 | 엔드포인트 |
+|------|------|-----------|
+| **Component Projection** | 단일 플랫폼·단일 런칭 365일 sizing (백테스트 검증 범위) | `/api/projection` |
+| **Product 3Y Timeline** | 순차출시(PC→Mobile→Console) + 멀티모드(BR/EX) + 3~4개년 사업성 | `/api/projection/product-3y` |
+
+화면 상단 토글로 전환합니다. → 상세: [14장](#14-product-3y-timeline-순차출시멀티모드)
 
 ---
 
@@ -72,16 +95,29 @@ game-kpi-projection/
 ├── frontend/
 │   └── src/
 │       ├── components/
-│       │   ├── InputPanel.tsx      # 입력 패널
-│       │   ├── ResultsPanel.tsx    # 결과 표시
-│       │   └── AIInsightPanel.tsx  # AI 분석
-│       ├── types/index.ts          # 타입 정의
-│       └── utils/api.ts            # API 호출
+│       │   ├── InputPanel.tsx            # 입력 패널 (Component 모드)
+│       │   ├── ResultsPanel.tsx          # 결과 표시 + P&L/BEP 레이어
+│       │   ├── ProductTimelinePanel.tsx  # 🆕 Product 3Y (Wave/Mode/Bridge/Badge)
+│       │   └── AIInsightPanel.tsx        # AI 분석 (Reliability Card 연동)
+│       ├── types/index.ts                # 타입 정의
+│       └── utils/api.ts                  # API 호출
 ├── backend/
-│   └── main.py                     # FastAPI 서버 + 계산 엔진
+│   ├── main.py                     # FastAPI 서버 + 레거시 계산 엔진 + 백테스트
+│   ├── contracts.py                # 🆕 Metric Contract (6차원 검증)
+│   ├── external_evidence.py        # 🆕 외부 데이터 격리 (Evidence 전용)
+│   ├── product_timeline.py         # 🆕 Wave/Union Dedup/Identity/Mode State
+│   ├── product_3y.py               # 🆕 3Y 오케스트레이터 (P&L/BEP/Bridge/Badge/Hurdle)
+│   ├── arpdau_engine.py            # 🆕 ARPDAU candidate (Shadow)
+│   ├── v14_engines.py              # 🆕 V14.1~14.4 (전부 opt-in)
+│   └── tests/                      # 🆕 pytest (fast contract / slow integration)
+├── scripts/
+│   └── build_external_evidence.py  # External Evidence 빌더 (재현성)
 └── data/
-    ├── raw_game_data.json          # 표본 게임 데이터
-    └── default_config.json         # 기본 설정값
+    ├── raw_game_data.json          # 내부 35종 실측 데이터
+    ├── internal_priors.json        # PUBG 계절성/wave scale, NEW STATE priors
+    ├── external_evidence.json      # Newzoo peer set (frozen IDs)
+    ├── residual_store.json         # LOFO 백테스트 잔차 (Pool A/B)
+    └── benchmark_data.json         # 레거시 벤치마크 (참조용)
 ```
 
 ---
@@ -433,6 +469,35 @@ infra_cost = gross_revenue * infra_cost_ratio    # 인프라 비용 (3%)
 net_revenue = gross_revenue - market_fee - vat - infra_cost
 ```
 
+### 6.7 P&L Waterfall + BEP (V13.7.1~)
+
+결과 레이어가 **6 Gross Revenue → 7 P&L Waterfall → 8 BEP** 순으로 분리되었습니다.
+
+```
+Gross Bookings (유저 결제 총액)
+  − 플랫폼 수수료 30%
+  − VAT/결제수수료 10%
+  − 인프라 3%
+= Net Revenue (Gross × 0.57)
+  − 마케팅 (Launch UA + Brand + Sustain)      ← Marketing Ledger 단일 소스
+= Contribution Profit
+  − 인건비 (annual_hr_cost_krw 입력)
+= Operating Profit
+```
+
+**BEP 2종** (결과 최종 레이어):
+
+| 구분 | 정의 |
+|------|------|
+| Marketing BEP | 누적 Net ≥ 누적 마케팅비 도달 월 (`M+15` 형식) |
+| Full Cost BEP | + 누적 인건비 + 개발비(`dev_cost_total_krw`) 도달 월. 미달 시 잔여액 표시 |
+
+> ⚠️ **서스테인 마케팅 정의 계약**: 기본값은 `launch UA의 연 10%`입니다.  
+> **매출 % 방식은 코드에서 거부**됩니다 (매출↑→마케팅↑→매출↑ 순환구조 방지).
+
+> ⚠️ **Marketing Ledger**: Acquisition 엔진과 P&L이 **동일한 마케팅비 소스**를 참조합니다.  
+> 이중차감/누락을 막기 위한 단일 원장 구조입니다.
+
 ---
 
 ## 7. 마케팅 효율 계산
@@ -603,6 +668,19 @@ def calculate_seasonality(regions, launch_date, days=365):
 # NRU에 계절성 적용
 nru_series = [int(nru * sf) for nru, sf in zip(nru_series, seasonality_factors)]
 ```
+
+
+### 9.3 ⚠️ V13.2 변경 — 실측 계절성으로 교체
+
+기존 구현에는 **합성 랜덤 스파이크/노이즈**가 포함되어 있었고, 계절성이 **NRU와 ARPPU에 이중 적용**되는 문제가 있었습니다.
+
+| 항목 | V13.2 이전 | V13.2 이후 |
+|------|-----------|-----------|
+| 월별 계수 | 지역별 하드코딩 | **PUBG PC 6개년 실측 월계수** (`internal_priors.json`) |
+| 주말 효과 | 랜덤 weekly factor | **결정적 주말계수 +10%** (policy, 문서화) |
+| 이벤트 스파이크 | 랜덤 event factor | **제거** (실측 라이브 이벤트는 V14.3 Live Lifecycle 몫) |
+| 적용 경로 | NRU × 계수, ARPPU × 계수 (이중) | **Revenue 경로 1회만** |
+| 총량 | 변동 | **평균 1.0 정규화** (계절성은 분포 이동만, 총량 보존) |
 
 ---
 
@@ -782,7 +860,19 @@ POST /api/projection
 }
 ```
 
-### 12.3 AI 상태 확인
+### 12.3 Product 3Y 엔드포인트 (V13.7~)
+
+```http
+POST /api/projection/product-3y                     # 3Y 제품 프로젝션 (P&L/BEP/Bridge/Badge 포함)
+POST /api/projection/product-3y/excel               # Excel 14시트 다운로드
+POST /api/projection/product-3y/official-scenarios  # 공식 3본 (D1 40/50/60)
+POST /api/projection/product-3y/v14-delta-bridge    # V14 모듈별 Δ 분해
+POST /api/projection/product-schedule               # Wave 기반 Unique Account DAU
+POST /api/backtest/run-all                          # True-LOFO 백테스트 (residual store 갱신)
+POST /api/projection/arpdau-forecast                # ARPDAU candidate (Shadow — 공식 아님)
+```
+
+### 12.4 AI 상태 확인
 
 ```http
 GET /api/ai/status
@@ -843,6 +933,401 @@ VITE_API_URL=http://localhost:8000/api
 3. Build Command: `pip install -r requirements.txt`
 4. Start Command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
 5. Environment Variables: `OPENAI_API_KEY` 설정
+
+---
+
+## 14. Product 3Y Timeline (순차출시·멀티모드)
+
+### 14.1 해결하는 문제
+
+단일 `/api/projection`은 **launch_date 하나 + platforms 배열 하나**로 하나의 파이프라인만 만듭니다.  
+따라서 아래를 표현할 수 없습니다.
+
+| 요구사항 | 단일 엔진 | Product 3Y |
+|---------|----------|-----------|
+| PC → Mobile → Console 순차 출시 | ❌ | ✅ Wave별 독립 런칭 |
+| Cross Progression (계정 중복) | ❌ 플랫폼 DAU 단순합 | ✅ Unique Account DAU |
+| BR + Extraction 멀티모드 | ❌ | ✅ BR Only / EX Only / Both |
+| 3~4개년 사업성 | ❌ 365일 | ✅ Launch-relative Y1~Y4 |
+
+### 14.2 Wave 구조
+
+```json
+{
+  "anchor_launch_date": "2029-03-01",
+  "horizon_years": 4,
+  "waves": [
+    {"wave_id": "pc",      "platform": "PC",      "offset_months": 0,
+     "ua_budget": 12e9, "brand_budget": 8e9, "target_cpa": 7500,
+     "prereg_users": 2500000, "prereg_activation_rate": 0.40},
+    {"wave_id": "mobile",  "platform": "Mobile",  "offset_months": 6,  ...},
+    {"wave_id": "console", "platform": "Console", "offset_months": 12, ...}
+  ]
+}
+```
+
+- `wave_id`가 **primary key** (같은 플랫폼이 여러 Wave를 가질 수 있음: `mobile_rok_sea`, `mobile_global`)
+- 플랫폼 순서를 코드에 하드코딩하지 않음 — `launch_date` 정렬 + `wave_id` tie-break
+- 각 Wave는 자체 UA/Brand/CPA/사전등록/리텐션 코호트를 가진 **독립 런칭**
+
+### 14.3 Union Dedup (크로스 프로그레션)
+
+플랫폼 DAU를 단순 합산하면 안 됩니다. 같은 계정이 여러 기기에서 플레이하기 때문입니다.
+
+```
+O_k(t) = min( D_k(t) × ρ_k(t),  U_prev(t),  D_k(t) )
+U_k(t) = U_prev(t) + D_k(t) − O_k(t)
+
+ρ_k(t) = initial + (target − initial) × min(1, t / ramp_days)
+```
+
+자동 성립하는 항등식: `max(platform DAU) ≤ Unique DAU ≤ Σ platform DAU`
+
+**Adoption ≠ Overlap** (반드시 분리):
+
+| 변수 | 정의 | 용도 |
+|------|------|------|
+| `existing_account_adoption` | 신규 플랫폼 활성 유저 중 기존 계정 비율 | **NRU 재계상 방지** (CAC/LTV 정확도) |
+| `same_day_active_overlap` | 신규 플랫폼 DAU 중 같은 날 기존 플랫폼도 활성인 비율 | **DAU dedup** |
+
+기본값 (scenario prior, Aniimo 크로스플랫폼 모델 참조):
+
+| Wave | Adoption | Same-day Overlap |
+|------|----------|------------------|
+| Mobile | 5% → 25% (180d) | 2% → 12% (90d) |
+| Console | 8% → 30% (180d) | 5% → 18% (90d) |
+
+> Console overlap이 더 높은 이유: **동일 슈터 코어 유저의 기기 확장** 성격.  
+> Mobile은 신규 유저풀 확장 비중이 커서 상대적으로 낮게 설정.
+
+### 14.4 Mode State (멀티모드)
+
+```
+Unique DAU = BR Only + EX Only + Both        (상호배타, 항등식 자동 검증)
+Cross-mode Penetration = Both / Unique DAU
+```
+
+`ex_only`, `both` 각각 `initial → target` ramp로 입력 (BR Only = 나머지).  
+기본값: EX Only 10→15%, Both 8→25% (180일 ramp)
+
+> ⚠️ **Mode mix는 Unique DAU를 증가시키지 않습니다.** 상태 분해일 뿐입니다.  
+> "BR+EX가 있어서 더 오래 남는다"는 **Synergy Scenario**로 분리되어 있고, **기본 1.00**입니다.
+
+### 14.5 Revenue는 dedup하지 않음
+
+```
+Product DAU     = Account deduplicated       (overlap 차감 O)
+Product Revenue = Σ attributed platform revenue  (overlap 차감 ❌)
+```
+
+동일 계정이 PC에서 1만원, Console에서 2만원 결제했다면 매출은 **3만원**이 맞습니다.
+
+### 14.6 Region Mix
+
+```
+NA 1.60 / JP 1.45 / KR 1.30 (measured)
+EU 1.00 (shrunk — NEW STATE 실측 병합)
+SEA 0.25 / SA 0.15 (measured) / OTHER 0.50 (proxy → 경고)
+```
+
+> ⚠️ 현재 Region Mix는 **monetization에만 적용**됩니다.  
+> CPA/Organic/Retention의 지역 효과는 미모델링 (V14.2 예정).
+
+### 14.7 Excel 14시트
+
+```
+01 Executive Summary        08 Reliability
+02 Monthly Product KPI      09 Assumptions
+03 Platform Breakdown       10 Data / Prior Sources
+04 Mode Breakdown           11 Strategic Hurdle       🆕
+05 Wave Breakdown           12 Projection Bridge      🆕
+06 Legacy Lever Envelope    13 Confidence Badge       🆕
+07 Sensitivity (Tornado)    14 Assumption Lineage     🆕
+```
+
+> 11~14시트는 **"숫자가 캡처·복붙되어 돌아다녀도 근거와 경고가 따라가도록"** 하는 장치입니다.
+
+---
+
+## 15. 신뢰성 체계 (Contract · LOFO · Evidence)
+
+### 15.1 Metric Contract
+
+모든 지표는 6차원으로 태깅되며, 미등록 값은 **거부**됩니다.
+
+```
+metric_semantics · measurement_method · cohort_scope · activity_definition · window_definition · unit
+```
+
+호환성 판정: `COMPATIBLE` / `TRANSFORMABLE` / `RELATIVE_ONLY`  
+activity/window가 서로 다르면 자동으로 `RELATIVE_ONLY`로 강등됩니다.
+
+**ARPPU는 daily canonical** — 내부 표본은 UI 설정과 무관하게 daily로 처리됩니다 (30배 오류 방지).
+
+### 15.2 True-LOFO 백테스트
+
+```
+Family-excluded sample selection  +  Family-excluded internal benchmark
+```
+
+target family를 **표본과 벤치마크 양쪽에서** 제외해야 진짜 LOFO입니다.
+
+| 지표 | 값 |
+|------|-----|
+| Launch family-balanced 절대오차 | **±93%** (observed 3 families) |
+| Pool B (pseudo) | ±83.5% (12 families) |
+
+> 이 숫자는 "성능이 나쁘다"가 아니라 **누수를 제거한 뒤의 정직한 baseline**입니다.  
+> 이전 ±65.6%는 벤치마크에 target 자신이 포함된 상태였습니다.
+
+### 15.3 External Evidence 격리
+
+외부 데이터(Newzoo 등)는 **정의가 내부와 다르므로** 예측값에 주입하지 않습니다.
+
+| 허용 | 금지 |
+|------|------|
+| Tail shape 비교 (D28/D7 비율) | 절대 리텐션값 주입 |
+| Lifecycle envelope 경고 | P50 보정 |
+| Peer percentile 위치 표시 | 벤치마크 블렌딩 |
+
+**Isolation Test**: 외부 데이터를 바꿔도 baseline 예측이 불변해야 PASS.
+
+### 15.4 Confidence Badge (provenance)
+
+```
+🟢 Measured   🔵 Internal benchmark   🟡 Evidence-informed
+🟠 Gate/Policy assumption   ⚪ Unvalidated
+```
+
+> ⚠️ **확률 점수가 아닙니다.** "Confidence 72%" 같은 숫자를 만들면 그 자체가 또 하나의 검증 불가 모델이 됩니다.  
+> 집계 결과에는 개수만 표시합니다: *"evidence-informed assumption 2개, unvalidated 1개 포함"*
+
+### 15.5 Ordered Projection Bridge
+
+baseline부터 최종까지 **각 단계를 실제로 재실행**해 Δ를 산출합니다.
+
+```
+Generic baseline                    693억
++ D1 Gate 28→50%  🟠               1,209억 (+516)
++ BM unsupported penalty 제거 🔵    2,518억 (+1,309)
++ Organic contract 정정 🔵          3,476억 (+958)
++ Known Reservoir (사전등록) 🟡      3,841억 (+365)
+```
+
+> 순서 의존적입니다. 모든 기여도에 `Ordered bridge 기준 — D1 → BM → Organic → Reservoir 순` 각주가 붙습니다.
+
+### 15.6 Assumption Lineage
+
+```
+variable + value + status(badge) + source + sample_n + snapshot_id + date
+```
+
+CBT/Alpha 실측이 들어오면 assumption을 measured로 교체하고, 그 영향을 자동 추적합니다.
+
+```
+D1  50% 🟠 Gate assumption (2026-08, snapshot A137...)
+ →  44% 🟢 Measured (2029-01, GW Alpha, N=32,418, snapshot B843...)
+    Projection Impact: 3,069억 → 2,710억 (Δ −359억)
+```
+
+---
+
+## 16. Freeze 설계 원칙
+
+구현 시 위반하면 안 되는 계약입니다. (`product_3y.py` 상단 주석에도 명시)
+
+| # | 원칙 |
+|---|------|
+| 1 | Mode mix는 Unique DAU를 증가시키지 않는다 (상태 분해만) |
+| 2 | Mode/Cross-platform Synergy는 기본 1.00이며 scenario-only (CBT 전 P50 진입 금지) |
+| 3 | Cross-platform overlap은 DAU dedup에만 사용한다 |
+| 4 | Revenue는 platform attributed 합산이며 overlap으로 차감하지 않는다 |
+| 5 | 외부/타사 prior는 reference only, auto-apply 금지 |
+| 6 | 표본 없는 region은 proxy 사용 시 반드시 경고한다 |
+| 7 | 마지막 해 tail-dominant 경고를 강제한다 (D365 이후 미검증 외삽) |
+| 8 | BM UI 선택은 engine recipe contract와 1:1 매핑한다 |
+| 9 | Auto Benchmark / Manual Samples / Hybrid는 의미가 명확해야 한다 |
+| 10 | Assumption Set은 모든 결과와 함께 저장된다 (`assumption_set_id` 병기) |
+| 11 | BM modifier는 중립(1.0) — 무근거 정책값 + 표본 이중반영 제거 |
+| 12 | External Reservoir 사용 시 budget-derived pre-launch를 자동 차단한다 |
+| 13 | 서스테인 마케팅은 launch UA 기준 — 매출 % 방식은 순환구조라 거부 |
+| 14 | Strategic Hurdle은 참고선이며 엔진 입력에 절대 전달하지 않는다 (No Target Leakage) |
+| 15 | Revenue Owner는 단일 (legacy / ARPDAU / 3-Layer 중 하나만 — double count 금지) |
+
+### 16.1 No Target Leakage 테스트
+
+```
+Hurdle = 1,000억으로 실행  →  Projection X
+Hurdle = 2,000억으로 실행  →  Projection X   (완전히 동일해야 PASS)
+                              Coverage만 변경
+```
+
+목표 숫자가 모델을 끌어당기는 것을 구조적으로 차단합니다.
+
+---
+
+## 17. V14 모듈 상태
+
+**전부 기본 OFF (opt-in)** 입니다. 활성화 시 badge/warning이 강제됩니다.
+
+| 모듈 | 상태 | 설명 |
+|------|------|------|
+| V14.1 Retention Anchor | **prototype** | D1→D7→D30→D90 anchor 커브 (단조성 검증). 파이프라인 미통합 |
+| V14.2 Independent Acquisition | **opt-in** | Brand 단독 유입 (Awareness→Install, 수확체감), 플랫폼별 CPI |
+| V14.3 Live Lifecycle | **PREVIEW ONLY** | Active/Dormant/Churned stock-flow. **공식 annual/monthly/total 미반영** |
+| V14.4 3-Layer Monetization | **prototype** | Entry/Repeat/High-ARPU. Revenue Owner Gate 통과 전 활성화 시 `ValueError` |
+
+### 17.1 V14 Module Delta Bridge
+
+각 모듈의 영향을 **독립적으로** 분해합니다. (`/v14-delta-bridge`)
+
+```
+[공식] V13.8 Official Normal                    3,841억  (+0)
+[Prev] + V14.2 Independent Acquisition only     4,403억  (+562)
+[Prev] + V14.3 Live Lifecycle only (PREVIEW)    3,891억  (+50)
+[Prev] + V14.1 Retention Anchor only            산출불가 — prototype
+[Prev] + V14.4 3-Layer Monetization only        산출불가 — Revenue Owner Gate 대기
+```
+
+### 17.2 Live Lifecycle (V14.3) — uplift가 아닌 stock-flow
+
+```
+New → Active → Dormant → Churned
+
+Major Update  →  Dormant × reactivation_rate  →  Returning AU
+                 (복귀 코호트는 자체 리텐션으로 감쇠, 영구 가산 금지)
+```
+
+목적은 **숫자 상향이 아니라 인과 정상화**입니다.
+
+| | 설명 |
+|---|---|
+| 현재 (V14.3 OFF) | "sustain UA가 decay를 상쇄해서 Y3가 회복" — *3년차 게임이 왜 같은 CPI로 유저를 사오는가?* 라는 질문에 취약 |
+| 목표 (V14.3 통합 후) | "M30 Major Update에서 dormant 2.4M의 7.3%가 복귀, 해당 코호트 D30 31%" |
+
+---
+
+## 18. GW 참조 케이스
+
+**snapshot `962de3cf70b4`** — 아래 입력으로 재현 가능합니다.
+
+### 18.1 입력값
+
+| 항목 | 값 |
+|------|-----|
+| 앵커 출시일 / Horizon | 2029-03-01 / **4 Years** (M1~12 Ramp, FCY1 = M13~24) |
+| 장르 / BM | Battle Royale / F2P Cosmetic + Battle Pass |
+| Reference Mode | Auto Benchmark |
+| 목표 D1 | **0.50** (Normal) |
+| organic_share_of_total | **0.364** |
+
+| Wave | 출시 | UA | Brand | CPA | 사전등록 | activation |
+|------|------|-----|-------|-----|---------|-----------|
+| pc | M+0 | 120억 | 80억 | 7,500 | 250만 | 40% |
+| mobile | M+6 | 150억 | 100억 | 4,000 | 200만 | 40% |
+| console | M+12 | 30억 | 20억 | 9,000 | 50만 | 40% |
+
+```
+Region  : NA 30 / EU 20 / KR 15 / JP 10 / SEA 20 / OTHER 5 (%)
+Mode    : EX Only 10→15%, Both 8→25% (180d ramp)
+Synergy : Base 1.00
+V14     : 전부 OFF
+비용    : 개발비 1,000억 / 연 인건비 300억 (BEP 계산용, 예시값)
+```
+
+### 18.2 결과
+
+```
+Ramp(M1-12)    772억  | Avg uDAU 46.9만 | Peak 130.5만
+FCY1         1,003억  | Avg uDAU 59.6만
+FCY2           998억  | Avg uDAU 59.2만
+FCY3         1,068억  | Avg uDAU 63.5만
+────────────────────────────────────────
+FCY 3개년    3,069억   (4Y 전체 3,841억)
+BEP: Marketing M+15 / Full Cost 기간 내 미달성
+```
+
+**공식 3본** (D1만 변경, 타 변수 고정):
+
+| Scenario | D1 | FCY 3개년 |
+|----------|-----|----------|
+| Worst | 40% (투자 Gate) | 2,468억 |
+| **Normal** | **50%** | **3,069억** |
+| Best | 60% | 3,671억 |
+
+### 18.3 보고 문구 규칙
+
+> **GW 3Y Conditional Gross Projection**  
+> 약 **2,500 ~ 3,700억** (Planning Case ~3,100억)  
+> Product Gate 달성 조건부 · *This is not a sales commitment.*  
+> 최약 가정: D1 Gate(🟠) / prereg activation(🟡) / FCY2~3 tail(⚪)
+
+> ⚠️ "GW 매출은 3,069억입니다"는 **예언**이고,  
+> "이 조건에서 기대 가능한 range는 2,500~3,700억입니다"는 **프로젝션**입니다.
+
+---
+
+## 19. 테스트
+
+```bash
+python -m pytest backend/tests -q          # fast contract(10) + slow integration(5), 약 15초
+python backend/tests_contract.py           # Metric Contract 22 tests
+python backend/tests_product_timeline.py   # P3.5 Union Dedup 15 tests
+python backend/tests_product_3y.py         # 3Y 통합 49 tests (수 분)
+```
+
+### 19.1 핵심 불변식 테스트
+
+| 테스트 | 검증 내용 |
+|--------|----------|
+| Union Identity | `max(platform DAU) ≤ Unique ≤ Σ platform DAU` 매일 성립 |
+| Adoption ≠ Overlap | adoption만 바꿔도 DAU dedup 불변 |
+| Revenue Independence | overlap을 바꿔도 platform revenue 불변 |
+| Unique NRU | 기존 계정 adopter를 신규로 재계상하지 않음 |
+| Mode Identity | BR Only + EX Only + Both = Unique DAU |
+| ex_adoption Rev 영향 ≈ 0 | Mode mix는 돈을 만들지 않음 (원칙 1 증명) |
+| No Target Leakage | Hurdle 변경 시 Projection 완전 동일 |
+| V14.3 Preview Only | V14.3 ON/OFF 시 공식 숫자 동일 |
+| LOFO 무누수 | Console holdout 시 벤치마크에서 자기 자신 제외 |
+| sustain revenue_pct 거부 | 순환구조 입력 시 `ValueError` |
+
+---
+
+## 20. 버전 히스토리 · 알려진 한계
+
+### 20.1 버전 히스토리
+
+| 버전 | 핵심 변경 |
+|------|----------|
+| V12.x | 회귀 기반 단일 프로젝션, 외부 벤치마크 블렌딩 |
+| V13.0~13.2 | Metric Contract, 외부데이터 격리, True-LOFO, 계절성 실측 승격, Provisional Interval |
+| V13.3~13.6 | P3.5 Wave/Union Dedup, P4.5 Mode State, ARPDAU candidate (recipe/region-aware) |
+| V13.7 | 3-Year Product Projection, Annual Summary, Reliability Horizon, Tornado, Excel 10시트 |
+| V13.7.1 | BM 실계산 연결, 마케팅 wiring 복구, Marketing Ledger, P&L + BEP 2종 |
+| V13.7.2 | D1 3본 독립 실행, BM 중립화, Reservoir semantics, organic 계약, Hurdle Coverage |
+| V13.8 | Ordered Bridge, Confidence Badge, Assumption Lineage, Conditional Notice |
+| **V14.0.1** | V14 opt-in 엔진 4종, 공식 3본 API, V14 Δ Bridge, Excel 14시트, 테스트 재구조화 |
+
+### 20.2 알려진 한계
+
+| 한계 | 영향 | 해소 예정 |
+|------|------|----------|
+| FCY2~3 rev 기준 tail share 100% | D365 이후 미검증 외삽 | V14.3 통합 (인과 정상화) |
+| Region Mix가 monetization에만 적용 | CPA/Organic 지역효과 없음 | V14.2 |
+| Brand가 Paid NRU 종속 (V14.2 OFF 시) | UA=0이면 Brand 단독 유입 불가 | V14.2 opt-in |
+| franchise-class 검증 n=2 | 대형 IP 과소예측 편향 크기 미확정 | V14.5 backtest |
+| NEW STATE prior = mobile-only | PC/Console 직접 전이 금지 | 추가 실측 확보 시 |
+| 사전등록 activation 40% | measured 아닌 evidence-informed assumption | CBT 실측 교체 |
+| Provisional Interval [0.40x ~ 47x] | observed family 3개로 구간 과대 | 표본 확충 + 모델 개선 |
+
+### 20.3 다음 단계
+
+1. **1페이지 PDF Export** — C레벨 보고용 요약 (Executive Summary + 3본 + Bridge + Badge)
+2. **V14.1 / V14.4 통합 판단** — Shadow A/B로 Revenue Owner 선정 후 승격
+3. **Alpha/CBT 실측 반영** — Assumption Lineage로 assumption → measured 교체 운영
+4. **Franchise-class Backtest** — PUBG + NEW STATE (n=2) 기준 편향 방향/크기 보고
+
+---
 
 ---
 

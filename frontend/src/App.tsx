@@ -14,6 +14,7 @@ import {
   Settings,
 } from 'lucide-react';
 import InputPanel from './components/InputPanel';
+import ProductTimelinePanel from './components/ProductTimelinePanel';
 import ResultsPanel from './components/ResultsPanel';
 import type { 
   ProjectionInput, 
@@ -31,6 +32,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<ProjectionResult | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [mainView, setMainView] = useState<'component' | 'product3y'>('component');
   const [expandedSections, setExpandedSections] = useState({
     overview: true,
     projection: false,
@@ -237,7 +239,21 @@ function App() {
         )}
 
         {/* Input Panel */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-6 print:hidden">
+        {/* V13.7: Main View Switcher (기존 컨셉 무변경 — 추가만) */}
+        <div className="flex gap-2 mb-4 print:hidden">
+          <button onClick={() => setMainView('component')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium ${mainView === 'component' ? 'bg-blue-600 text-white' : 'bg-white border text-gray-600'}`}>
+            📊 Component Projection (단일 Wave)
+          </button>
+          <button onClick={() => setMainView('product3y')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium ${mainView === 'product3y' ? 'bg-indigo-600 text-white' : 'bg-white border text-gray-600'}`}>
+            🌊 Product 3Y Timeline (순차출시·멀티모드)
+          </button>
+        </div>
+
+        {mainView === 'product3y' && <ProductTimelinePanel games={games} />}
+
+        <div className={`bg-white rounded-xl shadow-sm border border-gray-200 mb-6 print:hidden ${mainView !== 'component' ? 'hidden' : ''}`}>
           <div className="p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <Settings className="w-5 h-5 text-blue-600" />
@@ -275,7 +291,7 @@ function App() {
         </div>
 
         {/* Results Panel */}
-        {results && (
+        {mainView === 'component' && results && (
           <div className="flex gap-6">
             {/* Sidebar */}
             <div className="w-64 flex-shrink-0 print:hidden">

@@ -9,6 +9,7 @@ import external_evidence as ext_ev  # V13 P2.5: 물리 분리 모듈
 import contracts  # V13 P0: Metric Contract
 import product_timeline as ptl  # V13.3 P3.5
 import arpdau_engine as arp  # V13.5 P4a/P4.6
+import product_3y as p3y  # V13.7
 import json
 import os
 import httpx
@@ -150,6 +151,8 @@ class NRUInput(BaseModel):
     pre_marketing_ratio: Optional[float] = 0.0    # 사전 마케팅 비중 (0~1, 예: 0.3 = 30%)
     wishlist_conversion_rate: Optional[float] = 0.15  # 위시리스트/사전예약 → 실제 유입 전환율 (PC: 10~20%)
     cpa_saturation_enabled: Optional[bool] = True     # CPA 상승 계수 활성화
+    # V13.7.2 P0-3: External Reservoir (사전등록 등 — budget-derived와 이중계산 금지)
+    external_reservoir_activated: Optional[int] = 0   # activated 총량 (size×activation은 상위에서)
     brand_time_lag_enabled: Optional[bool] = True     # 브랜딩 지연 효과 활성화
     # V12.3: Sustaining Budget (별도 추가 월 예산)
     sustaining_mkt_budget_monthly: Optional[int] = 0  # 월간 유지 마케팅 예산 (기본값: UA의 10%)
@@ -883,7 +886,7 @@ def generate_nru_series_v85(
     brand_time_lag_enabled: bool = True,     # 브랜딩 지연 효과
     platforms: List[str] = None,             # [V11.0] 플랫폼 정보 추가
     liveops_intensity: str = "Medium"        # [V12.0] LiveOps 강도
-) -> tuple:
+, external_reservoir_activated: int = 0) -> tuple:
     """
     V8.5+ NRU 시리즈 생성 - UA/Brand 분리 + Pre-Launch + CPA Saturation
     
@@ -972,7 +975,10 @@ def generate_nru_series_v85(
     wishlist_users = wishlist_pool_paid + wishlist_pool_organic
     
     # 2. 전환율 적용 (이제 전환율을 높이면 D1이 증가함!)
-    d1_burst_users = int(wishlist_users * wishlist_conversion_rate)
+    # V13.7.2: external reservoir 존재 시 budget-derived pre-launch 비활성 (이중계산 방지)
+    if external_reservoir_activated > 0:
+        pre_launch_paid_nru, wishlist_users = 0, 0
+    d1_burst_users = int(wishlist_users * wishlist_conversion_rate) + external_reservoir_activated
     
     # D1~D3 버스트 분배: D1=80%, D2=10%, D3=10%
     burst_distribution = [0.80, 0.10, 0.10]
@@ -1660,7 +1666,8 @@ async def calculate_projection(input_data: ProjectionInput):
             nru_series, paid_nru, organic_nru, organic_boost, nru_meta = generate_nru_series_v85(
                 adj_ua, adj_brand, target_cpa, base_organic_ratio, days, 30, sustaining_monthly,
                 pre_marketing_ratio, wishlist_conversion_rate, cpa_saturation_enabled, brand_time_lag_enabled,
-                platforms, liveops_intensity
+                platforms, liveops_intensity,
+                external_reservoir_activated=int((input_data.nru.external_reservoir_activated or 0) * scenario_mult)
             )
             
             # 시나리오별 메타 정보 저장
@@ -2876,6 +2883,39 @@ async def run_all_backtests():
 # V12.5: 크로스 플랫폼 예측 (Phase 1: 플랫폼별 독립 산출 + 합산)
 # ============================================================
 
+
+
+# ============================================================
+# V13.7: 3-Year Product Projection (7-1~7-3)
+# ============================================================
+@app.post("/api/projection/product-3y/official-scenarios")
+async def product_3y_official(body: Dict[str, Any]):
+    return sanitize_for_json(await p3y.run_official_scenarios(body, calculate_projection, ProjectionInput))
+
+@app.post("/api/projection/product-3y/v14-delta-bridge")
+async def product_3y_v14_bridge(body: Dict[str, Any]):
+    return sanitize_for_json(await p3y.run_v14_delta_bridge(body, calculate_projection, ProjectionInput))
+
+@app.post("/api/projection/product-3y")
+async def product_3y_endpoint(body: Dict[str, Any]):
+    if not body.get("waves"):
+        raise HTTPException(status_code=422, detail="waves[] 필수")
+    if not body.get("anchor_launch_date"):
+        raise HTTPException(status_code=422, detail="anchor_launch_date 필수")
+    try:
+        r = await p3y.run_product_3y(body, calculate_projection, ProjectionInput)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return sanitize_for_json(r)
+
+@app.post("/api/projection/product-3y/excel")
+async def product_3y_excel(body: Dict[str, Any]):
+    from fastapi.responses import Response as _Resp
+    r = await p3y.run_product_3y(body, calculate_projection, ProjectionInput)
+    xls = p3y.build_excel(sanitize_for_json(r))
+    return _Resp(content=xls,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=product_3y_projection.xlsx"})
 
 @app.post("/api/projection/arpdau-forecast")
 async def arpdau_forecast(body: Dict[str, Any]):
