@@ -1,4 +1,4 @@
-# 🎮 Game KPI Projection Tool — V14.0.1
+# 🎮 Game KPI Projection Tool — V14.0.3
 
 회귀분석 및 **내부 실측 데이터** 기반의 게임 KPI 예측 시뮬레이션 도구입니다.  
 단일 게임 365일 프로젝션부터 **순차출시 × 멀티모드 × 크로스프로그레션 3~4개년 제품 프로젝션**까지 지원합니다.
@@ -69,8 +69,8 @@ PR/ARPPU 설정    →    Revenue 계산               →    일별/총 매출
 
 | 모드 | 용도 | 엔드포인트 |
 |------|------|-----------|
-| **Component Projection** | 단일 플랫폼·단일 런칭 365일 sizing (백테스트 검증 범위) | `/api/projection` |
-| **Product 3Y Timeline** | 순차출시(PC→Mobile→Console) + 멀티모드(BR/EX) + 3~4개년 사업성 | `/api/projection/product-3y` |
+| **Single Wave (Quick Projection)** | 단일 플랫폼·단일 런칭 365일 빠른 추정 (백테스트 검증 범위) | `/api/projection` |
+| **Launch Projection** (구 Product 3Y) | 순차출시(PC→Mobile→Console) + 멀티모드 + Launch 36M/48M 사업성 — GW 공식 모드 | `/api/projection/product-3y` |
 
 화면 상단 토글로 전환합니다. → 상세: [14장](#14-product-3y-timeline-순차출시멀티모드)
 
@@ -864,7 +864,7 @@ POST /api/projection
 
 ```http
 POST /api/projection/product-3y                     # 3Y 제품 프로젝션 (P&L/BEP/Bridge/Badge 포함)
-POST /api/projection/product-3y/excel               # Excel 14시트 다운로드
+POST /api/projection/product-3y/excel               # Report-ready Excel 15시트 (3본 자동 동봉)
 POST /api/projection/product-3y/official-scenarios  # 공식 3본 (D1 40/50/60)
 POST /api/projection/product-3y/v14-delta-bridge    # V14 모듈별 Δ 분해
 POST /api/projection/product-schedule               # Wave 기반 Unique Account DAU
@@ -1041,19 +1041,34 @@ SEA 0.25 / SA 0.15 (measured) / OTHER 0.50 (proxy → 경고)
 > ⚠️ 현재 Region Mix는 **monetization에만 적용**됩니다.  
 > CPA/Organic/Retention의 지역 효과는 미모델링 (V14.2 예정).
 
-### 14.7 Excel 14시트
+### 14.7 Excel 15시트 (Report-ready)
 
 ```
-01 Executive Summary        08 Reliability
-02 Monthly Product KPI      09 Assumptions
-03 Platform Breakdown       10 Data / Prior Sources
-04 Mode Breakdown           11 Strategic Hurdle       🆕
-05 Wave Breakdown           12 Projection Bridge      🆕
-06 Legacy Lever Envelope    13 Confidence Badge       🆕
-07 Sensitivity (Tornado)    14 Assumption Lineage     🆕
+01 Executive Summary (1페이지 보고서형)   09 Assumptions
+02 Monthly Product KPI                   10 Data / Prior Sources
+03 Platform Breakdown                    11 Strategic Hurdle Coverage
+04 Mode Breakdown                        12 Projection Bridge (+해석 컬럼)
+05 Wave Breakdown (attributed+adjusted)  13 Confidence Badge
+06 Legacy Lever Envelope                 14 Assumption Lineage
+07 Sensitivity (Tornado)                 15 Risk / Validation Plan
+08 Reliability
 ```
 
-> 11~14시트는 **"숫자가 캡처·복붙되어 돌아다녀도 근거와 경고가 따라가도록"** 하는 장치입니다.
+- **01 Exec Summary**: Conditional 헤드라인 + Key Interpretation 자동생성 + Scenario 3본(Worst/Normal/Best 자동 동봉) + Hurdle Coverage 표
+- **15 Risk/Validation Plan**: 변수별 현재값/근거등급/검증 방법 (D1→Alpha cohort, tail→LiveOps 등)
+
+> 11~15시트는 **"숫자가 캡처·복붙되어 돌아다녀도 근거와 경고가 따라가도록"** 하는 장치입니다.
+
+### 14.8 Reconciliation 항등식 (V14.0.3, 불변식 테스트 고정)
+
+```
+Exec Gross == Σ Monthly == Σ Annual == Σ Platform == Σ Wave(adjusted)
+```
+
+- Monthly 마지막 블록이 잔여 일수를 흡수 (30일 블록 절사로 인한 증발 방지)
+- Wave 시트는 raw attributed와 adjusted(×region×BM) 병기 — revenue는 dedup하지 않으므로 adjusted 합 = 제품 Gross
+- **Net 정의 분리**: `Platform Net Revenue` (Gross×0.70, 수수료만) vs `Operating Net` (Gross×0.57, P&L 기준)
+- **기간 명칭**: `Launch 36M` (출시 후 36개월, Y1=Ramp) / `Launch 48M` (Ramp + FCY 3Y) — "정상 운영 3개년"과 혼동 금지
 
 ---
 
@@ -1314,7 +1329,9 @@ python backend/tests_product_3y.py         # 3Y 통합 49 tests (수 분)
 | V13.7.1 | BM 실계산 연결, 마케팅 wiring 복구, Marketing Ledger, P&L + BEP 2종 |
 | V13.7.2 | D1 3본 독립 실행, BM 중립화, Reservoir semantics, organic 계약, Hurdle Coverage |
 | V13.8 | Ordered Bridge, Confidence Badge, Assumption Lineage, Conditional Notice |
-| **V14.0.1** | V14 opt-in 엔진 4종, 공식 3본 API, V14 Δ Bridge, Excel 14시트, 테스트 재구조화 |
+| V14.0.1 | V14 opt-in 엔진 4종, 공식 3본 API, V14 Δ Bridge, 테스트 재구조화 |
+| V14.0.2 | /api/health 진단, Region 2모드(글로벌 ex-CN/리전선택+CN), BM evidence modifier(내부실측 clamp), D1 ±10%p, 레이어형 UI+가이드 |
+| **V14.0.3** | **Reconciliation 항등식**(Exec=Monthly=Platform=Wave), 기간 명칭(Launch 36M/48M)·Net 정의 분리, Exec 1페이지+Risk Plan(15시트), Bridge 해석 컬럼, **Decision Dashboard UI**(Executive/Driver/Audit 3단, Drawer, 용어사전, Preset, Health badge) |
 
 ### 20.2 알려진 한계
 

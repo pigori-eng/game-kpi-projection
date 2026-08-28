@@ -44,7 +44,7 @@ def test_excel_14_sheets():
         from openpyxl import load_workbook
         from io import BytesIO
         wb = load_workbook(BytesIO(P.build_excel(M.sanitize_for_json(r))))
-        assert len(wb.sheetnames) == 14
+        assert len(wb.sheetnames) == 15  # V14.0.3: +15_Risk_Validation_Plan
         assert "12_Projection_Bridge" in wb.sheetnames and "13_Confidence_Badge" in wb.sheetnames
     asyncio.run(t())
 
@@ -53,4 +53,17 @@ def test_envelope_demoted():
         r = await P.run_product_3y(PAY, M.calculate_projection, M.ProjectionInput)
         assert "legacy_lever_envelope" in r and "Do not use for official" in r["legacy_lever_envelope"]["warning"]
         assert "business_scenario_envelope" not in r
+    asyncio.run(t())
+
+
+def test_reconciliation_exec_equals_monthly_equals_platform():
+    """피드백21 1순위: Exec = Σmonthly = Σannual = Σplatform = Σwave_adjusted"""
+    async def t():
+        r = await P.run_product_3y({**PAY, "enable_bridge": False}, M.calculate_projection, M.ProjectionInput)
+        tg = r["total"]["gross_krw"]
+        assert abs(tg - sum(m["revenue_krw"] for m in r["monthly"])) < 1e4
+        assert abs(tg - sum(a["gross_revenue_krw"] for a in r["annual_summary"])) < 1e4
+        assert abs(tg - sum(v["cumulative_revenue_adjusted"] for v in r["per_wave"].values())) < tg * 0.001
+        assert "platform_net" in r["total"]["net_definitions"] and "operating_net" in r["total"]["net_definitions"]
+        assert "Launch" in r["horizon_labels"]["title"]
     asyncio.run(t())

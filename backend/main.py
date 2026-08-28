@@ -2928,6 +2928,22 @@ async def product_3y_endpoint(body: Dict[str, Any]):
 async def product_3y_excel(body: Dict[str, Any]):
     from fastapi.responses import Response as _Resp
     r = await p3y.run_product_3y(body, calculate_projection, ProjectionInput)
+    # 피드백21 6순위: Worst/Normal/Best 3본을 Excel에 동봉 (light 모드)
+    try:
+        d1 = float(body.get("target_d1", 0.5))
+        scen = {}
+        for name, dd, meaning in [("Worst", max(0.05, d1 - 0.10), "Gate 하단"),
+                                   ("Normal", d1, "Planning Case"),
+                                   ("Best", min(0.9, d1 + 0.10), "Gate 상단")]:
+            if name == "Normal":
+                scen[name] = {"d1": f"{dd*100:.0f}%", "gross_krw": r["total"]["gross_krw"], "meaning": meaning}
+            else:
+                rr = await p3y.run_product_3y({**body, "target_d1": dd, "light": True, "enable_bridge": False},
+                                               calculate_projection, ProjectionInput)
+                scen[name] = {"d1": f"{dd*100:.0f}%", "gross_krw": rr["total"]["gross_krw"], "meaning": meaning}
+        r["excel_scenarios"] = scen
+    except Exception:
+        r["excel_scenarios"] = {}
     xls = p3y.build_excel(sanitize_for_json(r))
     return _Resp(content=xls,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

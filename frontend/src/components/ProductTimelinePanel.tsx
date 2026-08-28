@@ -1,6 +1,6 @@
 // V14.0.2: Product 3Y Timeline — 단일 Wave와 동일한 레이어형 UI + 가이드
 // #2 레이어 입력 / #3 가이드 / #4 지역 2모드 / #7 V14토글 제거 / #8 Hurdle 숨김(백엔드 유지)
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
 import {
   LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, Legend,
@@ -29,10 +29,35 @@ const fmt억 = (v: number) => `${(v / 1e8).toFixed(0)}억`;
 const fmtK = (v: number) => v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : `${(v / 1e3).toFixed(0)}K`;
 
 const Guide = ({ children }: { children: any }) => (
-  <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-800 leading-relaxed">
-    💡 {children}
-  </div>
+  <details className="bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-800">
+    <summary className="px-3 py-2 cursor-pointer select-none font-medium">💡 가이드 · 자세히 보기</summary>
+    <div className="px-3 pb-3 leading-relaxed">{children}</div>
+  </details>
 );
+
+const TERMS: [string, string][] = [
+  ['Launch 36M', '출시 후 36개월. Y1 출시 전개기 포함 — "정상 운영 3개년"이 아님'],
+  ['Launch 48M', '출시 전개기(Ramp) + 정상 운영 3개년(FCY 3Y). C레벨 사업성 판단용'],
+  ['Ramp (출시 전개기)', 'PC→Mobile→Console이 순차 진입하는 첫 12개월'],
+  ['FCY (정상 운영연도)', '전 플랫폼 진입 완료 후의 운영 연도'],
+  ['Gross', '유저 결제 총액 (Bookings)'],
+  ['Platform Net', 'Gross × 0.70 — 스토어 수수료(30%)만 차감'],
+  ['Operating Net', 'Gross × 0.57 — 수수료+VAT+인프라 차감 (P&L 기준)'],
+  ['Hurdle Coverage', '참고선(경영 기대치) 대비 도달률 — Projection 계산에는 영향 없음'],
+  ['D1 Gate', '투자 지속 조건 D1 40%. Worst 시나리오 = Gate 하단'],
+  ['Reservoir / Activation', '사전등록 풀 × 유입 전환율(기본 40%, NEW STATE 근거 가정)'],
+  ['Organic share', '전체 유입 중 오가닉 비중 (기본 36.4% = PC BR prior)'],
+  ['Overlap', '같은 계정이 하루에 복수 플랫폼 플레이하는 비율 — Unique DAU 중복 제거 전용'],
+  ['Tail extrapolation', 'D365 이후 미검증 외삽 구간 — LiveOps 실측 확보 전 신뢰도 주의'],
+  ['Confidence Badge', '근거 등급(provenance) 표시 — 확률/신뢰도 점수가 아님'],
+  ['Projection Bridge', 'baseline→최종까지 단계별 재실행 Δ — "왜 이 숫자인지"의 답'],
+];
+
+const PRESETS: Record<string, { desc: string; d1: number; act: number; org: number }> = {
+  'GW Planning Case': { desc: 'D1 50% · activation 40% · organic 36.4%', d1: 50, act: 40, org: 36.4 },
+  'GW Conservative': { desc: 'D1 40% · activation 30% · organic 30%', d1: 40, act: 30, org: 30 },
+  'GW Aggressive': { desc: 'D1 60% · activation 50% · organic 40%', d1: 60, act: 50, org: 40 },
+};
 const Layer = ({ no, title, children }: { no: string; title: string; children: any }) => (
   <div className="border border-gray-200 rounded-xl overflow-hidden">
     <div className="bg-gradient-to-r from-indigo-50 to-white px-4 py-2.5 border-b border-gray-100">
@@ -68,6 +93,15 @@ export default function ProductTimelinePanel({ games }: { games: any }) {
   const [res, setRes] = useState<any>(null);
   const [official, setOfficial] = useState<any>(null);
   const [err, setErr] = useState('');
+  const [showTerms, setShowTerms] = useState(false);
+  const [drawer, setDrawer] = useState(false);
+  const [health, setHealth] = useState<any>(null);
+  useEffect(() => { axios.get(`${API_URL}/health`).then(r => setHealth(r.data)).catch(() => setHealth({ status: 'unreachable' })); }, []);
+  const applyPreset = (name: string) => {
+    const pr = PRESETS[name]; if (!pr) return;
+    setTargetD1(pr.d1); setOrganicShare(pr.org);
+    setWaves(ws => ws.map(w => ({ ...w, activation: pr.act })));
+  };
 
   const gameList: string[] = games?.retention_games || games?.games?.retention || [];
 
@@ -79,6 +113,8 @@ export default function ProductTimelinePanel({ games }: { games: any }) {
     organic_share_of_total: organicShare / 100,
     region_scope: regionMode === 'custom' ? { mode: 'custom', regions: customRegions } : { mode: 'global_ex_cn' },
     costs: { dev_cost_total_krw: costs.dev * 1e8, annual_hr_cost_krw: costs.hr * 1e8 },
+    // Hurdle: UI 미노출(피드백20 #8) but Excel Coverage용 기본값 전송 — Reference only, 계산 무영향
+    strategic_hurdle: { fcy1: 1500e8, fcy2: 1000e8, fcy3: 700e8, fcy_start_year_index: horizon === 4 ? 1 : 0 },
     enable_bridge: true,
     waves: waves.map(w => ({
       wave_id: w.wave_id, platform: w.platform, offset_months: w.offset_months,
@@ -126,9 +162,29 @@ export default function ProductTimelinePanel({ games }: { games: any }) {
   return (
     <div className="space-y-5">
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900">🌊 순차출시 · 멀티모드 프로젝션 (Product 3Y)</h2>
-          <p className="text-xs text-gray-500 mt-1">PC → Mobile → Console 순차 출시와 BR/EX 멀티모드, 크로스 프로그레션(계정 중복 제거)을 3~4개년으로 프로젝션합니다.</p>
+        <div className="flex justify-between items-start">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">🌊 Launch Projection (순차출시 · 장기 사업성)</h2>
+            <p className="text-xs text-gray-500 mt-1">복수 플랫폼 순차 출시, Reservoir, Organic, Bridge, 장기 사업성 검토용 모드 — GW Planning Case는 이 모드를 사용합니다.</p>
+          </div>
+          <button onClick={() => setShowTerms(true)} className="text-xs px-3 py-1.5 border rounded-lg text-gray-600 hover:bg-gray-50 shrink-0">📘 용어 가이드</button>
+        </div>
+
+        {/* Executive Intro */}
+        <div className="bg-gradient-to-r from-slate-50 to-indigo-50 border border-indigo-100 rounded-xl p-4 text-xs text-gray-700 leading-relaxed">
+          <p className="font-semibold text-sm text-gray-800 mb-1">GW Conditional Projection Tool</p>
+          <p>이 툴은 <b>Product Gate 통과를 조건</b>으로, PC → Mobile → Console 순차 출시 기준의 트래픽·매출·BEP를 산출합니다.</p>
+          <p className="mt-1">기본 출력: <b>Launch 36M</b>(출시 후 36개월) 또는 <b>Launch 48M</b>(출시 전개기 + 정상 운영 3개년) · <b>Worst/Normal/Best</b> = D1 {targetD1 - 10}/{targetD1}/{targetD1 + 10}% 조건부 시나리오</p>
+          <p className="mt-1 text-amber-700">⚠ 이 결과는 Sales Commitment가 아니라 사업 가정 기반 Projection입니다.</p>
+        </div>
+
+        {/* Preset */}
+        <div className="flex flex-wrap gap-2 items-center text-xs">
+          <span className="text-gray-500 font-medium">Preset:</span>
+          {Object.entries(PRESETS).map(([n, pr]) => (
+            <button key={n} onClick={() => applyPreset(n)} title={pr.desc}
+              className="px-3 py-1.5 border rounded-lg hover:bg-indigo-50 text-gray-700">{n}</button>))}
+          <span className="text-gray-400">· 프리셋은 D1/전환율/Organic만 변경 (같은 가정으로 대화하기 위한 기준점)</span>
         </div>
 
         <Layer no="1" title="기본 설정 — 출시 시점 · 장르 · BM">
@@ -143,7 +199,7 @@ export default function ProductTimelinePanel({ games }: { games: any }) {
             </label>
             <label className="block">Projection Horizon
               <select value={horizon} onChange={e => setHorizon(+e.target.value)} className="mt-1 w-full border rounded px-2 py-1.5">
-                <option value={3}>3 Years</option><option value={4}>4 Years (FCY 뷰 권장)</option>
+                <option value={3}>Launch 36M (출시 후 36개월)</option><option value={4}>Launch 48M (출시 전개기 + FCY 3Y)</option>
               </select>
             </label>
             <label className="block">장르
@@ -285,25 +341,60 @@ export default function ProductTimelinePanel({ games }: { games: any }) {
 
         <div className="flex gap-3 items-center pt-1">
           <button onClick={run} disabled={running} className="px-8 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-semibold shadow-sm">
-            {running ? '⏳ 계산 중...' : '▶ 3개년 프로젝션 실행'}
+            {running ? '⏳ 계산 중...' : '▶ Launch Projection 실행'}
           </button>
-          {res && <button onClick={downloadExcel} className="px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700">📥 Excel (14 sheets)</button>}
+          {res && <button onClick={downloadExcel} className="px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700">📥 Report-ready Excel<span className="block text-[9px] opacity-80">Exec·Bridge·Badge·Hurdle·Risk Plan 포함 (15시트)</span></button>}
         </div>
         {err && <p className="text-sm text-red-600 bg-red-50 rounded-lg p-3">❌ {err}</p>}
       </div>
 
       {res && (
         <div className="space-y-5">
-          <div className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl p-5">
-            <p className="text-sm opacity-80">{res.conditional_notice?.headline}</p>
+          {/* ═══ 1단: Executive View ═══ */}
+          <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wide"><span className="h-px flex-1 bg-gray-200" />Executive View — 결론<span className="h-px flex-1 bg-gray-200" /></div>
+
+          <div onClick={() => setDrawer(true)} title="클릭하여 Planning Case 상세 보기"
+            className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl p-5 cursor-pointer hover:shadow-lg transition-shadow">
+            <p className="text-sm opacity-80">{res.horizon_labels?.title ? `GW ${res.horizon_labels.title} — Conditional` : res.conditional_notice?.headline}</p>
             {official ? (
               <p className="text-3xl font-bold mt-1">{fmt억(official.headline.range_krw[0])} ~ {fmt억(official.headline.range_krw[1])}
                 <span className="text-lg font-medium ml-3 opacity-90">Planning Case {fmt억(official.headline.planning_case_krw)}</span></p>
             ) : (
               <p className="text-3xl font-bold mt-1">{fmt억(res.total.gross_krw)} <span className="text-sm font-normal opacity-70">(Normal · Worst/Best 계산 중…)</span></p>
             )}
-            <p className="text-xs mt-2 opacity-80">⚠ {res.conditional_notice?.disclaimer}</p>
+            <p className="text-xs mt-2 opacity-80">⚠ {res.conditional_notice?.disclaimer} · <u>카드를 클릭하면 상세가 열립니다</u></p>
           </div>
+
+          {/* Key Interpretation + Hurdle Coverage */}
+          <div className="grid md:grid-cols-2 gap-4">
+            {res.key_interpretation && (
+              <div className="bg-white rounded-xl border p-4">
+                <h4 className="font-semibold text-sm mb-2">🔑 Key Interpretation</h4>
+                <ul className="text-xs text-gray-700 space-y-1.5">
+                  {res.key_interpretation.map((k: string, i: number) => <li key={i} className="flex gap-1.5"><span className="text-indigo-500">▸</span>{k}</li>)}
+                </ul>
+              </div>
+            )}
+            {res.strategic_hurdle_coverage?.rows?.length > 0 && (
+              <div className="bg-white rounded-xl border p-4">
+                <h4 className="font-semibold text-sm mb-1">📏 Strategic Hurdle Coverage</h4>
+                <p className="text-[10px] text-gray-400 mb-2">{res.strategic_hurdle_coverage.disclaimer}</p>
+                <div className="space-y-2">
+                  {res.strategic_hurdle_coverage.rows.map((r2: any) => (
+                    <div key={r2.period} className="text-xs">
+                      <div className="flex justify-between mb-0.5"><span>{r2.period}: {fmt억(r2.projection_krw)} / {fmt억(r2.hurdle_krw)}</span>
+                        <b className={r2.coverage_pct >= 100 ? 'text-green-600' : r2.coverage_pct >= 70 ? 'text-amber-600' : 'text-red-600'}>{r2.coverage_pct}%</b></div>
+                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div className={`h-full ${r2.coverage_pct >= 100 ? 'bg-green-500' : r2.coverage_pct >= 70 ? 'bg-amber-400' : 'bg-red-400'}`} style={{ width: `${Math.min(100, r2.coverage_pct)}%` }} />
+                      </div>
+                    </div>))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ═══ 2단: Driver View ═══ */}
+          <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wide pt-2"><span className="h-px flex-1 bg-gray-200" />Driver View — 왜 이 숫자인지<span className="h-px flex-1 bg-gray-200" /></div>
 
           {official && (
             <div className="bg-white rounded-xl border p-4">
@@ -429,6 +520,9 @@ export default function ProductTimelinePanel({ games }: { games: any }) {
             </div>
           )}
 
+          {/* ═══ 3단: Audit View ═══ */}
+          <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wide pt-2"><span className="h-px flex-1 bg-gray-200" />Audit View — 검증<span className="h-px flex-1 bg-gray-200" /></div>
+
           {res.confidence && (
             <div className="bg-white rounded-xl border p-4">
               <h4 className="font-semibold text-sm mb-1">🏷 근거 등급 (Confidence Badge) <span className="text-[10px] text-gray-400">{res.confidence.definition}</span></h4>
@@ -444,6 +538,67 @@ export default function ProductTimelinePanel({ games }: { games: any }) {
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1">
               {res.warnings.map((w: string, i: number) => <p key={i} className="text-xs text-amber-700">{w}</p>)}
             </div>)}
+        </div>
+      )}
+      {/* Health badge */}
+      <div className="text-[10px] text-gray-400 text-right">
+        {health?.status === 'ok' ? `Backend: OK · modules ${Object.keys(health.modules || {}).length}/6 · data ${Object.values(health.data_files || {}).filter(Boolean).length}/3`
+          : health?.status === 'MODULE_MISSING' ? <span className="text-red-500">⚠ Backend warning: {Object.entries(health.modules || {}).filter(([, v]: any) => v !== 'loaded').map(([k]) => k).join(', ')} 미배포</span>
+          : health?.status === 'unreachable' ? <span className="text-red-500">⚠ Backend 연결 불가 — /api/health 확인</span> : 'Backend 상태 확인 중…'}
+      </div>
+
+      {/* 용어 가이드 Drawer */}
+      {showTerms && (
+        <div className="fixed inset-0 bg-black/30 z-50 flex justify-end" onClick={() => setShowTerms(false)}>
+          <div className="bg-white w-96 h-full overflow-y-auto p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="font-bold text-gray-800">📘 용어 가이드</h3>
+              <button onClick={() => setShowTerms(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+            <div className="space-y-3">
+              {TERMS.map(([t, d]) => (
+                <div key={t} className="border-b pb-2">
+                  <p className="text-sm font-semibold text-gray-800">{t}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{d}</p>
+                </div>))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Planning Case Detail Drawer */}
+      {drawer && res && (
+        <div className="fixed inset-0 bg-black/30 z-50 flex justify-end" onClick={() => setDrawer(false)}>
+          <div className="bg-white w-[28rem] h-full overflow-y-auto p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="font-bold text-gray-800">Planning Case Detail</h3>
+              <button onClick={() => setDrawer(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+            <div className="space-y-4 text-sm">
+              <div className="bg-indigo-50 rounded-lg p-3 space-y-1">
+                <p className="text-xs text-gray-500">{res.horizon_labels?.title}</p>
+                <p>Gross Revenue: <b>{fmt억(res.total.gross_krw)}</b></p>
+                <p>Platform Net (×0.70): <b>{fmt억(res.total.platform_net_krw || res.total.net_krw)}</b></p>
+                <p>Avg / Peak Unique DAU: <b>{fmtK(res.total.avg_unique_dau)} / {fmtK(res.total.peak_unique_dau)}</b></p>
+                <p>BEP: Marketing <b>{res.pnl?.bep?.marketing_bep_month}</b> · Full Cost <b>{res.pnl?.bep?.full_cost_bep_month}</b></p>
+              </div>
+              {res.key_interpretation && (
+                <div><p className="font-semibold text-xs text-gray-600 mb-1">Interpretation</p>
+                  <ul className="text-xs text-gray-700 space-y-1">{res.key_interpretation.map((k: string, i: number) => <li key={i}>· {k}</li>)}</ul></div>)}
+              {res.projection_bridge && (
+                <div><p className="font-semibold text-xs text-gray-600 mb-1">Top Drivers (Ordered Bridge)</p>
+                  <ul className="text-xs text-gray-700 space-y-1">
+                    {res.projection_bridge.rows.filter((r2: any) => r2.delta_krw > 0).sort((a: any, b: any) => b.delta_krw - a.delta_krw).slice(0, 4)
+                      .map((r2: any, i: number) => <li key={i}>{i + 1}. {r2.step} <b className="text-green-600">({fmt억(r2.delta_krw)})</b><br /><span className="text-gray-400">{r2.why}</span></li>)}
+                  </ul></div>)}
+              <div><p className="font-semibold text-xs text-gray-600 mb-1">연도별</p>
+                <table className="w-full text-xs"><thead><tr className="bg-gray-50"><th className="p-1 text-left">Year</th><th>의미</th><th>Gross</th><th>Avg uDAU</th></tr></thead>
+                  <tbody>{res.annual_summary.map((a: any) => (
+                    <tr key={a.year} className="border-b text-center"><td className="p-1 text-left">{a.year}</td>
+                      <td className="text-[10px] text-gray-500">{res.horizon_labels?.year_meaning?.[a.year] || ''}</td>
+                      <td>{fmt억(a.gross_revenue_krw)}</td><td>{fmtK(a.avg_unique_dau)}</td></tr>))}</tbody></table></div>
+            </div>
+          </div>
         </div>
       )}
     </div>

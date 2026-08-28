@@ -415,8 +415,9 @@ async def _run_pipeline(payload: Dict, project_fn: Callable, ProjectionInput,
         })
     total_gross = float(sum(product_rev))
     monthly = []
-    for m in range(total_days // 30):
-        s, e = m * 30, (m + 1) * 30
+    _n_blocks = total_days // 30
+    for m in range(_n_blocks):
+        s, e = m * 30, ((m + 1) * 30 if m < _n_blocks - 1 else total_days)  # 마지막 블록이 나머지 흡수 → Σmonthly == total
         row = {"month": f"M{m+1}",
                "unique_dau": int(np.mean(combined["unique_account_dau"][s:e])),
                "revenue_krw": float(sum(product_rev[s:e])),
@@ -428,6 +429,11 @@ async def _run_pipeline(payload: Dict, project_fn: Callable, ProjectionInput,
         for p, series in plat_rev.items():
             row[f"rev_{p}"] = float(sum(series[s:e]))
         monthly.append(row)
+
+    # 1순위-(b) 피드백21: wave attributed에 rev_mult(region×BM) 적용 — Σ(adjusted) == product gross
+    for _wid, _wv in combined["per_wave"].items():
+        _wv["cumulative_revenue_adjusted"] = _wv["cumulative_revenue"] * rev_mult
+        _wv["note"] = "attributed × (region×BM mult). Revenue는 dedup 안 함 → 합계 = product gross"
 
     # V14.3 계약(A안 확정, 피드백20): PREVIEW ONLY — 공식 annual/monthly/total 절대 불변
     v14_lifecycle = None
@@ -505,6 +511,10 @@ async def run_product_3y(payload: Dict, project_fn, ProjectionInput) -> Dict[str
     # V13.8: Ordered Projection Bridge — 단계별 실제 재실행 (순서 의존 명시)
     bridge = None
     if payload.get("enable_bridge"):
+        WHY = {"D1": "Product Gate 기반 retention 재정의 (임의 상향 아님)",
+               "BM": "근거 없는 0.48 penalty 제거 + 표본 이중반영 차단",
+               "Organic": "share→ratio 변환 계약 오류 수정",
+               "Reservoir": "사전등록 pool 직접 반영 (NEW STATE launch-scale evidence)"}
         steps = [("Generic baseline (D1 28%, BM penalty, no reservoir, organic 20%)",
                   {"target_d1": 0.28, "bm_ui": "__legacy_penalty__", "organic_share_of_total": 0.20, "__no_res": True}),
                  ("+ D1 Gate 28→%d%% 🟠" % round(payload.get("target_d1", 0.5) * 100), {"target_d1": None}),
@@ -526,8 +536,9 @@ async def run_product_3y(payload: Dict, project_fn, ProjectionInput) -> Dict[str
                 p2["waves"] = [{**w, "prereg_users": 0} for w in payload["waves"]]
             r2 = await _run_pipeline(p2, project_fn, ProjectionInput, SCENARIO_PRESETS["base"], cache)
             g = r2["total_gross"]
+            _why = next((v for k, v in WHY.items() if k in label), "")
             rows.append({"step": label, "cumulative_gross_krw": g,
-                         "delta_krw": (g - prev_g) if prev_g is not None else 0})
+                         "delta_krw": (g - prev_g) if prev_g is not None else 0, "why": _why})
             prev_g = g
         rows.append({"step": "V14 Normal (final)", "cumulative_gross_krw": base["total_gross"],
                      "delta_krw": base["total_gross"] - prev_g})
@@ -610,8 +621,26 @@ async def run_product_3y(payload: Dict, project_fn, ProjectionInput) -> Dict[str
                            "candidates": {"arpdau": "Shadow A/B 대기", "three_layer_bm": "V14.4 prototype — opt-in integration 대기"}},
         "v14_integration_status": {"v14_1_retention_anchor": "prototype (미통합)", "v14_2_independent_acquisition": "opt-in (brand 단독 유입)",
                                     "v14_3_live_lifecycle": "PREVIEW ONLY (공식 미반영)", "v14_4_three_layer": "prototype (owner gate 대기)"},
+        "key_interpretation": (lambda ann, hc: [x for x in [
+            f"Y1은 순차 출시 전개기(Ramp)" + (f" — Hurdle 대비 {hc[0]['coverage_pct']}%" if hc else ""),
+            (f"Y2부터 Avg uDAU {ann[1]['avg_unique_dau']/1e4:.0f}만 수준 안정화" if len(ann) > 1 else ""),
+            f"마지막 해는 tail extrapolation 의존(rev {ann[-1]['tail_share_revenue']*100:.0f}%) — LiveOps 실측 전 신뢰도 주의",
+            "상승분의 최대 기여는 계약 정정(BM penalty 제거·Organic 정정) — 임의 상향 아님",
+            "Key Issue: 총량이 아니라 Y1 ramp 속도" if hc and hc[0]["coverage_pct"] < 70 else "",
+        ] if x])(base["annual"], (coverage or {}).get("rows", [])),
+        "horizon_labels": {
+            "title": (f"Launch {int(payload.get('horizon_years',3))*12}M Projection"
+                      + (" (Ramp + FCY 3Y)" if int(payload.get('horizon_years',3)) == 4 else "")),
+            "year_meaning": ({"Y1": "Ramp (출시 전개기)", "Y2": "FCY1", "Y3": "FCY2", "Y4": "FCY3"}
+                             if int(payload.get('horizon_years',3)) == 4 else
+                             {"Y1": "Ramp (출시 전개기 — 순차 진입)", "Y2": "운영 2년차", "Y3": "운영 3년차"}),
+            "caution": "'정상 운영 3개년(FCY 3Y)'이 아닌 출시 후 N개월 기준. FCY 3Y가 필요하면 horizon 4년 실행"},
         "annual_summary": base["annual"],
-        "total": {"gross_krw": base["total_gross"], "net_krw": base["total_gross"] * NET_RATE,
+        "total": {"gross_krw": base["total_gross"],
+                  "platform_net_krw": base["total_gross"] * NET_RATE,
+                  "net_krw": base["total_gross"] * NET_RATE,
+                  "net_definitions": {"platform_net": "Gross × 0.70 (스토어 수수료만 차감) — Exec 요약 기준",
+                                       "operating_net": "Gross × 0.57 (수수료+VAT+인프라) — P&L Waterfall 기준"},
                   "avg_unique_dau": int(base["avg_unique_dau_total"]), "peak_unique_dau": base["peak_unique_dau_total"]},
         "monthly": base["monthly"],
         "mode_summary": {"synergy_label": base["modes"]["synergy_label"], "identity_check": base["modes"]["identity_check"]},
@@ -643,15 +672,43 @@ def build_excel(result: Dict) -> bytes:
 
     wb.remove(wb.active)
     t = result["total"]
+    hl = result.get("horizon_labels", {})
+    ann = result["annual_summary"]
+    hc_rows = (result.get("strategic_hurdle_coverage") or {}).get("rows", [])
+    scen = result.get("excel_scenarios") or {}
+    br_top = ""
+    if result.get("projection_bridge"):
+        _r = max(result["projection_bridge"]["rows"][1:-1], key=lambda x: x.get("delta_krw") or 0, default=None)
+        if _r: br_top = f"최대 기여: {_r['step']} ({_r['delta_krw']/1e8:+.0f}억) — {_r.get('why','')}"
+    interp = [
+        f"- Y1은 순차 출시 전개기(Ramp){' — Hurdle 대비 ' + str(hc_rows[0]['coverage_pct']) + '%' if hc_rows else ''}",
+        f"- Y2부터 Avg uDAU {ann[1]['avg_unique_dau']/1e4:.0f}만 수준 안정화" if len(ann) > 1 else "",
+        f"- 마지막 해는 tail extrapolation 의존(rev {ann[-1]['tail_share_revenue']*100:.0f}%) — LiveOps 실측 전 신뢰도 주의",
+        f"- {br_top}" if br_top else "",
+    ]
     sheet("01_Executive_Summary", [
-        ["Product 3-Year Projection", result["assumption_set"]["assumption_set_id"]],
-        [], ["KPI", "Value"],
-        ["3Y Gross Revenue (KRW)", t["gross_krw"]], ["3Y Net Revenue (KRW)", t["net_krw"]],
-        ["Avg Unique DAU", t["avg_unique_dau"]], ["Peak Unique DAU", t["peak_unique_dau"]],
-        [], ["Year", "Unique NRU", "Avg uDAU", "Peak uDAU", "Gross", "Net", "TailShare(UD)", "TailShare(Rev)"],
-        *[[a["year"], a["unique_nru"], a["avg_unique_dau"], a["peak_unique_dau"],
+        [f"GW {hl.get('title', 'Launch 36M Projection')} — Conditional (Product Gate 달성 전제)"],
+        [result.get("conditional_notice", {}).get("disclaimer", "This is not a sales commitment.")],
+        ["assumption_set_id", result["assumption_set"]["assumption_set_id"]],
+        [], ["KPI", "Value", "정의"],
+        ["Gross Revenue (KRW)", t["gross_krw"], "유저 결제 총액 (= Monthly 시트 합 = Platform 시트 합)"],
+        ["Platform Net Revenue (KRW)", t.get("platform_net_krw", t["net_krw"]), "Gross × 0.70 (스토어 수수료만) — P&L의 Net(0.57)과 다름"],
+        ["Avg Unique DAU", t["avg_unique_dau"], "계정 중복 제거"],
+        ["Peak Unique DAU", t["peak_unique_dau"], ""],
+        ["Unique NRU 합", sum(a["unique_nru"] for a in ann), ""],
+        [], ["Key Interpretation"], *[[x] for x in interp if x],
+        [], ["Year", "의미", "Unique NRU", "Avg uDAU", "Peak uDAU", "Gross", "PlatformNet(0.70)", "Tail(UD)", "Tail(Rev)"],
+        *[[a["year"], hl.get("year_meaning", {}).get(a["year"], ""), a["unique_nru"], a["avg_unique_dau"], a["peak_unique_dau"],
            a["gross_revenue_krw"], a["net_revenue_krw"], a["tail_share_userdays"], a["tail_share_revenue"]]
-          for a in result["annual_summary"]],
+          for a in ann],
+        [], ["── Scenario Range (D1만 변경, 타 변수 고정) ──"],
+        ["Scenario", "D1", "Total Gross", "의미"],
+        *([[n, sc["d1"], sc["gross_krw"], sc["meaning"]] for n, sc in scen.items()] if scen
+          else [["(excel_scenarios 미실행 — /product-3y/excel 호출 시 자동 포함)", "", "", ""]]),
+        [], ["── Strategic Hurdle Coverage (참고선 — 계산 무영향) ──"],
+        ["Period", "Projection", "Hurdle", "Coverage%"],
+        *([[r["period"], r["projection_krw"], r["hurdle_krw"], r["coverage_pct"]] for r in hc_rows]
+          if hc_rows else [["Hurdle 미입력", "", "", ""]]),
         [], ["Revenue Engine", result["revenue_engine"]["active"]],
         [], ["── P&L Waterfall ──"],
         ["Year", "Gross", "Net(0.57)", "Marketing", "Contribution", "HR", "Operating"],
@@ -669,9 +726,13 @@ def build_excel(result: Dict) -> bytes:
         *[[m["month"], *[m.get(f"dau_{p}", 0) for p in plats], *[m.get(f"rev_{p}", 0) for p in plats]] for m in result["monthly"]]])
     sheet("04_Mode_Breakdown", [["month", "br_only", "ex_only", "both", "synergy"],
         *[[m["month"], m["br_only"], m["ex_only"], m["both"], result["mode_summary"]["synergy_label"]] for m in result["monthly"]]])
-    sheet("05_Wave_Breakdown", [["wave_id", "platform", "offset_days", "cumulative_revenue", "new_to_product_nru"],
-        *[[k, v["platform"], v["offset_days"], v["cumulative_revenue"], v["total_new_to_product_nru"]]
-          for k, v in result["per_wave"].items()]])
+    sheet("05_Wave_Breakdown", [
+        ["※ Wave revenue is ATTRIBUTED (per-platform 귀속). Revenue는 dedup하지 않으므로 adjusted 합계 = Exec Gross"],
+        ["wave_id", "platform", "offset_days", "raw_attributed_rev", "adjusted_rev(×region×BM)", "new_to_product_nru"],
+        *[[k, v["platform"], v["offset_days"], v["cumulative_revenue"],
+           v.get("cumulative_revenue_adjusted", v["cumulative_revenue"]), v["total_new_to_product_nru"]]
+          for k, v in result["per_wave"].items()],
+        ["합계", "", "", "", sum(v.get("cumulative_revenue_adjusted", 0) for v in result["per_wave"].values()), ""]])
     lle = result.get("legacy_lever_envelope", {})
     sheet("06_Legacy_Lever_Envelope", [["⚠ " + lle.get("warning", "")],
         ["scenario", "total_gross_krw", "levers"],
@@ -702,8 +763,8 @@ def build_excel(result: Dict) -> bytes:
         *[[r["period"], r["projection_krw"], r["hurdle_krw"], r["coverage_pct"]] for r in hc.get("rows", [])]])
     br = result.get("projection_bridge") or {}
     sheet("12_Projection_Bridge", [[br.get("label", "Projection Bridge (enable_bridge=true로 생성)")],
-        [br.get("order_note", "")], ["Step", "Cumulative Gross", "Delta"],
-        *[[r["step"], r["cumulative_gross_krw"], r["delta_krw"]] for r in br.get("rows", [])]])
+        [br.get("order_note", "")], ["Step", "Cumulative Gross", "Delta", "해석 (왜)"],
+        *[[r["step"], r["cumulative_gross_krw"], r["delta_krw"], r.get("why", "")] for r in br.get("rows", [])]])
     cf = result.get("confidence", {})
     sheet("13_Confidence_Badge", [[cf.get("definition", "")], [cf.get("summary", "")],
         ["Variable", "Value", "Badge", "Source"],
@@ -716,5 +777,16 @@ def build_excel(result: Dict) -> bytes:
            e.get("sample_n"), e.get("snapshot_id"), e.get("date")] for e in lin],
         [], ["V14 Integration Status"],
         *[[k, str(vv)] for k, vv in (result.get("v14_integration_status") or {}).items()]])
+    sheet("15_Risk_Validation_Plan", [
+        ["Risk / Validation Plan — '우리가 무엇을 모르는지'와 검증 경로"],
+        ["변수", "현재값", "상태", "검증 방법"],
+        ["D1 Retention", "50% (Normal)", "🟠 Gate assumption (peer p98)", "Alpha / CBT cohort 실측"],
+        ["Prereg activation", "40%", "🟡 Evidence-informed (NEW STATE aggregate)", "사전예약→실유입 개인단위 추적"],
+        ["Organic share", "36.4%", "🔵 Internal prior (PC BR)", "Soft launch UA/organic split"],
+        ["Tail (마지막 해)", "rev 100% extrapolated", "⚪ Unvalidated", "LiveOps 운영 실측 (V14.3 통합)"],
+        ["BM monetization", "legacy PR×ARPPU + class mult", "🔵 Internal benchmark (clamped)", "CBT store test / payer cohort"],
+        ["Mode synergy", "1.00", "🟠 Neutral 고정", "BR/EX cohort 비교 (CBT)"],
+        ["Region factors", "measured+shrunk+proxy 혼재", "🔵/⚪", "지역별 소프트런칭 RPD"],
+    ])
     bio = BytesIO(); wb.save(bio)
     return bio.getvalue()

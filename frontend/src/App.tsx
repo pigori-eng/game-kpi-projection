@@ -243,14 +243,21 @@ function App() {
         <div className="flex gap-2 mb-4 print:hidden">
           <button onClick={() => setMainView('component')}
             className={`px-4 py-2 rounded-lg text-sm font-medium ${mainView === 'component' ? 'bg-blue-600 text-white' : 'bg-white border text-gray-600'}`}>
-            📊 Component Projection (단일 Wave)
+            📊 Single Wave (Quick Projection)
           </button>
           <button onClick={() => setMainView('product3y')}
             className={`px-4 py-2 rounded-lg text-sm font-medium ${mainView === 'product3y' ? 'bg-indigo-600 text-white' : 'bg-white border text-gray-600'}`}>
-            🌊 Product 3Y Timeline (순차출시·멀티모드)
+            🌊 Launch Projection (GW 공식 · 장기 사업성)
           </button>
         </div>
 
+        {mainView === 'component' && (
+          <div className="mb-4 bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-gray-600 print:hidden">
+            <b>Single Wave Projection</b> — 단일 런칭/단일 플랫폼의 초기 성과를 빠르게 추정하는 Quick Estimator입니다.
+            순차 출시(PC→Mobile→Console), 사전등록 Reservoir, Hurdle Coverage, C레벨 보고용 장기 사업성 검토는
+            <button onClick={() => setMainView('product3y')} className="text-indigo-600 font-semibold mx-1 underline">Launch Projection</button>을 사용하세요.
+          </div>
+        )}
         {mainView === 'product3y' && <ProductTimelinePanel games={games} />}
 
         <div className={`bg-white rounded-xl shadow-sm border border-gray-200 mb-6 print:hidden ${mainView !== 'component' ? 'hidden' : ''}`}>
