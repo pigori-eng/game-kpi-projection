@@ -28,8 +28,17 @@ import v14_engines as v14
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 
 # ── J. BM Recipe Audit: UI ↔ engine recipe 1:1 (원칙 8) ──────────────
-# V13.7.2 P0-2: BM modifier 중립화 — 기존 modifier(0.48x~2.7x)는 무근거 정책값 + 표본 이중반영
-# → evidence-backed modifier 확보(V14.4 3-Layer) 전까지 전 recipe bm_type=Midcore(1.0) + policy badge
+# V14.0.2 #5: BM modifier = 내부 실측 evidence-backed (PR×ARPPU by BM class vs 전체 median, clamp [0.85,1.20])
+# 산출: cosmetic_pass raw 0.53→0.85 / gacha raw 3.27→1.20 / consumable raw 1.29→1.20 (n=7/8/3)
+# clamp 사유: 장르 효과 혼재(BM 단독 분리 불가) → 방향만 반영, V14.4 3-Layer에서 정밀화
+BM_EVIDENCE_MODIFIERS = {
+    "F2P Cosmetic + Battle Pass": {"mult": 0.85, "badge": "🔵 Internal benchmark (n=7, clamped, 장르혼재 주의)"},
+    "F2P Gacha":                  {"mult": 1.20, "badge": "🔵 Internal benchmark (n=8, clamped)"},
+    "F2P Consumable":             {"mult": 1.20, "badge": "🔵 Internal benchmark (n=3, clamped)"},
+    "B2P Package":                {"mult": 1.00, "badge": "⚪ 표본 구조 상이 — 중립"},
+    "Hybrid F2P + DLC":           {"mult": 1.00, "badge": "⚪ evidence 없음 — 중립"},
+    "Subscription":               {"mult": 1.00, "badge": "⚪ evidence 없음 — 중립"},
+}
 BM_RECIPE_MAP = {
     "F2P Cosmetic + Battle Pass": {"engine_recipe": "launch_f2p_iap", "revenue_basis": "iap", "bm_type": "Midcore"},
     "F2P Gacha":                  {"engine_recipe": "launch_f2p_iap", "revenue_basis": "iap", "bm_type": "Midcore"},
@@ -51,10 +60,26 @@ REGION_FACTORS = {
     "SA":    {"factor": 0.15, "source": "measured (DNDM SA ₩36)", "status": "measured"},
     "EU":    {"factor": 1.00, "source": "shrunk (NEW STATE DE/GB/FR 실측 상대비 0.9 + 기존 proxy 1.1 병합, n_families=1)", "status": "shrunk"},
     "OTHER": {"factor": 0.50, "source": "proxy (내부 표본 0)", "status": "proxy"},
+    "CN":    {"factor": 1.20, "source": "proxy (내부 표본 0 + 판호/로컬 퍼블리싱 구조 특이 — 별도 검토 필수)", "status": "proxy"},
     "GLOBAL": {"factor": 1.00, "source": "definition", "status": "measured"},
 }
 
 DEFAULT_REGION_MIX = {"NA": 0.30, "EU": 0.20, "KR": 0.15, "JP": 0.10, "SEA": 0.20, "OTHER": 0.05}
+
+REGION_MODE_PRESETS = {
+    "global_ex_cn": {"label": "글로벌 (중국 본토 제외)", "mix": DEFAULT_REGION_MIX},
+    # custom: regions[] 균등 분배 (또는 region_mix 직접 지정 시 그 값 우선)
+}
+
+def resolve_region_mix(payload: Dict) -> Dict[str, float]:
+    rs = payload.get("region_scope") or {}
+    if rs.get("mode") == "custom" and rs.get("regions"):
+        regs = [r for r in rs["regions"] if r in REGION_FACTORS]
+        w = payload.get("region_mix") if payload.get("region_mix") and set(payload["region_mix"]) <= set(regs) else None
+        return w or {r: 1.0 / len(regs) for r in regs}
+    if rs.get("mode") == "global_ex_cn":
+        return dict(DEFAULT_REGION_MIX)
+    return payload.get("region_mix", DEFAULT_REGION_MIX)
 
 def region_revenue_multiplier(mix: Dict[str, float]) -> Dict[str, Any]:
     total = sum(mix.values())
@@ -131,7 +156,7 @@ async def run_official_scenarios(payload: Dict, project_fn, ProjectionInput) -> 
     out = {"label": "Official Scenarios — Worst/Normal/Best (D1 40/50/60, 타 변수 고정)",
            "conditional": "Product Gate 달성 조건부 · This is not a sales commitment", "scenarios": {}}
     for name, d1 in [("worst", 0.40), ("normal", 0.50), ("best", 0.60)]:
-        r = await run_product_3y({**payload, "target_d1": d1, "enable_bridge": False,
+        r = await run_product_3y({**payload, "target_d1": d1, "enable_bridge": False, "light": True,
                                    "enable_v14_3": False, "enable_v14_2": False}, project_fn, ProjectionInput)
         out["scenarios"][name] = {
             "assumption_set_id": r["assumption_set"]["assumption_set_id"],
@@ -302,7 +327,8 @@ async def _run_pipeline(payload: Dict, project_fn: Callable, ProjectionInput,
                 launch_date=(anchor + timedelta(days=offset_days)).strftime("%Y-%m-%d"),
                 projection_days=wave_days,
                 retention={"selected_games": ms.get("retention", []),
-                           "target_d1_retention": {"best": target_d1 * 1.1, "normal": target_d1, "worst": target_d1 * 0.9}},
+                           "target_d1_retention": {"best": min(0.9, target_d1 + 0.10), "normal": target_d1,
+                                                    "worst": max(0.05, target_d1 - 0.10)}},  # V14.0.2 #6: 60/50/40
                 nru={"selected_games": ms.get("nru", []),
                      "d1_nru": {"best": int(d1n * 1.2), "normal": d1n, "worst": int(d1n * 0.8)},
                      "ua_budget": w["ua_budget"] * scale, "brand_budget": int(brand),
@@ -345,9 +371,10 @@ async def _run_pipeline(payload: Dict, project_fn: Callable, ProjectionInput,
     modes = decompose_modes(combined["unique_account_dau"], mode, synergy)
 
     # Region (H-core, 원칙 6) + monetization lever + synergy monetization lift
-    rmix = payload.get("region_mix", DEFAULT_REGION_MIX)
+    rmix = resolve_region_mix(payload)  # V14.0.2 #4: global_ex_cn | custom
     reg = region_revenue_multiplier(rmix)
-    rev_mult = reg["multiplier"] * levers.get("monetization", 1.0) * modes["revenue_monetization_lift"]
+    _bm_ev = BM_EVIDENCE_MODIFIERS.get(payload.get("bm_ui", ""), {"mult": 1.0})
+    rev_mult = reg["multiplier"] * levers.get("monetization", 1.0) * modes["revenue_monetization_lift"] * _bm_ev["mult"]
     product_rev = [v * rev_mult for v in combined["product_revenue"]]
     plat_rev = {}
     for wv in wave_results:
@@ -435,16 +462,18 @@ async def run_product_3y(payload: Dict, project_fn, ProjectionInput) -> Dict[str
 
     # [V14.0.1 격하] Legacy Lever Envelope — 공식 시나리오 아님 (공식 = Best/Normal/Worst D1 3본)
     scenarios = {}
-    for name, lv in SCENARIO_PRESETS.items():
+    _scen = {"base": SCENARIO_PRESETS["base"]} if payload.get("light") else SCENARIO_PRESETS
+    for name, lv in _scen.items():
         r = base if name == "base" else await _run_pipeline(payload, project_fn, ProjectionInput, lv, cache)
         scenarios[name] = {"total_gross_krw": r["total_gross"],
                            "annual": [{"year": a["year"], "gross": a["gross_revenue_krw"],
                                        "avg_unique_dau": a["avg_unique_dau"]} for a in r["annual"]],
                            "levers": lv}
 
-    # F. Tornado Sensitivity (±20% 자동, DAU/Revenue 분리)
+    # F. Tornado Sensitivity (±20% 자동, DAU/Revenue 분리) — light 모드 시 스킵 (배포 타임아웃 방어)
     tornado = []
-    for lever in TORNADO_LEVERS:
+    _levers_run = [] if payload.get("light") else TORNADO_LEVERS
+    for lever in _levers_run:
         row = {"lever": lever}
         for d, mult in [("minus20", 0.8), ("plus20", 1.2)]:
             lv = dict(SCENARIO_PRESETS["base"]); lv[lever] = mult

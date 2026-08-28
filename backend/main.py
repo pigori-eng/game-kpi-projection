@@ -1481,6 +1481,22 @@ UA&브랜딩 마케터, 퍼블리싱, 데이터 사이언스, 라이브 서비�
 async def root():
     return {"message": "Game KPI Projection API", "version": "2.0.0", "ai_enabled": bool(OPENAI_API_KEY)}
 
+@app.get("/api/health")
+async def health():
+    """배포 자가진단 — 신규 모듈 로드 확인 (출력 안 될 때 최우선 확인)"""
+    mods = {}
+    for name in ["contracts", "external_evidence", "product_timeline", "product_3y", "arpdau_engine", "v14_engines"]:
+        try:
+            __import__(name); mods[name] = "loaded"
+        except Exception as e:
+            mods[name] = f"FAIL: {e}"
+    import os as _os
+    data_ok = {f: _os.path.exists(_os.path.join(DATA_DIR, f)) for f in
+               ["raw_game_data.json", "internal_priors.json", "external_evidence.json"]}
+    return {"status": "ok" if all(v == "loaded" for v in mods.values()) else "MODULE_MISSING",
+            "version": "v14.0.2", "modules": mods, "data_files": data_ok,
+            "hint": "MODULE_MISSING이면 backend 폴더 전체(신규 .py 6개)가 배포됐는지 확인"}
+
 @app.get("/api/games")
 async def get_available_games():
     raw_data = load_raw_data()

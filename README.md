@@ -934,6 +934,14 @@ VITE_API_URL=http://localhost:8000/api
 4. Start Command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
 5. Environment Variables: `OPENAI_API_KEY` 설정
 
+> ### ⚠️ 배포 필수 체크 (결과가 안 나올 때 1순위 확인)
+> **backend 폴더 전체**가 배포되어야 합니다. `main.py`만 올리면 신규 모듈 import 실패로
+> **서버 전체가 죽어 단일/3Y 모두 결과가 출력되지 않습니다.**
+>
+> 필수 파일: `main.py, contracts.py, external_evidence.py, product_timeline.py, product_3y.py, arpdau_engine.py, v14_engines.py` + `data/` 4종
+>
+> 배포 후 자가진단: **`GET /api/health`** → `status: ok` 확인 (`MODULE_MISSING`이면 누락 파일 표시됨)
+
 ---
 
 ## 14. Product 3Y Timeline (순차출시·멀티모드)
