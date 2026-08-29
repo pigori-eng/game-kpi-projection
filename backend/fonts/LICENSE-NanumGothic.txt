@@ -1,0 +1,4 @@
+NanumGothic / NanumGothicBold
+Copyright (c) NAVER Corporation. Licensed under the SIL Open Font License v1.1.
+재배포/임베딩 허용 (OFL). 원문: https://scripts.sil.org/OFL
+용도: 1-page PDF Export 한글 임베딩 전용.

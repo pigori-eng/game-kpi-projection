@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, Fragment } from 'react';
 import { Download, FileSpreadsheet, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, Bug } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -272,6 +272,10 @@ const downloadCSV = (data: any[], filename: string, headers: string[]) => {
 
 const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSettings; view?: 'revenue' | 'financial' }> = ({ results, basicSettings, view = 'revenue' }) => {
   const { summary } = results;
+  const [drawerMode, setDrawerMode] = useState<null | 'gross' | 'dau'>(null);
+  const conf: any = (results as any).confidence?.evidence_state;
+  const mini: any = (results as any).mini_revenue_bridge;
+  const bmAdj: any = (results as any).bm_adjustment;
   const printRef = useRef<HTMLDivElement>(null);
   // V12.5: Revenue/Financial 뷰 분리 — 매출 과소평가 방지를 위해 BEP는 별도 뷰
   const showRevenue = view === 'revenue';
@@ -360,6 +364,60 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
 
   return (
     <div className="space-y-8 max-w-4xl mx-auto print:max-w-none" ref={printRef}>
+      {/* V14.1.0: Evidence badge row */}
+      {conf && (
+        <div className="flex flex-wrap gap-1.5 text-[11px]">
+          {Object.entries(conf).map(([k, v]: any) => (
+            <span key={k} className="px-2 py-1 bg-gray-50 border rounded" title={v.source}>{k}: {v.badge}</span>))}
+          {bmAdj && bmAdj.mult !== 1.0 && <span className="px-2 py-1 bg-blue-50 border border-blue-200 rounded text-blue-700">BM ×{bmAdj.mult}</span>}
+        </div>
+      )}
+      {/* Mini Revenue Bridge */}
+      {mini && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <h4 className="font-semibold text-sm mb-2">🔗 {mini.label}</h4>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {mini.rows.map((row: any, i: number) => (
+              <Fragment key={i}>
+                <span className="px-2.5 py-1.5 bg-indigo-50 rounded-lg border border-indigo-100">
+                  <span className="text-gray-500">{row.driver}</span> <b className="text-indigo-800">{typeof row.value === 'number' ? row.value.toLocaleString() : row.value}</b>
+                </span>
+                {i < mini.rows.length - 1 && <span className="text-gray-300">→</span>}
+              </Fragment>))}
+          </div>
+        </div>
+      )}
+      {/* Result Detail Drawer */}
+      {drawerMode && (
+        <div className="fixed inset-0 bg-black/30 z-50 flex justify-end" onClick={() => setDrawerMode(null)}>
+          <div className="bg-white w-96 h-full overflow-y-auto p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="font-bold text-gray-800">{drawerMode === 'gross' ? 'Revenue Driver' : 'DAU Driver'}</h3>
+              <button onClick={() => setDrawerMode(null)} className="text-gray-400">✕</button>
+            </div>
+            {drawerMode === 'gross' ? (
+              <div className="text-sm space-y-2">
+                <p className="text-xs text-gray-500">Gross = NRU × Retention → DAU × PR × ARPPU</p>
+                {mini?.rows.map((row: any, i: number) => (
+                  <div key={i} className="flex justify-between border-b py-1.5"><span className="text-gray-600">{row.driver}</span><b>{typeof row.value === 'number' ? row.value.toLocaleString() : row.value}</b></div>))}
+                {bmAdj && <div className="mt-2 text-xs bg-blue-50 rounded p-2 text-blue-800">{bmAdj.badge}<br/><span className="text-blue-600">{bmAdj.warning}</span></div>}
+                {(['best','normal','worst'] as const).map(sc => (
+                  <div key={sc} className="flex justify-between text-xs"><span className="capitalize text-gray-500">{sc} Gross</span><span>{formatCurrency((summary as any)[sc].gross_revenue)}</span></div>))}
+              </div>
+            ) : (
+              <div className="text-sm space-y-2">
+                {(['best','normal','worst'] as const).map(sc => { const s2: any = (summary as any)[sc]; return (
+                  <div key={sc} className="border rounded-lg p-2.5">
+                    <p className="font-semibold capitalize text-xs mb-1">{sc}</p>
+                    <div className="flex justify-between text-xs"><span>Peak DAU</span><b>{s2.peak_dau?.toLocaleString()}</b></div>
+                    <div className="flex justify-between text-xs"><span>Avg DAU</span><b>{s2.avg_dau?.toLocaleString?.() || '-'}</b></div>
+                    <div className="flex justify-between text-xs"><span>Total NRU</span><b>{s2.total_nru?.toLocaleString?.() || '-'}</b></div>
+                  </div>); })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {/* V8 #5: A4 스타일 종합 보고서 헤더 */}
       <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-xl p-8 text-white print:bg-slate-800">
         <div className="flex items-center justify-between mb-4">
@@ -381,11 +439,11 @@ const OverviewTab: React.FC<{ results: ProjectionResult; basicSettings?: BasicSe
         <div className="grid grid-cols-3 gap-4 mt-6">
           <div className="bg-white/10 rounded-lg p-4">
             <p className="text-slate-300 text-sm">Normal Revenue</p>
-            <p className="text-2xl font-bold">{formatCurrency(summary.normal.gross_revenue)}</p>
+            <p className="text-2xl font-bold cursor-pointer hover:underline" title="클릭: Revenue Driver 상세" onClick={() => setDrawerMode('gross')}>{formatCurrency(summary.normal.gross_revenue)}</p>
           </div>
           <div className="bg-white/10 rounded-lg p-4">
             <p className="text-slate-300 text-sm">Peak DAU</p>
-            <p className="text-2xl font-bold">{summary.normal.peak_dau.toLocaleString()}</p>
+            <p className="text-2xl font-bold cursor-pointer hover:underline" title="클릭: DAU Driver 상세" onClick={() => setDrawerMode('dau')}>{summary.normal.peak_dau.toLocaleString()}</p>
           </div>
           <div className="bg-white/10 rounded-lg p-4">
             <p className="text-slate-300 text-sm">BEP</p>
@@ -826,6 +884,7 @@ const RetentionTab: React.FC<{ results: ProjectionResult }> = ({ results }) => {
   const tableData = results.results.best.full_data.retention.map((_, i) => ({ day: `D+${i + 1}`, best: (results.results.best.full_data.retention[i] * 100).toFixed(1), normal: (results.results.normal.full_data.retention[i] * 100).toFixed(1), worst: (results.results.worst.full_data.retention[i] * 100).toFixed(1) }));
   return (
     <div className="space-y-6">
+
       {/* Retention 계산 방식 설명 */}
       <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
         <p className="text-sm font-semibold text-purple-800 mb-2">📊 Retention 계산 방식</p>

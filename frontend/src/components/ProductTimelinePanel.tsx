@@ -1,6 +1,6 @@
 // V14.0.2: Product 3Y Timeline — 단일 Wave와 동일한 레이어형 UI + 가이드
 // #2 레이어 입력 / #3 가이드 / #4 지역 2모드 / #7 V14토글 제거 / #8 Hurdle 숨김(백엔드 유지)
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import {
   LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, Legend,
@@ -70,7 +70,7 @@ const Layer = ({ no, title, children }: { no: string; title: string; children: a
   </div>
 );
 
-export default function ProductTimelinePanel({ games }: { games: any }) {
+export default function ProductTimelinePanel({ games, seed }: { games: any; seed?: any }) {
   const [waves, setWaves] = useState([
     { wave_id: 'pc_launch', platform: 'PC', offset_months: 0, ua_budget: 120, brand_budget: 80, target_cpa: 7500, prereg_users: 250, activation: 40 },
     { wave_id: 'mobile_global', platform: 'Mobile', offset_months: 6, ua_budget: 150, brand_budget: 100, target_cpa: 4000, prereg_users: 200, activation: 40 },
@@ -96,6 +96,19 @@ export default function ProductTimelinePanel({ games }: { games: any }) {
   const [showTerms, setShowTerms] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const [health, setHealth] = useState<any>(null);
+  const appliedSeed = useRef<any>(null);
+  useEffect(() => {
+    if (!seed || appliedSeed.current === seed.__seedId) return;
+    appliedSeed.current = seed.__seedId;
+    if (seed.launch_date) setAnchor(seed.launch_date);
+    const bmMap: Record<string, string> = { F2P_Cosmetic: 'F2P Cosmetic + Battle Pass', Gacha: 'F2P Gacha', Casual: 'F2P Consumable', Hardcore: 'B2P Package' };
+    if (seed.bm_type && bmMap[seed.bm_type]) setBmUi(bmMap[seed.bm_type]);
+    const d1 = seed?.retention?.target_d1_retention?.normal ?? seed?.target_d1;
+    if (d1) setTargetD1(Math.round(d1 * 100));
+    const ua = seed?.nru?.ua_budget ?? seed?.ua_budget;
+    const cpa = seed?.nru?.target_cpa ?? seed?.target_cpa;
+    setWaves(ws => ws.map((w, i) => i === 0 ? { ...w, ua_budget: ua ? Math.round(ua / 1e8) : w.ua_budget, target_cpa: cpa || w.target_cpa } : w));
+  }, [seed]);
   useEffect(() => { axios.get(`${API_URL}/health`).then(r => setHealth(r.data)).catch(() => setHealth({ status: 'unreachable' })); }, []);
   const applyPreset = (name: string) => {
     const pr = PRESETS[name]; if (!pr) return;
@@ -343,6 +356,11 @@ export default function ProductTimelinePanel({ games }: { games: any }) {
           <button onClick={run} disabled={running} className="px-8 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-semibold shadow-sm">
             {running ? '⏳ 계산 중...' : '▶ Launch Projection 실행'}
           </button>
+          {res && <button onClick={async () => {
+            const r = await axios.post(`${API_URL}/projection/product-3y/export/pdf`, buildPayload(), { responseType: 'blob', timeout: 600000 });
+            const url = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
+            const a = document.createElement('a'); a.href = url; a.download = 'GW_Launch_Projection.pdf'; a.click(); URL.revokeObjectURL(url);
+          }} className="px-4 py-3 bg-rose-600 text-white rounded-lg hover:bg-rose-700">📄 1-page PDF<span className="block text-[9px] opacity-80">C레벨 보고용 요약</span></button>}
           {res && <button onClick={downloadExcel} className="px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700">📥 Report-ready Excel<span className="block text-[9px] opacity-80">Exec·Bridge·Badge·Hurdle·Risk Plan 포함 (15시트)</span></button>}
         </div>
         {err && <p className="text-sm text-red-600 bg-red-50 rounded-lg p-3">❌ {err}</p>}

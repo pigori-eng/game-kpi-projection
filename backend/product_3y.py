@@ -191,13 +191,23 @@ async def run_v14_delta_bridge(payload: Dict, project_fn, ProjectionInput) -> Di
     rows.append({"config": "+ V14.3 Live Lifecycle only (PREVIEW 산술)", "gross_krw": b["total_gross"] * ratio,
                  "delta_krw": b["total_gross"] * (ratio - 1), "official": False,
                  "badge": v14.BADGE["evidence_informed"], "note": "공식 미반영 — implied uplift"})
-    # V14.1 / V14.4: prototype (파이프라인 미통합) — Δ 미산출 명시
     rows.append({"config": "+ V14.1 Retention Anchor only", "gross_krw": None, "delta_krw": None,
-                 "official": False, "note": "prototype — retention 엔진 통합 후 산출 가능"})
-    rows.append({"config": "+ V14.4 3-Layer Monetization only", "gross_krw": None, "delta_krw": None,
-                 "official": False, "note": "prototype — Revenue Owner Gate(Shadow A/B) 통과 후 산출"})
-    return {"label": "V14 Module Delta Bridge (vs Official Normal)",
-            "contract": "Official 숫자는 V13.8 기준 고정 — V14 Δ는 전부 Preview", "rows": rows}
+                 "official": False,
+                 "note": "산출 보류 — legacy retention 커브와의 정확 비교는 retention_owner 통합 시 산출 "
+                         "(임의 근사는 -50%대 허위 Δ를 만들어 배제, 피드백25 '각 Δ의 독립 설명가능성' 원칙)"})
+    rows.append({"config": "+ V14.4 3-Layer Revenue Owner only", "gross_krw": None, "delta_krw": None,
+                 "official": False,
+                 "note": "산출 보류 — owner 교체 시뮬레이션은 Shadow Backtest(/api/revenue-owner/shadow-backtest)가 담당. "
+                         "family-balanced WMAPE: 3-Layer 0.91 vs legacy 1.14 (Gate 미통과: bias/outlier)"})
+    # All Preview (module-isolated Δ 합산 근사 — 상호작용 미반영 명시)
+    _deltas = [r["delta_krw"] for r in rows[1:] if r.get("delta_krw") is not None]
+    rows.append({"config": "All Preview Candidate (Δ 단순합 근사)", "gross_krw": b["total_gross"] + sum(_deltas),
+                 "delta_krw": sum(_deltas), "official": False,
+                 "note": "module-isolated Δ 합산 — 모듈 간 상호작용 미반영, 공식 Projection 아님"})
+    return {"label": "V14 Preview Δ Bridge (vs Official Normal)",
+            "official_result_unchanged": True, "preview_only": True,
+            "contract": "Preview Δ는 각 모듈을 단독 활성화한 비교값이며, 공식 Projection이 아님 (Official = V14.1.1 유지)",
+            "rows": rows}
 
 
 def build_marketing_ledger(wave_results: List[dict], years: int) -> Dict[str, Any]:
@@ -511,10 +521,10 @@ async def run_product_3y(payload: Dict, project_fn, ProjectionInput) -> Dict[str
     # V13.8: Ordered Projection Bridge — 단계별 실제 재실행 (순서 의존 명시)
     bridge = None
     if payload.get("enable_bridge"):
-        WHY = {"D1": "Product Gate 기반 retention 재정의 (임의 상향 아님)",
-               "BM": "근거 없는 0.48 penalty 제거 + 표본 이중반영 차단",
-               "Organic": "share→ratio 변환 계약 오류 수정",
-               "Reservoir": "사전등록 pool 직접 반영 (NEW STATE launch-scale evidence)"}
+        WHY = {"D1": "Gate 기반 재정의",
+               "BM": "무근거 0.48 penalty 제거",
+               "Organic": "share→ratio 계약 정정",
+               "Reservoir": "사전등록 pool 반영"}
         steps = [("Generic baseline (D1 28%, BM penalty, no reservoir, organic 20%)",
                   {"target_d1": 0.28, "bm_ui": "__legacy_penalty__", "organic_share_of_total": 0.20, "__no_res": True}),
                  ("+ D1 Gate 28→%d%% 🟠" % round(payload.get("target_d1", 0.5) * 100), {"target_d1": None}),
@@ -536,7 +546,7 @@ async def run_product_3y(payload: Dict, project_fn, ProjectionInput) -> Dict[str
                 p2["waves"] = [{**w, "prereg_users": 0} for w in payload["waves"]]
             r2 = await _run_pipeline(p2, project_fn, ProjectionInput, SCENARIO_PRESETS["base"], cache)
             g = r2["total_gross"]
-            _why = next((v for k, v in WHY.items() if k in label), "")
+            _why = "" if prev_g is None else next((v for k, v in WHY.items() if k in label), "")
             rows.append({"step": label, "cumulative_gross_krw": g,
                          "delta_krw": (g - prev_g) if prev_g is not None else 0, "why": _why})
             prev_g = g

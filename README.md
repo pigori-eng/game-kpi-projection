@@ -1,4 +1,4 @@
-# 🎮 Game KPI Projection Tool — V14.0.3
+# 🎮 Game KPI Projection Tool — V14.2.0
 
 회귀분석 및 **내부 실측 데이터** 기반의 게임 KPI 예측 시뮬레이션 도구입니다.  
 단일 게임 365일 프로젝션부터 **순차출시 × 멀티모드 × 크로스프로그레션 3~4개년 제품 프로젝션**까지 지원합니다.
@@ -865,6 +865,12 @@ POST /api/projection
 ```http
 POST /api/projection/product-3y                     # 3Y 제품 프로젝션 (P&L/BEP/Bridge/Badge 포함)
 POST /api/projection/product-3y/excel               # Report-ready Excel 15시트 (3본 자동 동봉)
+POST /api/projection/product-3y/export/pdf          # 1-page PDF (C레벨용, light 계산)
+POST /api/assumptions/replace                       # 실측으로 assumption 교체 → Δ + lineage impact
+POST /api/revenue-owner/shadow-backtest             # 3-way owner LOFO 비교 (shadow_only, 엄격 Gate)
+POST /api/acquisition/cpi-curve-shadow              # UA CPI response curve (shadow, static fallback)
+GET  /api/assumptions/import-template               # Alpha/CBT actual CSV 템플릿 3종
+POST /api/assumptions/import-actuals                # 실측 import (dry-run → confirm)
 POST /api/projection/product-3y/official-scenarios  # 공식 3본 (D1 40/50/60)
 POST /api/projection/product-3y/v14-delta-bridge    # V14 모듈별 Δ 분해
 POST /api/projection/product-schedule               # Wave 기반 Unique Account DAU
@@ -1331,7 +1337,9 @@ python backend/tests_product_3y.py         # 3Y 통합 49 tests (수 분)
 | V13.8 | Ordered Bridge, Confidence Badge, Assumption Lineage, Conditional Notice |
 | V14.0.1 | V14 opt-in 엔진 4종, 공식 3본 API, V14 Δ Bridge, 테스트 재구조화 |
 | V14.0.2 | /api/health 진단, Region 2모드(글로벌 ex-CN/리전선택+CN), BM evidence modifier(내부실측 clamp), D1 ±10%p, 레이어형 UI+가이드 |
-| **V14.0.3** | **Reconciliation 항등식**(Exec=Monthly=Platform=Wave), 기간 명칭(Launch 36M/48M)·Net 정의 분리, Exec 1페이지+Risk Plan(15시트), Bridge 해석 컬럼, **Decision Dashboard UI**(Executive/Driver/Audit 3단, Drawer, 용어사전, Preset, Health badge) |
+| V14.0.3 | **Reconciliation 항등식**(Exec=Monthly=Platform=Wave), 기간 명칭(Launch 36M/48M)·Net 정의 분리, Exec 1페이지+Risk Plan(15시트), Bridge 해석 컬럼, **Decision Dashboard UI**(Executive/Driver/Audit 3단, Drawer, 용어사전, Preset, Health badge) |
+| **V14.1.0** | **공통 BM 계약**(`bm_contracts.py` — Single Wave↔Launch Projection 단일 계약: 표본 존재 시 modifier 비활성/이중반영 차단), Single Wave **신뢰도 언어**(Confidence Badge·Mini Revenue Bridge·Result Drawer), **"이 가정으로 Launch Projection 생성" seed 전달**, **1-page PDF Export**(`pdf_export.py`, NanumGothic 임베딩, render QA 통과), **Assumption Replace API**(`/api/assumptions/replace` — 실측 교체→Δ+lineage impact 자동 보고) |
+| **V14.2.0** | **Shadow Validation & Calibration Framework** — Revenue Owner 3-way Shadow(LOFO, 엄격 Gate·자동승격 금지), V14 Preview Δ Bridge 전 모듈 산출(+All Preview), UA CPI Curve JSON 인터페이스(shadow·fallback), **Alpha/CBT Actual Import**(dry-run→confirm, Replace API 연동). **Official 숫자 완전 불변** |
 
 ### 20.2 알려진 한계
 

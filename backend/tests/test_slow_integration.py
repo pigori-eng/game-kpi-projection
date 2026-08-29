@@ -35,7 +35,7 @@ def test_official_scenarios_and_delta_bridge():
         assert o["scenarios"]["worst"]["total"]["gross_krw"] < o["scenarios"]["normal"]["total"]["gross_krw"] < o["scenarios"]["best"]["total"]["gross_krw"]
         assert "not a sales commitment" in o["conditional"]
         d = await P.run_v14_delta_bridge(PAY, M.calculate_projection, M.ProjectionInput)
-        assert d["rows"][0]["official"] and any(r["gross_krw"] is None for r in d["rows"])  # prototype Δ 미산출 명시
+        assert d["rows"][0]["official"] and d["preview_only"]  # V14.2.0: 전 모듈 preview Δ 산출
     asyncio.run(t())
 
 def test_excel_14_sheets():

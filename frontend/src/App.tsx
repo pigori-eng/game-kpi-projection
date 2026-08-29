@@ -33,6 +33,7 @@ function App() {
   const [results, setResults] = useState<ProjectionResult | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [mainView, setMainView] = useState<'component' | 'product3y'>('component');
+  const [productSeed, setProductSeed] = useState<any>(null);
   const [expandedSections, setExpandedSections] = useState({
     overview: true,
     projection: false,
@@ -251,6 +252,15 @@ function App() {
           </button>
         </div>
 
+        {mainView === 'component' && results && (
+          <div className="mb-3 print:hidden">
+            <button onClick={() => { setProductSeed({ ...((results as any).input || {}), __seedId: Date.now() }); setMainView('product3y'); }}
+              className="px-4 py-2 bg-violet-600 text-white rounded-lg text-sm hover:bg-violet-700 shadow-sm">
+              🌊 이 가정으로 Launch Projection 생성 →
+            </button>
+            <span className="text-xs text-gray-400 ml-2">출시일·BM·D1·UA/CPA를 PC Wave 초기값으로 전달합니다</span>
+          </div>
+        )}
         {mainView === 'component' && (
           <div className="mb-4 bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-gray-600 print:hidden">
             <b>Single Wave Projection</b> — 단일 런칭/단일 플랫폼의 초기 성과를 빠르게 추정하는 Quick Estimator입니다.
@@ -258,7 +268,7 @@ function App() {
             <button onClick={() => setMainView('product3y')} className="text-indigo-600 font-semibold mx-1 underline">Launch Projection</button>을 사용하세요.
           </div>
         )}
-        {mainView === 'product3y' && <ProductTimelinePanel games={games} />}
+        {mainView === 'product3y' && <ProductTimelinePanel games={games} seed={productSeed} />}
 
         <div className={`bg-white rounded-xl shadow-sm border border-gray-200 mb-6 print:hidden ${mainView !== 'component' ? 'hidden' : ''}`}>
           <div className="p-6">

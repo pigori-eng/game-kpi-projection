@@ -1,0 +1,12 @@
+{
+ "curves": [
+  {"curve_id": "ua_cpi_mobile_kr_2026q4", "platform": "Mobile", "region": "KR",
+   "status": "shadow", "source": "UA team Nixtla model export (예시 — 실측 KR CPI ₩3,578 anchor)",
+   "trained_at": "2026-08-29",
+   "points": [
+    {"daily_spend_krw": 10000000, "expected_cpi": 3200},
+    {"daily_spend_krw": 30000000, "expected_cpi": 3578},
+    {"daily_spend_krw": 50000000, "expected_cpi": 4200},
+    {"daily_spend_krw": 100000000, "expected_cpi": 5121}]}
+ ]
+}

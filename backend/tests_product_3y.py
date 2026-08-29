@@ -76,10 +76,11 @@ async def run():
     ck("NRU breakdown (paid/organic/boost) 노출", na and na.get("paid_nru", 0) > 0 and na.get("organic_boost_factor", 1.0) > 1.0)
     pay_g = {**PAYLOAD, "bm_ui": "F2P Gacha"}
     rg = await P.run_product_3y(pay_g, M.calculate_projection, M.ProjectionInput)
-    ck("V13.7.2: BM 무근거 modifier 중립화 — recipe 변경해도 매출 불변",
-       abs(rg["total"]["gross_krw"] - res["total"]["gross_krw"]) < 1,
-       f"{rg['total']['gross_krw']:.0f}")
-    ck("bm_applied = Midcore(중립) 노출", rg["bm_applied"]["pc"] == "Midcore")
+    # V14.0.2+: benchmark-only에서는 evidence-backed BM modifier(Cosmetic 0.85 / Gacha 1.20) 적용 → recipe별 매출 변화가 정상
+    ck("V14.0.2: benchmark-only에서 BM evidence modifier 반영 (Gacha > Cosmetic, 비율 1.412)",
+       abs((rg["total"]["gross_krw"] / res["total"]["gross_krw"]) - (1.20 / 0.85)) < 0.02,
+       f"ratio {rg['total']['gross_krw']/res['total']['gross_krw']:.3f}")
+    ck("bm_applied = Midcore(엔진 중립) 노출 — 매출 차이는 rev_mult 경로", rg["bm_applied"]["pc"] == "Midcore")
     pay_s = {**PAYLOAD, "synergy": {"retention_lift": 1.2, "monetization_lift": 1.0}}
     rs = await P.run_product_3y(pay_s, M.calculate_projection, M.ProjectionInput)
     ck("retention lift 비활성 (DAU 불변 + 라벨)",
@@ -151,7 +152,7 @@ async def run():
     from openpyxl import load_workbook
     from io import BytesIO
     wb = load_workbook(BytesIO(xls))
-    ck("14개 시트 (V14.0.1: +Hurdle/Bridge/Badge/Lineage)", len(wb.sheetnames) == 14, str(wb.sheetnames))
+    ck("15개 시트 (V14.0.3: +Risk_Validation_Plan)", len(wb.sheetnames) == 15, str(wb.sheetnames))
     ck("Assumptions 시트에 snapshot id", any("assumption_set_id" in str(c.value) for c in wb["09_Assumptions"]["A"]))
 
     print(f"\nRESULT: {PASS} PASS / {FAIL} FAIL")

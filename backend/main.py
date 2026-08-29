@@ -10,6 +10,11 @@ import contracts  # V13 P0: Metric Contract
 import product_timeline as ptl  # V13.3 P3.5
 import arpdau_engine as arp  # V13.5 P4a/P4.6
 import product_3y as p3y  # V13.7
+import bm_contracts  # V14.1.0
+import pdf_export  # V14.1.0
+import revenue_owner  # V14.2.0
+import acquisition_response  # V14.2.0
+import actual_import  # V14.2.0: Single Wave ↔ Launch Projection 공통 BM 계약
 import json
 import os
 import httpx
@@ -1554,7 +1559,10 @@ async def calculate_projection(input_data: ProjectionInput):
     quality_grade = input_data.quality_score or "B"
     quality_multiplier = QUALITY_SCORES.get(quality_grade, 1.0)
     bm_type = input_data.bm_type or "Midcore"
-    bm_modifier = BM_TYPE_MODIFIERS.get(bm_type, {"pr_mod": 1.0, "arppu_mod": 1.0})
+    # V14.1.0: 공통 BM 계약 — Manual/Hybrid 표본 존재 시 modifier 1.0 (이중반영 방지), benchmark-only는 evidence-backed만
+    bm_modifier = bm_contracts.resolve_bm_modifier(
+        bm_type, blending.get("benchmark_only", False),
+        input_data.revenue.selected_games_pr or [], input_data.revenue.selected_games_arppu or [])
     
     # V7: 계절성 팩터
     regions = input_data.regions or ["global"]
@@ -2018,6 +2026,30 @@ async def calculate_projection(input_data: ProjectionInput):
             "seasonality_applied": True
         },
         "v85_marketing": v85_marketing_analysis,  # V8.5: 마케팅 분석 추가
+        # V14.1.0: Single Wave 신뢰도 언어 (피드백23 §1)
+        "bm_adjustment": bm_modifier,
+        "confidence": {
+            "definition": "provenance, not probability",
+            "evidence_state": {
+                "d1": {"value": input_data.retention.target_d1_retention.get("normal"),
+                       "badge": ("🔵 Sample" if input_data.retention.selected_games else "🔵 Benchmark"),
+                       "source": ("selected retention samples" if input_data.retention.selected_games else "genre|platform internal benchmark")},
+                "pr": {"badge": ("🔵 Sample" if input_data.revenue.selected_games_pr else "🔵 Benchmark"),
+                       "source": ("selected PR samples" if input_data.revenue.selected_games_pr else "internal benchmark")},
+                "arppu": {"badge": ("🔵 Sample" if input_data.revenue.selected_games_arppu else "🔵 Benchmark"),
+                          "source": ("selected ARPPU samples" if input_data.revenue.selected_games_arppu else "internal benchmark")},
+                "bm_modifier": {"value": bm_modifier["mult"], "badge": bm_modifier["badge"], "source": bm_modifier["warning"]},
+                "nru": {"badge": "🟠 User input / budget-derived", "source": "UA budget ÷ CPA + organic + reservoir"},
+            }},
+        "mini_revenue_bridge": (lambda fd: {
+            "label": "Revenue Driver Bridge (NRU → Retention → DAU → Monetization)",
+            "rows": [
+                {"driver": "Total NRU", "value": int(sum(fd["nru"]))},
+                {"driver": "Retained User-Days", "value": int(sum(fd["dau"]))},
+                {"driver": "Avg DAU", "value": int(np.mean(fd["dau"]))},
+                {"driver": "Avg Daily Revenue", "value": round(float(np.mean(fd["revenue"])))},
+                {"driver": "Gross Revenue", "value": round(float(sum(fd["revenue"])))},
+            ]})(results["normal"]["full_data"]),
         "debug_info": debug_info,  # V12: Debug 정보 추가
         "summary": summary,
         "results": results
@@ -2904,6 +2936,89 @@ async def run_all_backtests():
 # ============================================================
 # V13.7: 3-Year Product Projection (7-1~7-3)
 # ============================================================
+@app.post("/api/projection/product-3y/export/pdf")
+async def product_3y_pdf(body: Dict[str, Any]):
+    """1-page PDF (C레벨용) — light 모드 계산 1회 + official 3본 light. 무거운 tornado 미포함"""
+    from fastapi.responses import Response as _Resp
+    pay = {**body, "light": True, "enable_bridge": True}
+    r = await p3y.run_product_3y(pay, calculate_projection, ProjectionInput)
+    official = await p3y.run_official_scenarios({**body, "enable_bridge": False}, calculate_projection, ProjectionInput)
+    pdf = pdf_export.build_one_page_projection_pdf(sanitize_for_json(r), sanitize_for_json(official))
+    sid = r["assumption_set"]["assumption_set_id"]
+    return _Resp(content=pdf, media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=GW_Launch_Projection_{sid}.pdf"})
+
+
+@app.post("/api/assumptions/replace")
+async def assumptions_replace(body: Dict[str, Any]):
+    """V14.1.0 (피드백23 §7): 실측으로 assumption 교체 → 재실행 → Δ + lineage impact 자동 보고"""
+    base_payload = body.get("base_payload")
+    changes = body.get("changes", [])
+    if not base_payload or not changes:
+        raise HTTPException(status_code=422, detail="base_payload와 changes[] 필수")
+    prev = await p3y.run_product_3y({**base_payload, "light": True, "enable_bridge": False},
+                                     calculate_projection, ProjectionInput)
+    new_payload = json.loads(json.dumps(base_payload))
+    VAR_PATHS = {"target_d1": ["target_d1"], "organic_share_of_total": ["organic_share_of_total"]}
+    lineage = []
+    for ch in changes:
+        var = ch["variable"]
+        if var in VAR_PATHS:
+            old_v = new_payload.get(var)
+            new_payload[var] = ch["value"]
+        elif var == "prereg_activation_rate":
+            old_v = new_payload["waves"][0].get("prereg_activation_rate")
+            for w in new_payload["waves"]:
+                w["prereg_activation_rate"] = ch["value"]
+        else:
+            raise HTTPException(status_code=422, detail=f"지원하지 않는 variable: {var} (target_d1/organic_share_of_total/prereg_activation_rate)")
+        lineage.append({"variable": var,
+            "from": {"value": old_v, "status": "assumption", "snapshot": prev["assumption_set"]["assumption_set_id"]},
+            "to": {"value": ch["value"], "status": ch.get("status", "measured"), "source": ch.get("source"),
+                   "sample_n": ch.get("sample_n"), "date": ch.get("date")}})
+    new = await p3y.run_product_3y({**new_payload, "light": True, "enable_bridge": False},
+                                    calculation if False else calculate_projection, ProjectionInput)
+    delta = new["total"]["gross_krw"] - prev["total"]["gross_krw"]
+    for ln in lineage:
+        ln["projection_impact"] = {"gross_before": prev["total"]["gross_krw"],
+                                    "gross_after": new["total"]["gross_krw"], "delta": delta}
+    return sanitize_for_json({
+        "previous_gross": prev["total"]["gross_krw"], "latest_gross": new["total"]["gross_krw"],
+        "delta": delta, "top_delta_driver": changes[0]["variable"],
+        "previous_assumption_set_id": prev["assumption_set"]["assumption_set_id"],
+        "new_assumption_set_id": new["assumption_set"]["assumption_set_id"],
+        "lineage": lineage,
+        "report": f"Projection changed: {prev['total']['gross_krw']/1e8:,.0f}억 → {new['total']['gross_krw']/1e8:,.0f}억 ({delta/1e8:+,.0f}억) · Main driver: {changes[0]['variable']}"})
+
+
+@app.post("/api/revenue-owner/shadow-backtest")
+async def revenue_owner_shadow(body: Dict[str, Any] = None):
+    body = body or {}
+    return sanitize_for_json(revenue_owner.shadow_backtest(
+        owners=body.get("owners"), horizon_days=int(body.get("horizon_days", 90))))
+
+@app.post("/api/acquisition/cpi-curve-shadow")
+async def cpi_curve_shadow(body: Dict[str, Any]):
+    return sanitize_for_json(acquisition_response.spend_to_installs_with_curve(
+        float(body["total_budget_krw"]), int(body.get("days", 90)),
+        body.get("curve_id"), float(body.get("static_cpi", 7500))))
+
+@app.get("/api/assumptions/import-template")
+async def import_template():
+    return actual_import.csv_templates()
+
+@app.post("/api/assumptions/import-actuals")
+async def import_actuals(body: Dict[str, Any]):
+    """dry_run(기본 true) → 사용자가 confirm=true로 재호출 시 반영 결과 확정 반환"""
+    v = actual_import.validate_actuals(body.get("actuals", []))
+    if not v["valid"]:
+        return sanitize_for_json({"dry_run": True, "applied": False, "rejected": v["rejected"],
+                                   "note": "유효한 actual 없음"})
+    rep = await assumptions_replace({"base_payload": body.get("base_payload"), "changes": v["valid"]})
+    dry = bool(body.get("dry_run", True)) and not bool(body.get("confirm", False))
+    return sanitize_for_json({"dry_run": dry, "applied": (not dry), "rejected": v["rejected"],
+        "impact": rep, "next_step": ("confirm=true로 재호출 시 반영 확정" if dry else "반영 완료 — lineage 기록됨")})
+
 @app.post("/api/projection/product-3y/official-scenarios")
 async def product_3y_official(body: Dict[str, Any]):
     return sanitize_for_json(await p3y.run_official_scenarios(body, calculate_projection, ProjectionInput))
