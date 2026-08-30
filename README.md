@@ -1,4 +1,4 @@
-# 🎮 Game KPI Projection Tool — V14.2.0
+# 🎮 Game KPI Projection Tool — V14.3.0
 
 회귀분석 및 **내부 실측 데이터** 기반의 게임 KPI 예측 시뮬레이션 도구입니다.  
 단일 게임 365일 프로젝션부터 **순차출시 × 멀티모드 × 크로스프로그레션 3~4개년 제품 프로젝션**까지 지원합니다.
@@ -1340,6 +1340,7 @@ python backend/tests_product_3y.py         # 3Y 통합 49 tests (수 분)
 | V14.0.3 | **Reconciliation 항등식**(Exec=Monthly=Platform=Wave), 기간 명칭(Launch 36M/48M)·Net 정의 분리, Exec 1페이지+Risk Plan(15시트), Bridge 해석 컬럼, **Decision Dashboard UI**(Executive/Driver/Audit 3단, Drawer, 용어사전, Preset, Health badge) |
 | **V14.1.0** | **공통 BM 계약**(`bm_contracts.py` — Single Wave↔Launch Projection 단일 계약: 표본 존재 시 modifier 비활성/이중반영 차단), Single Wave **신뢰도 언어**(Confidence Badge·Mini Revenue Bridge·Result Drawer), **"이 가정으로 Launch Projection 생성" seed 전달**, **1-page PDF Export**(`pdf_export.py`, NanumGothic 임베딩, render QA 통과), **Assumption Replace API**(`/api/assumptions/replace` — 실측 교체→Δ+lineage impact 자동 보고) |
 | **V14.2.0** | **Shadow Validation & Calibration Framework** — Revenue Owner 3-way Shadow(LOFO, 엄격 Gate·자동승격 금지), V14 Preview Δ Bridge 전 모듈 산출(+All Preview), UA CPI Curve JSON 인터페이스(shadow·fallback), **Alpha/CBT Actual Import**(dry-run→confirm, Replace API 연동). **Official 숫자 완전 불변** |
+| **V14.3.0** | **Mode Synergy Layer** (피드백27, Freeze 원칙 2 개정) — Delta Force-informed 비중가중 multiplier(EX/Both retention·monetization lift, ramp 180d, cap ret 1.08/mon 1.06), Observed≠Applied 분리(선택 편향 보정), GW preset ON/Generic OFF, 결과에 별도 Δ 행+🟡badge. 멀티모드/Overlap UI 문구 전면 재작성(유저군 분해≠성과 상향, 분모 정의, Adoption vs Overlap) |
 
 ### 20.2 알려진 한계
 

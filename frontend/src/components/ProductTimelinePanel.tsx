@@ -89,6 +89,8 @@ export default function ProductTimelinePanel({ games, seed }: { games: any; seed
   const [overlap, setOverlap] = useState({ Mobile: { initial: 2, target: 12 }, Console: { initial: 5, target: 18 } });
   const [organicShare, setOrganicShare] = useState(36.4);
   const [costs, setCosts] = useState({ dev: 1000, hr: 300 });
+  const [synergyOn, setSynergyOn] = useState(false);
+  const [synergyLifts, setSynergyLifts] = useState({ exR: 3, boR: 10, exM: 2, boM: 8 });
   const [running, setRunning] = useState(false);
   const [res, setRes] = useState<any>(null);
   const [official, setOfficial] = useState<any>(null);
@@ -114,6 +116,7 @@ export default function ProductTimelinePanel({ games, seed }: { games: any; seed
     const pr = PRESETS[name]; if (!pr) return;
     setTargetD1(pr.d1); setOrganicShare(pr.org);
     setWaves(ws => ws.map(w => ({ ...w, activation: pr.act })));
+    setSynergyOn(name === 'GW Planning Case');  // GW preset ON / Generic·Conservative OFF
   };
 
   const gameList: string[] = games?.retention_games || games?.games?.retention || [];
@@ -147,6 +150,10 @@ export default function ProductTimelinePanel({ games, seed }: { games: any; seed
       both: { initial: mode.both.initial / 100, target: mode.both.target / 100, ramp_days: 180 },
     },
     synergy: { retention_lift: 1.0, monetization_lift: 1.0 },
+    mode_synergy: synergyOn ? { enabled: true, source: 'Delta Force prior', evidence_status: 'evidence_informed',
+      ex_retention_lift: synergyLifts.exR / 100, both_retention_lift: synergyLifts.boR / 100,
+      ex_monetization_lift: synergyLifts.exM / 100, both_monetization_lift: synergyLifts.boM / 100,
+      ramp_days: 180, cap_retention_multiplier: 1.08, cap_monetization_multiplier: 1.06 } : { enabled: false },
   });
 
   const run = async () => {
@@ -319,7 +326,10 @@ export default function ProductTimelinePanel({ games, seed }: { games: any; seed
           </div>
         </Layer>
 
-        <Layer no="5" title="멀티모드 · 크로스 프로그레션">
+        <Layer no="5" title="멀티모드 유저군 · 시너지 · 크로스 프로그레션">
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-[11px] text-amber-800">
+            🟠 이 섹션의 <b>비중 값</b>은 성과 상향 요인이 아니라 유저군 분해·중복 제거용 시나리오 가정입니다 (Both = 제3의 모드가 아니라 BR·EX를 모두 플레이한 계정, BR Only = 100% − EX − Both 자동). <b>시너지</b>만 Delta Force-informed prior로 성과에 반영되며, GW Alpha/CBT 실측 확보 시 measured로 교체합니다.
+          </div>
           <Guide>
             <b>모드 분해</b>: BR+EX 동시 탑재 기준. EX Only / Both 비중은 런칭 초기값에서 D180 목표치로 램프됩니다
             (BR Only = 나머지, 항등식 자동검증). 모드 분해는 <b>Unique DAU 총량을 바꾸지 않으며</b>,
@@ -337,7 +347,22 @@ export default function ProductTimelinePanel({ games, seed }: { games: any; seed
               <p className="font-medium text-gray-600 text-xs">Same-day Overlap (초기 → 목표, 90일 램프)</p>
               {(['Mobile', 'Console'] as const).map(p => (
                 <div key={p}>PC↔{p} <input type="number" value={(overlap as any)[p].initial} onChange={e => setOverlap(o => ({ ...o, [p]: { ...(o as any)[p], initial: +e.target.value } }))} className="w-12 border rounded px-1" />% → <input type="number" value={(overlap as any)[p].target} onChange={e => setOverlap(o => ({ ...o, [p]: { ...(o as any)[p], target: +e.target.value } }))} className="w-12 border rounded px-1" />%</div>))}
+              <p className="text-[10px] text-gray-400">분모 = 신규 플랫폼 DAU. Unique DAU에서만 차감, 매출은 차감 안 함 (attributed 합산). Adoption(NRU 중복 방지)과 별개.</p>
             </div>
+          </div>
+          <div className="border-t pt-2 mt-1">
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <input type="checkbox" checked={synergyOn} onChange={e => setSynergyOn(e.target.checked)} />
+              멀티모드 시너지 (Delta Force-informed prior) <span className="text-[10px] px-1.5 py-0.5 bg-yellow-50 border border-yellow-200 rounded text-yellow-700">🟡 Evidence-informed · GW measured pending</span>
+            </label>
+            {synergyOn && (
+              <div className="grid grid-cols-2 gap-2 text-xs mt-2">
+                <div>EX Retention Lift <input type="number" value={synergyLifts.exR} onChange={e => setSynergyLifts(l => ({ ...l, exR: +e.target.value }))} className="w-14 border rounded px-1" />%</div>
+                <div>Both Retention Lift <input type="number" value={synergyLifts.boR} onChange={e => setSynergyLifts(l => ({ ...l, boR: +e.target.value }))} className="w-14 border rounded px-1" />%</div>
+                <div>EX Monetization Lift <input type="number" value={synergyLifts.exM} onChange={e => setSynergyLifts(l => ({ ...l, exM: +e.target.value }))} className="w-14 border rounded px-1" />%</div>
+                <div>Both Monetization Lift <input type="number" value={synergyLifts.boM} onChange={e => setSynergyLifts(l => ({ ...l, boM: +e.target.value }))} className="w-14 border rounded px-1" />%</div>
+                <p className="col-span-2 text-[10px] text-gray-400">Delta Force 관측치 원본이 아닌 보수적 적용값 (선택 편향 30~50% 할인 권장) · ramp 180d · cap ret 1.08/mon 1.06</p>
+              </div>)}
           </div>
         </Layer>
 
@@ -411,6 +436,13 @@ export default function ProductTimelinePanel({ games, seed }: { games: any; seed
             )}
           </div>
 
+          {res.mode_synergy_effect?.enabled && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-sm">
+              <b>🎮 Mode Synergy 반영됨</b> <span className="text-[10px] px-1.5 py-0.5 bg-white border rounded">{res.mode_synergy_effect.badge}</span>
+              <p className="text-xs text-gray-600 mt-1">Retention ×{res.mode_synergy_effect.retention_multiplier_avg} · Monetization ×{res.mode_synergy_effect.monetization_multiplier_avg} → <b className="text-green-700">Gross Δ {fmt억(res.mode_synergy_effect.gross_delta_krw)}</b> <span className="text-gray-400">({res.mode_synergy_effect.applied_note})</span></p>
+            </div>
+          )}
+
           {/* ═══ 2단: Driver View ═══ */}
           <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-wide pt-2"><span className="h-px flex-1 bg-gray-200" />Driver View — 왜 이 숫자인지<span className="h-px flex-1 bg-gray-200" /></div>
 
@@ -480,10 +512,10 @@ export default function ProductTimelinePanel({ games, seed }: { games: any; seed
               </ResponsiveContainer>
             </div>
             <div className="bg-white rounded-xl border p-4">
-              <h4 className="font-semibold text-sm mb-2">④ Mode Mix (BR / EX / Both)</h4>
+              <h4 className="font-semibold text-sm mb-2">④ Mode Mix — Unique DAU 구성비 <span className="text-[10px] text-gray-400 font-normal">전체 DAU 중 BR만/EX만/둘 다 플레이하는 유저의 비율 (합=100%, 총량은 ① 참조)</span></h4>
               <ResponsiveContainer width="100%" height={210}>
-                <AreaChart data={res.monthly}><CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" tick={{ fontSize: 10 }} /><YAxis tickFormatter={fmtK} tick={{ fontSize: 10 }} />
+                <AreaChart data={res.monthly} stackOffset="expand"><CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} /><YAxis tickFormatter={(v: any) => `${(v * 100).toFixed(0)}%`} tick={{ fontSize: 10 }} />
                   <Tooltip formatter={(v: any) => fmtK(v)} /><Legend />
                   <Area stackId="m" type="monotone" dataKey="br_only" stroke="#6366f1" fill="#c7d2fe" name="BR Only" />
                   <Area stackId="m" type="monotone" dataKey="both" stroke="#a855f7" fill="#e9d5ff" name="Both" />

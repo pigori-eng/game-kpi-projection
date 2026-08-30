@@ -380,6 +380,43 @@ async def _run_pipeline(payload: Dict, project_fn: Callable, ProjectionInput,
     synergy = payload.get("synergy", {"retention_lift": 1.0, "monetization_lift": 1.0})
     modes = decompose_modes(combined["unique_account_dau"], mode, synergy)
 
+    # ── V14.3.0 Mode Synergy Layer (피드백27) ──
+    # Freeze 원칙 2 개정: uniform synergy 1.0 고정 → Delta Force-informed 비중가중 multiplier (opt-in)
+    # Mult(t) = br(t)×1 + ex(t)×(1+ex_lift×ramp) + both(t)×(1+both_lift×ramp), cap 적용
+    ms = payload.get("mode_synergy") or {}
+    mode_synergy_effect = {"enabled": False}
+    if ms.get("enabled"):
+        _ramp_d = int(ms.get("ramp_days", 180))
+        _cap_r = float(ms.get("cap_retention_multiplier", 1.08))
+        _cap_m = float(ms.get("cap_monetization_multiplier", 1.06))
+        _exr, _bor = float(ms.get("ex_retention_lift", 0.03)), float(ms.get("both_retention_lift", 0.10))
+        _exm, _bom = float(ms.get("ex_monetization_lift", 0.02)), float(ms.get("both_monetization_lift", 0.08))
+        _u = combined["unique_account_dau"]
+        _gross_delta = 0.0
+        _rmults, _mmults = [], []
+        for t in range(total_days):
+            tot = max(1e-9, _u[t])
+            br_s = modes["br_only"][t] / tot; ex_s = modes["ex_only"][t] / tot; bo_s = modes["both"][t] / tot
+            ramp = min(1.0, (t + 1) / _ramp_d)
+            rm = min(_cap_r, br_s + ex_s * (1 + _exr * ramp) + bo_s * (1 + _bor * ramp))
+            mm = min(_cap_m, br_s + ex_s * (1 + _exm * ramp) + bo_s * (1 + _bom * ramp))
+            _rmults.append(rm); _mmults.append(mm)
+            _rev0 = combined["product_revenue"][t]
+            combined["unique_account_dau"][t] = _u[t] * rm
+            combined["product_revenue"][t] = _rev0 * rm * mm
+            _gross_delta += _rev0 * (rm * mm - 1)
+        mode_synergy_effect = {
+            "enabled": True, "source": ms.get("source", "Delta Force prior"),
+            "badge": "🟡 Delta Force-informed assumption · GW measured pending",
+            "retention_multiplier_avg": round(float(np.mean(_rmults)), 4),
+            "monetization_multiplier_avg": round(float(np.mean(_mmults)), 4),
+            "gross_delta_krw": round(_gross_delta),
+            "applied_note": "Observed(Delta Force)≠Applied(보수 prior) — 선택 편향 감안, cap "
+                            f"[ret {_cap_r} / mon {_cap_m}], ramp {_ramp_d}d",
+            "observed_delta_force": ms.get("observed_delta_force"),
+            "lifts_applied": {"ex_retention": _exr, "both_retention": _bor,
+                               "ex_monetization": _exm, "both_monetization": _bom}}
+
     # Region (H-core, 원칙 6) + monetization lever + synergy monetization lift
     rmix = resolve_region_mix(payload)  # V14.0.2 #4: global_ex_cn | custom
     reg = region_revenue_multiplier(rmix)
@@ -397,6 +434,7 @@ async def _run_pipeline(payload: Dict, project_fn: Callable, ProjectionInput,
 
     # Annual summary (launch-relative) + Reliability Horizon (원칙 7)
     years = int(payload.get("horizon_years", 3))
+
     annual = []
     for y in range(years):
         s, e = y * 365, min((y + 1) * 365, total_days)
@@ -426,8 +464,10 @@ async def _run_pipeline(payload: Dict, project_fn: Callable, ProjectionInput,
     total_gross = float(sum(product_rev))
     monthly = []
     _n_blocks = total_days // 30
+    # V14.2.1: 균등 블록(각 total_days/n일) — Σmonthly == total 유지하면서 마지막 달 가짜 스파이크 제거 (피드백: M36 45일 흡수 문제)
+    _edges = [round(i * total_days / _n_blocks) for i in range(_n_blocks + 1)]
     for m in range(_n_blocks):
-        s, e = m * 30, ((m + 1) * 30 if m < _n_blocks - 1 else total_days)  # 마지막 블록이 나머지 흡수 → Σmonthly == total
+        s, e = _edges[m], _edges[m + 1]
         row = {"month": f"M{m+1}",
                "unique_dau": int(np.mean(combined["unique_account_dau"][s:e])),
                "revenue_krw": float(sum(product_rev[s:e])),
@@ -459,6 +499,7 @@ async def _run_pipeline(payload: Dict, project_fn: Callable, ProjectionInput,
                                "implied_gross_uplift_pct": round((_rev_ratio - 1) * 100, 1)}}
 
     return {"combined": combined, "modes": modes, "region": reg, "annual": annual,
+            "mode_synergy_effect": mode_synergy_effect,
             "v14_status": {"v14_2_brand": bool(payload.get("enable_v14_2")),
                            "v14_3_lifecycle": v14_lifecycle,
                            "v14_1_anchor": bool(payload.get("retention_anchors")),
@@ -631,6 +672,7 @@ async def run_product_3y(payload: Dict, project_fn, ProjectionInput) -> Dict[str
                            "candidates": {"arpdau": "Shadow A/B 대기", "three_layer_bm": "V14.4 prototype — opt-in integration 대기"}},
         "v14_integration_status": {"v14_1_retention_anchor": "prototype (미통합)", "v14_2_independent_acquisition": "opt-in (brand 단독 유입)",
                                     "v14_3_live_lifecycle": "PREVIEW ONLY (공식 미반영)", "v14_4_three_layer": "prototype (owner gate 대기)"},
+        "mode_synergy_effect": base.get("mode_synergy_effect", {"enabled": False}),
         "key_interpretation": (lambda ann, hc: [x for x in [
             f"Y1은 순차 출시 전개기(Ramp)" + (f" — Hurdle 대비 {hc[0]['coverage_pct']}%" if hc else ""),
             (f"Y2부터 Avg uDAU {ann[1]['avg_unique_dau']/1e4:.0f}만 수준 안정화" if len(ann) > 1 else ""),

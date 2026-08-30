@@ -71,3 +71,23 @@ def test_6_replace_lineage_preserved():
         assert d["impact"]["lineage"][0]["projection_impact"]["delta"] < 0
         assert "confirm" in d["next_step"]
     asyncio.run(t())
+
+
+def test_7_mode_synergy_layer():
+    """피드백27: Delta Force-informed Mode Synergy — OFF 시 불변, ON 시 별도 행으로 설명 가능한 Δ"""
+    async def t():
+        r0 = await P.run_product_3y(PAY, M.calculate_projection, M.ProjectionInput)
+        assert r0["mode_synergy_effect"]["enabled"] is False
+        pay_s = {**PAY, "mode_synergy": {"enabled": True, "ex_retention_lift": 0.03,
+                 "both_retention_lift": 0.10, "ex_monetization_lift": 0.02, "both_monetization_lift": 0.08,
+                 "ramp_days": 180, "cap_retention_multiplier": 1.08, "cap_monetization_multiplier": 1.06}}
+        r1 = await P.run_product_3y(pay_s, M.calculation if False else M.calculate_projection, M.ProjectionInput)
+        eff = r1["mode_synergy_effect"]
+        assert eff["enabled"] and "Delta Force" in eff["badge"]
+        assert r1["total"]["gross_krw"] > r0["total"]["gross_krw"]  # 반영됨
+        delta_pct = (r1["total"]["gross_krw"] - r0["total"]["gross_krw"]) / r0["total"]["gross_krw"]
+        assert delta_pct < 0.10  # cap으로 과도 상향 차단 (~5% 내외)
+        assert abs(eff["gross_delta_krw"] - (r1["total"]["gross_krw"] - r0["total"]["gross_krw"])) / r0["total"]["gross_krw"] < 0.01
+        # reconciliation 유지
+        assert abs(r1["total"]["gross_krw"] - sum(m["revenue_krw"] for m in r1["monthly"])) < 1e4
+    asyncio.run(t())
