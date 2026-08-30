@@ -640,10 +640,10 @@ async def run_product_3y(payload: Dict, project_fn, ProjectionInput) -> Dict[str
         ] if x])(base["annual"], (coverage or {}).get("rows", [])),
         "horizon_labels": {
             "title": (f"Launch {int(payload.get('horizon_years',3))*12}M Projection"
-                      + (" (Ramp + FCY 3Y)" if int(payload.get('horizon_years',3)) == 4 else "")),
+                      + (" (Ramp + FCY 3Y)" if int(payload.get('horizon_years',3)) == 4 else " (Ramp + FCY 2Y — PC 출시 후 고정 36개월)")),
             "year_meaning": ({"Y1": "Ramp (출시 전개기)", "Y2": "FCY1", "Y3": "FCY2", "Y4": "FCY3"}
                              if int(payload.get('horizon_years',3)) == 4 else
-                             {"Y1": "Ramp (출시 전개기 — 순차 진입)", "Y2": "운영 2년차", "Y3": "운영 3년차"}),
+                             {"Y1": "Ramp (출시 전개기 — 순차 진입)", "Y2": "FCY1", "Y3": "FCY2"}),
             "caution": "'정상 운영 3개년(FCY 3Y)'이 아닌 출시 후 N개월 기준. FCY 3Y가 필요하면 horizon 4년 실행"},
         "annual_summary": base["annual"],
         "total": {"gross_krw": base["total_gross"],
