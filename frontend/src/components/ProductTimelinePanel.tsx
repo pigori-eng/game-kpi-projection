@@ -470,7 +470,7 @@ export default function ProductTimelinePanel({ games, seed }: { games: any; seed
                   ['Avg Unique DAU', (a: any) => fmtK(a.avg_unique_dau)],
                   ['Peak Unique DAU', (a: any) => fmtK(a.peak_unique_dau)],
                   ['Unique NRU', (a: any) => fmtK(a.unique_nru)],
-                  ['Tail Share (검증범위 밖 매출)', (a: any) => `${(a.tail_share_revenue * 100).toFixed(0)}%`]]
+                  ['Tail Share — Wave별 출시 후 D365 초과(백테스트 검증범위 밖) 외삽 구간에서 발생한 매출 비중', (a: any) => `${(a.tail_share_revenue * 100).toFixed(0)}%`]]
                   .map(([label, fn]: any) => (
                     <tr key={label} className="border-b"><td className="p-2">{label}</td>
                       {res.annual_summary.map((a: any) => <td key={a.year} className="text-center">{fn(a)}</td>)}</tr>))}
@@ -480,7 +480,7 @@ export default function ProductTimelinePanel({ games, seed }: { games: any; seed
 
           <div className="grid md:grid-cols-2 gap-4">
             <div className="bg-white rounded-xl border p-4">
-              <h4 className="font-semibold text-sm mb-2">① Unique Account DAU</h4>
+              <h4 className="font-semibold text-sm mb-2">① Unique Account DAU <span className="text-[10px] text-gray-400 font-normal">각 점 = 해당 월(30.4일)의 일평균 · 런칭 피크는 연도표 Peak 참조</span></h4>
               <ResponsiveContainer width="100%" height={210}>
                 <LineChart data={res.monthly}><CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="month" tick={{ fontSize: 10 }} /><YAxis tickFormatter={fmtK} tick={{ fontSize: 10 }} />
@@ -489,7 +489,7 @@ export default function ProductTimelinePanel({ games, seed }: { games: any; seed
               </ResponsiveContainer>
             </div>
             <div className="bg-white rounded-xl border p-4">
-              <h4 className="font-semibold text-sm mb-2">② Platform DAU vs Unique <span className="text-[10px] text-gray-400">간격 = 계정 중복 차감</span></h4>
+              <h4 className="font-semibold text-sm mb-2">② Platform DAU vs Unique <span className="text-[10px] text-gray-400">월평균 · 간격 = 계정 중복 차감</span></h4>
               <ResponsiveContainer width="100%" height={210}>
                 <LineChart data={res.monthly}><CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="month" tick={{ fontSize: 10 }} /><YAxis tickFormatter={fmtK} tick={{ fontSize: 10 }} />
@@ -501,7 +501,7 @@ export default function ProductTimelinePanel({ games, seed }: { games: any; seed
               </ResponsiveContainer>
             </div>
             <div className="bg-white rounded-xl border p-4">
-              <h4 className="font-semibold text-sm mb-2">③ 월별 Gross Revenue (플랫폼 누적)</h4>
+              <h4 className="font-semibold text-sm mb-2">③ 월별 Gross Revenue <span className="text-[10px] text-gray-400 font-normal">플랫폼 적층(stacked) — 각 색의 &quot;두께&quot;가 해당 플랫폼 매출, 상단 윤곽선 = 합계 (위치≠크기)</span></h4>
               <ResponsiveContainer width="100%" height={210}>
                 <AreaChart data={res.monthly}><CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="month" tick={{ fontSize: 10 }} /><YAxis tickFormatter={(v) => fmt억(v)} tick={{ fontSize: 10 }} />

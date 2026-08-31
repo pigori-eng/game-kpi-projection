@@ -1,4 +1,4 @@
-# 🎮 Game KPI Projection Tool — V14.3.0
+# 🎮 Game KPI Projection Tool — V14.4.0
 
 회귀분석 및 **내부 실측 데이터** 기반의 게임 KPI 예측 시뮬레이션 도구입니다.  
 단일 게임 365일 프로젝션부터 **순차출시 × 멀티모드 × 크로스프로그레션 3~4개년 제품 프로젝션**까지 지원합니다.
@@ -1201,7 +1201,7 @@ Hurdle = 2,000억으로 실행  →  Projection X   (완전히 동일해야 PASS
 
 | 모듈 | 상태 | 설명 |
 |------|------|------|
-| V14.1 Retention Anchor | **prototype** | D1→D7→D30→D90 anchor 커브 (단조성 검증). 파이프라인 미통합 |
+| V14.1 Retention Anchor | **통합 보류 확정** | 공식 구조는 'D1 입력 + 참조 커브 shape 파생' 유지 결정 (2026-08). anchor 엔진은 prototype으로 존치 |
 | V14.2 Independent Acquisition | **opt-in** | Brand 단독 유입 (Awareness→Install, 수확체감), 플랫폼별 CPI |
 | V14.3 Live Lifecycle | **PREVIEW ONLY** | Active/Dormant/Churned stock-flow. **공식 annual/monthly/total 미반영** |
 | V14.4 3-Layer Monetization | **prototype** | Entry/Repeat/High-ARPU. Revenue Owner Gate 통과 전 활성화 시 `ValueError` |
@@ -1341,6 +1341,10 @@ python backend/tests_product_3y.py         # 3Y 통합 49 tests (수 분)
 | **V14.1.0** | **공통 BM 계약**(`bm_contracts.py` — Single Wave↔Launch Projection 단일 계약: 표본 존재 시 modifier 비활성/이중반영 차단), Single Wave **신뢰도 언어**(Confidence Badge·Mini Revenue Bridge·Result Drawer), **"이 가정으로 Launch Projection 생성" seed 전달**, **1-page PDF Export**(`pdf_export.py`, NanumGothic 임베딩, render QA 통과), **Assumption Replace API**(`/api/assumptions/replace` — 실측 교체→Δ+lineage impact 자동 보고) |
 | **V14.2.0** | **Shadow Validation & Calibration Framework** — Revenue Owner 3-way Shadow(LOFO, 엄격 Gate·자동승격 금지), V14 Preview Δ Bridge 전 모듈 산출(+All Preview), UA CPI Curve JSON 인터페이스(shadow·fallback), **Alpha/CBT Actual Import**(dry-run→confirm, Replace API 연동). **Official 숫자 완전 불변** |
 | **V14.3.0** | **Mode Synergy Layer** (피드백27, Freeze 원칙 2 개정) — Delta Force-informed 비중가중 multiplier(EX/Both retention·monetization lift, ramp 180d, cap ret 1.08/mon 1.06), Observed≠Applied 분리(선택 편향 보정), GW preset ON/Generic OFF, 결과에 별도 Δ 행+🟡badge. 멀티모드/Overlap UI 문구 전면 재작성(유저군 분해≠성과 상향, 분모 정의, Adoption vs Overlap) |
+| V14.3.1 | Mode Mix **코호트 램프** — 신규 플랫폼 유입 코호트가 자기 출시 후 경과일 기준으로 램프 (M7/M13 꺾임 가시화) |
+| V14.3.2 | V14.1 anchor 통합 보류 확정(공식: D1 입력+shape 파생 유지), 차트 라벨 정의 명시(월평균/적층/Tail 풀정의), 균등 월블록 |
+| **V14.3.3** | **Shooter PUR Benchmark Panel 등록** — Newzoo 실측 플랫폼 분리(PC n=15 median 15.7% / Console n=14 median 5.8%, 정의=ARPU/ARPPU 검산), 혼합 오류 정정 이력 포함. Mobile은 Delta Force ex-CN ARPDAU implied. `external_evidence.json` |
+| **V14.4.0** | **시너지 delta 정의 수정**(최종 gross 기준 == ON/OFF run 차이, 테스트 고정), **Input Source Registry**(`source_registry.py` + `GET /api/source-registry` — 4단계 근거 언어로 핵심 입력 14종 등록), **Delta Force observed 자동 기록**(확보 관측치 + 미확보 항목 정직 명시) |
 
 ### 20.2 알려진 한계
 

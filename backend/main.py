@@ -14,7 +14,8 @@ import bm_contracts  # V14.1.0
 import pdf_export  # V14.1.0
 import revenue_owner  # V14.2.0
 import acquisition_response  # V14.2.0
-import actual_import  # V14.2.0: Single Wave ↔ Launch Projection 공통 BM 계약
+import actual_import  # V14.2.0
+import source_registry  # V14.4.0: Single Wave ↔ Launch Projection 공통 BM 계약
 import json
 import os
 import httpx
@@ -3002,6 +3003,10 @@ async def cpi_curve_shadow(body: Dict[str, Any]):
     return sanitize_for_json(acquisition_response.spend_to_installs_with_curve(
         float(body["total_budget_krw"]), int(body.get("days", 90)),
         body.get("curve_id"), float(body.get("static_cpi", 7500))))
+
+@app.get("/api/source-registry")
+async def get_source_registry():
+    return source_registry.get_registry()
 
 @app.get("/api/assumptions/import-template")
 async def import_template():

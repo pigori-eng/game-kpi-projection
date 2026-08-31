@@ -87,7 +87,9 @@ def test_7_mode_synergy_layer():
         assert r1["total"]["gross_krw"] > r0["total"]["gross_krw"]  # 반영됨
         delta_pct = (r1["total"]["gross_krw"] - r0["total"]["gross_krw"]) / r0["total"]["gross_krw"]
         assert delta_pct < 0.10  # cap으로 과도 상향 차단 (~5% 내외)
-        assert abs(eff["gross_delta_krw"] - (r1["total"]["gross_krw"] - r0["total"]["gross_krw"])) / r0["total"]["gross_krw"] < 0.01
+        _diff = r1["total"]["gross_krw"] - r0["total"]["gross_krw"]
+        assert abs(eff["gross_delta_krw"] - _diff) / _diff < 0.02  # V14.4.0: delta == ON/OFF run 차이
+        assert "final gross" in eff["delta_basis"]
         # reconciliation 유지
         assert abs(r1["total"]["gross_krw"] - sum(m["revenue_krw"] for m in r1["monthly"])) < 1e4
     asyncio.run(t())

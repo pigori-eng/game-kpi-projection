@@ -109,7 +109,7 @@ DEFAULT_MODE = {"ex_only": {"initial": 0.10, "target": 0.15, "ramp_days": 180},
                 "both":    {"initial": 0.08, "target": 0.25, "ramp_days": 180}}
 SYNERGY_PRESETS = {"Base": 1.00, "Hypothesis": 1.10, "Aggressive": 1.20}
 
-def decompose_modes(unique_dau: List[float], mode: Dict, synergy: Dict) -> Dict[str, Any]:
+def decompose_modes(unique_dau: List[float], mode: Dict, synergy: Dict, ramp_progress=None) -> Dict[str, Any]:
     n = len(unique_dau)
     # V13.7.1: retention lift는 DAU 재계산 없이는 mode분해에만 반영되어 혼란 → Orchestrator(V13.9)까지 비활성
     ret_lift = 1.0
@@ -119,8 +119,14 @@ def decompose_modes(unique_dau: List[float], mode: Dict, synergy: Dict) -> Dict[
     ex, bo, br, uq = [], [], [], []
     for t in range(n):
         u = unique_dau[t] * ret_lift  # scenario-only 균등 근사 (라벨 강제)
-        e = u * ptl.ramp(t, ex_c["initial"], ex_c["target"], ex_c["ramp_days"])
-        b = u * ptl.ramp(t, bo_c["initial"], bo_c["target"], bo_c["ramp_days"])
+        # V14.3.1: ramp_progress(코호트 가중) 제공 시 그것으로, 아니면 기존 달력 t 기준
+        if ramp_progress is not None:
+            pg = ramp_progress[t] if t < len(ramp_progress) else 1.0
+            e = u * (ex_c["initial"] + (ex_c["target"] - ex_c["initial"]) * pg)
+            b = u * (bo_c["initial"] + (bo_c["target"] - bo_c["initial"]) * pg)
+        else:
+            e = u * ptl.ramp(t, ex_c["initial"], ex_c["target"], ex_c["ramp_days"])
+            b = u * ptl.ramp(t, bo_c["initial"], bo_c["target"], bo_c["ramp_days"])
         e, b = min(e, u), min(b, max(0.0, u - min(e, u)))
         ex.append(e); bo.append(b); br.append(u - e - b); uq.append(u)
     return {"br_only": br, "ex_only": ex, "both": bo, "unique_dau": uq,
@@ -378,7 +384,21 @@ async def _run_pipeline(payload: Dict, project_fn: Callable, ProjectionInput,
     mode["ex_only"]["target"] = min(0.6, mode["ex_only"]["target"] * exl)
     mode["both"]["target"] = min(0.6, mode["both"]["target"] * exl)
     synergy = payload.get("synergy", {"retention_lift": 1.0, "monetization_lift": 1.0})
-    modes = decompose_modes(combined["unique_account_dau"], mode, synergy)
+    # V14.3.1: 모드 램프를 wave 코호트 기준으로 — 신규 플랫폼 유입 유저는 자기 출시 후 경과일로 램프
+    # blended_progress(t) = Σ_w dau_w(t)×min(1,(t-off_w)/ramp) / Σ_w dau_w(t)
+    _ramp_days = int(mode.get("ex_only", {}).get("ramp_days", 180))
+    wave_ramp_progress = []
+    for t in range(total_days):
+        num = den = 0.0
+        for wv in wave_results:
+            wt = t - wv["offset_days"]
+            if wt >= 0 and wt < len(wv["dau"]):
+                d = wv["dau"][wt]
+                num += d * min(1.0, (wt + 1) / _ramp_days)
+                den += d
+        wave_ramp_progress.append(num / den if den > 0 else 0.0)
+    modes = decompose_modes(combined["unique_account_dau"], mode, synergy,
+                            ramp_progress=wave_ramp_progress)
 
     # ── V14.3.0 Mode Synergy Layer (피드백27) ──
     # Freeze 원칙 2 개정: uniform synergy 1.0 고정 → Delta Force-informed 비중가중 multiplier (opt-in)
@@ -413,7 +433,13 @@ async def _run_pipeline(payload: Dict, project_fn: Callable, ProjectionInput,
             "gross_delta_krw": round(_gross_delta),
             "applied_note": "Observed(Delta Force)≠Applied(보수 prior) — 선택 편향 감안, cap "
                             f"[ret {_cap_r} / mon {_cap_m}], ramp {_ramp_d}d",
-            "observed_delta_force": ms.get("observed_delta_force"),
+            "observed_delta_force": ms.get("observed_delta_force") or {
+                "status": "partial — 모드별 코호트 uplift 원시값 미확보 (applied lift는 보수 prior 유지)",
+                "observed_available": {"pur_monthly": {"pc": 0.077, "console": 0.018},
+                                        "arppu_usd": {"pc": 33.8, "xbox": 20.0, "ps": 16.7},
+                                        "mobile_arpdau_ex_cn_usd": [0.03, 0.04]},
+                "source": "Newzoo panel + SensorTower 81개국 (2025-10~2026-07)",
+                "needed": "Both/EX-only 코호트의 retention·monetization uplift — 확보 시 applied 확정"},
             "lifts_applied": {"ex_retention": _exr, "both_retention": _bor,
                                "ex_monetization": _exm, "both_monetization": _bom}}
 
@@ -422,6 +448,9 @@ async def _run_pipeline(payload: Dict, project_fn: Callable, ProjectionInput,
     reg = region_revenue_multiplier(rmix)
     _bm_ev = BM_EVIDENCE_MODIFIERS.get(payload.get("bm_ui", ""), {"mult": 1.0})
     rev_mult = reg["multiplier"] * levers.get("monetization", 1.0) * modes["revenue_monetization_lift"] * _bm_ev["mult"]
+    if mode_synergy_effect.get("enabled"):  # V14.4.0: delta를 최종 매출 기준으로 (표기 결함 수정 — ON/OFF run 차이와 일치)
+        mode_synergy_effect["gross_delta_krw"] = round(mode_synergy_effect["gross_delta_krw"] * rev_mult)
+        mode_synergy_effect["delta_basis"] = "final gross (region×BM multiplier 적용 후) == ON/OFF run 차이"
     product_rev = [v * rev_mult for v in combined["product_revenue"]]
     plat_rev = {}
     for wv in wave_results:
@@ -670,7 +699,7 @@ async def run_product_3y(payload: Dict, project_fn, ProjectionInput) -> Dict[str
         "reference_mode": {**REFERENCE_MODES[payload.get("reference_mode", "auto")], "selected": payload.get("reference_mode", "auto")},
         "revenue_engine": {"active": "legacy_pr_arppu (official)",
                            "candidates": {"arpdau": "Shadow A/B 대기", "three_layer_bm": "V14.4 prototype — opt-in integration 대기"}},
-        "v14_integration_status": {"v14_1_retention_anchor": "prototype (미통합)", "v14_2_independent_acquisition": "opt-in (brand 단독 유입)",
+        "v14_integration_status": {"v14_1_retention_anchor": "prototype — 통합 보류 확정 (공식: D1 입력 + 참조 커브 shape 파생 유지, 2026-08 결정)", "v14_2_independent_acquisition": "opt-in (brand 단독 유입)",
                                     "v14_3_live_lifecycle": "PREVIEW ONLY (공식 미반영)", "v14_4_three_layer": "prototype (owner gate 대기)"},
         "mode_synergy_effect": base.get("mode_synergy_effect", {"enabled": False}),
         "key_interpretation": (lambda ann, hc: [x for x in [
